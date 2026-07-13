@@ -3,6 +3,8 @@ import fetch from "node-fetch";
 import fs from "fs";
 
 const SYMBOL = "R_100"; // ✅ Volatility 100
+const SYMBOL_TAG = "📊 V100 (R_100)";
+
 const M15 = 900;
 const M30 = 1800;
 const CANDLES = 200;
@@ -160,13 +162,21 @@ function fractals(highs, lows) {
     let lastDown = down.filter(Boolean).pop();
 
     if (DEBUG) {
+      console.log("----- DEBUG -----");
       console.log("Close:", closePrice);
       console.log("Trend:", newTrend);
       console.log("Fractals:", lastUp, lastDown);
     }
 
     if (crossHappened && state.lastSignalCandle !== candleTime) {
-      await sendTelegram(`🔄 TREND CHANGE → ${newTrend}\nPrice: ${closePrice}`);
+      await sendTelegram(
+`${SYMBOL_TAG}
+
+🔄 TREND CHANGE → ${newTrend}
+
+Price: ${closePrice}
+Waiting for M30 fractal break confirmation...`
+      );
       state.lastSignalCandle = candleTime;
     }
 
@@ -193,7 +203,14 @@ function fractals(highs, lows) {
         tp = entry - (risk * RISK_REWARD);
       }
 
-      return `✅ ${direction} CONFIRMED\nEntry: ${entry}\nStop: ${finalStop.toFixed(3)}\nTP: ${tp.toFixed(3)}\nRR: 1:${RISK_REWARD}`;
+      return `${SYMBOL_TAG}
+
+✅ ${direction} CONFIRMED — Hybrid Stop
+
+Entry: ${entry}
+Stop: ${finalStop.toFixed(3)}
+TP: ${tp.toFixed(3)}
+RR: 1 : ${RISK_REWARD}`;
     }
 
     if (fractalBreak && state.lastFractalBreakCandle !== candleTime) {
