@@ -1,0 +1,52 @@
+name: Ice Cream Machine
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "Type 'cronjob' to run"
+        required: true
+        default: "manual"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ice-cream-machine
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install
+        run: npm install
+
+      - name: Run Script
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          TRIGGER_SOURCE: ${{ github.event.inputs.source }}
+        run: node alert.js
+
+      - name: Commit state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions@github.com"
+
+          git add state.json
+          git diff --quiet && echo "No changes" && exit 0
+
+          git commit -m "Auto update state"
+          git pull --rebase origin main
+          git push origin HEAD:main
