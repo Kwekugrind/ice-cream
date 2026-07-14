@@ -24,8 +24,8 @@ if (TRIGGER_SOURCE !== "cronjob") {
   process.exit(0);
 }
 
-// ✅ State only tracks last signal candles — NOT trend
 let state = {
+  activeDirection: null,
   lastCrossCandle: null,
   lastConfirmCandle: null
 };
@@ -143,7 +143,7 @@ function fractals(highs, lows) {
 
     let crossDirection = null;
 
-    // ✅ PURE CROSS DETECTION (no trend memory)
+    // ✅ CROSS DETECTION
     if (sma4[prev] < sma34[prev] && sma4[last] > sma34[last]) {
       crossDirection = "BUY";
     }
@@ -152,38 +152,11 @@ function fractals(highs, lows) {
       crossDirection = "SELL";
     }
 
-    const { up, down } = fractals(highs30, lows30);
-    const lastUp = up.filter(Boolean).pop();
-    const lastDown = down.filter(Boolean).pop();
-
-    let fractalBreak = null;
-
-    if (crossDirection === "BUY" && lastUp && closePrice > lastUp) {
-      fractalBreak = "BUY";
-    }
-
-    if (crossDirection === "SELL" && lastDown && closePrice < lastDown) {
-      fractalBreak = "SELL";
-    }
-
-    // ✅ DEBUG
-    if (DEBUG) {
-      console.log("════════ V100 DEBUG ════════");
-      console.log("Time:", isoTime);
-      console.log("Close:", closePrice);
-      console.log("SMA4 Prev:", sma4[prev]);
-      console.log("SMA34 Prev:", sma34[prev]);
-      console.log("SMA4 Curr:", sma4[last]);
-      console.log("SMA34 Curr:", sma34[last]);
-      console.log("Cross Direction:", crossDirection);
-      console.log("Last M30 Up:", lastUp);
-      console.log("Last M30 Down:", lastDown);
-      console.log("Fractal Break:", fractalBreak);
-      console.log("════════════════════════════");
-    }
-
-    // ✅ SEND TREND CHANGE
+    // ✅ HANDLE CROSS
     if (crossDirection && state.lastCrossCandle !== candleTime) {
+
+      state.activeDirection = crossDirection;
+      state.lastCrossCandle = candleTime;
 
       await sendTelegram(
 `══════════════════════
@@ -197,11 +170,23 @@ Time: ${isoTime}
 
 Waiting for M30 fractal break confirmation...`
       );
-
-      state.lastCrossCandle = candleTime;
     }
 
-    // ✅ SEND CONFIRMATION
+    const { up, down } = fractals(highs30, lows30);
+    const lastUp = up.filter(Boolean).pop();
+    const lastDown = down.filter(Boolean).pop();
+
+    let fractalBreak = null;
+
+    if (state.activeDirection === "BUY" && lastUp && closePrice > lastUp) {
+      fractalBreak = "BUY";
+    }
+
+    if (state.activeDirection === "SELL" && lastDown && closePrice < lastDown) {
+      fractalBreak = "SELL";
+    }
+
+    // ✅ HANDLE CONFIRMATION
     if (fractalBreak && state.lastConfirmCandle !== candleTime) {
 
       let entry = closePrice;
@@ -236,6 +221,7 @@ RR: 1 : ${RISK_REWARD}
 Time: ${isoTime}`
       );
 
+      state.activeDirection = null;
       state.lastConfirmCandle = candleTime;
     }
 
