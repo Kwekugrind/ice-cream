@@ -6,14 +6,7 @@ const SYMBOL = "R_100";
 const SYMBOL_NAME = "📊 V100 — R_100";
 
 const M15 = 900;
-const M30 = 1800;
-const CANDLES = 200;
-
-const ATR_PERIOD = 14;
-const ATR_MULTIPLIER = 1.2;
-const RISK_REWARD = 1.5;
-
-const DEBUG = true;
+const CANDLES = 50;
 
 const TG_TOKEN = process.env.TG_BOT_TOKEN;
 const TG_CHAT = process.env.TG_CHAT_ID;
@@ -22,20 +15,6 @@ const TRIGGER_SOURCE = process.env.TRIGGER_SOURCE;
 if (TRIGGER_SOURCE !== "cronjob") {
   console.log("⛔ Blocked:", TRIGGER_SOURCE);
   process.exit(0);
-}
-
-let state = {
-  trend: null,
-  lastSignalCandle: null,
-  lastFractalBreakCandle: null
-};
-
-try {
-  if (fs.existsSync("state.json")) {
-    state = JSON.parse(fs.readFileSync("state.json"));
-  }
-} catch (e) {
-  console.log("State load error.");
 }
 
 async function sendTelegram(message) {
@@ -56,7 +35,6 @@ async function getCandles(granularity) {
     ws.on("open", () => {
       ws.send(JSON.stringify({
         ticks_history: SYMBOL,
-        adjust_start_time: 1,
         count: CANDLES,
         granularity,
         end: "latest",
@@ -75,164 +53,33 @@ async function getCandles(granularity) {
   });
 }
 
-function sma(data, length) {
-  return data.map((_, i, arr) => {
-    if (i < length - 1) return null;
-    return arr.slice(i - length + 1, i + 1)
-      .reduce((a, b) => a + b, 0) / length;
-  });
-}
-
-function calculateATR(candles, period) {
-  let trs = [];
-  for (let i = 1; i < candles.length; i++) {
-    const high = parseFloat(candles[i].high);
-    const low = parseFloat(candles[i].low);
-    const prevClose = parseFloat(candles[i - 1].close);
-
-    trs.push(Math.max(
-      high - low,
-      Math.abs(high - prevClose),
-      Math.abs(low - prevClose)
-    ));
-  }
-  return trs.slice(-period)
-    .reduce((a, b) => a + b, 0) / period;
-}
-
-function fractals(highs, lows) {
-  let up = [], down = [];
-  for (let i = 2; i < highs.length - 2; i++) {
-    if (
-      highs[i] > highs[i-1] &&
-      highs[i] > highs[i-2] &&
-      highs[i] > highs[i+1] &&
-      highs[i] > highs[i+2]
-    ) up[i] = highs[i];
-
-    if (
-      lows[i] < lows[i-1] &&
-      lows[i] < lows[i-2] &&
-      lows[i] < lows[i+1] &&
-      lows[i] < lows[i+2]
-    ) down[i] = lows[i];
-  }
-  return { up, down };
-}
-
 (async () => {
   try {
 
-    const m15 = await getCandles(M15);
-    const m30 = await getCandles(M30);
+    const candles = await getCandles(M15);
+    const last = candles[candles.length - 1];
 
-    const closes = m15.map(c => parseFloat(c.close));
-    const highs30 = m30.map(c => parseFloat(c.high));
-    const lows30 = m30.map(c => parseFloat(c.low));
+    const isoTime = new Date(last.epoch * 1000).toISOString();
+    const closePrice = last.close;
 
-    const sma4 = sma(closes, 4);
-    const sma34 = sma(closes, 34);
-    const atr = calculateATR(m15, ATR_PERIOD);
-
-    const last = closes.length - 1;
-    const prev = last - 1;
-
-    const candleTime = m15[last].epoch;
-    const isoTime = new Date(candleTime * 1000).toISOString();
-    const closePrice = closes[last];
-
-    let newTrend = state.trend;
-    let crossHappened = false;
-
-    if (sma4[prev] < sma34[prev] && sma4[last] > sma34[last]) {
-      newTrend = "BUY";
-      crossHappened = true;
-    }
-
-    if (sma4[prev] > sma34[prev] && sma4[last] < sma34[last]) {
-      newTrend = "SELL";
-      crossHappened = true;
-    }
-
-    const { up, down } = fractals(highs30, lows30);
-    const lastUp = up.filter(Boolean).pop();
-    const lastDown = down.filter(Boolean).pop();
-
-    let fractalBreak = null;
-    if (newTrend === "BUY" && lastUp && closePrice > lastUp) fractalBreak = "BUY";
-    if (newTrend === "SELL" && lastDown && closePrice < lastDown) fractalBreak = "SELL";
-
-    if (DEBUG) {
-      console.log("════════ V100 DEBUG ════════");
-      console.log("Time:", isoTime);
-      console.log("Close:", closePrice);
-      console.log("SMA4 Prev:", sma4[prev]);
-      console.log("SMA34 Prev:", sma34[prev]);
-      console.log("SMA4 Curr:", sma4[last]);
-      console.log("SMA34 Curr:", sma34[last]);
-      console.log("Cross:", crossHappened);
-      console.log("FractalBreak:", fractalBreak);
-      console.log("════════════════════════════");
-    }
-
-    if (crossHappened && state.lastSignalCandle !== candleTime) {
-      await sendTelegram(
+    await sendTelegram(
 `══════════════════════
 ${SYMBOL_NAME}
 ══════════════════════
 
-🔄 TREND CHANGE → ${newTrend}
+✅ BOT ACTIVE (TEST MODE)
 
-Price: ${closePrice}
 Time: ${isoTime}
+Latest Close: ${closePrice}
 
-Waiting for M30 fractal break confirmation...`
-      );
-      state.lastSignalCandle = candleTime;
-    }
+If you receive this every 15 minutes,
+cron + GitHub + Telegram are working correctly.`
+    );
 
-    if (fractalBreak && state.lastFractalBreakCandle !== candleTime) {
-
-      let entry = closePrice;
-      let structureStop, atrStop, finalStop, risk, tp;
-
-      if (fractalBreak === "BUY") {
-        structureStop = lastDown;
-        atrStop = entry - (atr * ATR_MULTIPLIER);
-        finalStop = Math.max(structureStop, atrStop);
-        risk = entry - finalStop;
-        tp = entry + (risk * RISK_REWARD);
-      } else {
-        structureStop = lastUp;
-        atrStop = entry + (atr * ATR_MULTIPLIER);
-        finalStop = Math.min(structureStop, atrStop);
-        risk = finalStop - entry;
-        tp = entry - (risk * RISK_REWARD);
-      }
-
-      await sendTelegram(
-`══════════════════════
-${SYMBOL_NAME}
-══════════════════════
-
-✅ ${fractalBreak} CONFIRMED — Hybrid Stop
-
-Entry: ${entry}
-Stop: ${finalStop.toFixed(3)}
-TP: ${tp.toFixed(3)}
-RR: 1 : ${RISK_REWARD}
-
-Time: ${isoTime}`
-      );
-
-      state.lastFractalBreakCandle = candleTime;
-    }
-
-    state.trend = newTrend;
-    fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
+    console.log("✅ Test message sent successfully.");
 
   } catch (err) {
-    console.error("BOT ERROR:", err.message);
+    console.error("❌ TEST ERROR:", err.message);
     process.exit(1);
   }
 })();
