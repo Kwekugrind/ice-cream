@@ -143,7 +143,6 @@ function fractals(highs, lows) {
 
     let crossDirection = null;
 
-    // ✅ CROSS DETECTION
     if (sma4[prev] < sma34[prev] && sma4[last] > sma34[last]) {
       crossDirection = "BUY";
     }
@@ -152,7 +151,6 @@ function fractals(highs, lows) {
       crossDirection = "SELL";
     }
 
-    // ✅ HANDLE CROSS
     if (crossDirection && state.lastCrossCandle !== candleTime) {
 
       state.activeDirection = crossDirection;
@@ -186,7 +184,6 @@ Waiting for M30 fractal break confirmation...`
       fractalBreak = "SELL";
     }
 
-    // ✅ HANDLE CONFIRMATION
     if (fractalBreak && state.lastConfirmCandle !== candleTime) {
 
       let entry = closePrice;
@@ -223,6 +220,25 @@ Time: ${isoTime}`
 
       state.activeDirection = null;
       state.lastConfirmCandle = candleTime;
+    }
+
+    if (DEBUG) {
+      console.log("════════ DEBUG ════════");
+      console.log("Symbol:", SYMBOL_NAME);
+      console.log("Time:", isoTime);
+      console.log("Close:", closePrice);
+      console.log("SMA4 Prev:", sma4[prev]);
+      console.log("SMA34 Prev:", sma34[prev]);
+      console.log("SMA4 Curr:", sma4[last]);
+      console.log("SMA34 Curr:", sma34[last]);
+      console.log("Cross Direction:", crossDirection);
+      console.log("Active Direction:", state.activeDirection);
+      console.log("Last M30 Up:", lastUp);
+      console.log("Last M30 Down:", lastDown);
+      console.log("Fractal Break:", fractalBreak);
+      console.log("Last Cross Candle:", state.lastCrossCandle);
+      console.log("Last Confirm Candle:", state.lastConfirmCandle);
+      console.log("═══════════════════════");
     }
 
     fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
