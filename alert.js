@@ -49,30 +49,58 @@ async function sendTelegram(message) {
   });
 }
 
-async function getCandles(granularity) {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket("wss://ws.binaryws.com/websockets/v3?app_id=1089");
+async function getCandles(granularity, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const candles = await new Promise((resolve, reject) => {
+        const ws = new WebSocket("wss://ws.binaryws.com/websockets/v3?app_id=1089");
 
-    ws.on("open", () => {
-      ws.send(JSON.stringify({
-        ticks_history: SYMBOL,
-        adjust_start_time: 1,
-        count: CANDLES,
-        granularity,
-        end: "latest",
-        style: "candles"
-      }));
-    });
+        const timeout = setTimeout(() => {
+          ws.terminate();
+          reject(new Error("WebSocket timeout"));
+        }, 15000);
 
-    ws.on("message", (data) => {
-      const response = JSON.parse(data);
-      if (response.error) reject(new Error(response.error.message));
-      if (response.candles) resolve(response.candles);
-      ws.close();
-    });
+        ws.on("open", () => {
+          ws.send(JSON.stringify({
+            ticks_history: SYMBOL,
+            adjust_start_time: 1,
+            count: CANDLES,
+            granularity,
+            end: "latest",
+            style: "candles"
+          }));
+        });
 
-    ws.on("error", reject);
-  });
+        ws.on("message", (data) => {
+          const response = JSON.parse(data);
+
+          if (response.error) {
+            clearTimeout(timeout);
+            reject(new Error(response.error.message));
+            ws.close();
+          }
+
+          if (response.candles) {
+            clearTimeout(timeout);
+            resolve(response.candles);
+            ws.close();
+          }
+        });
+
+        ws.on("error", (err) => {
+          clearTimeout(timeout);
+          reject(err);
+        });
+      });
+
+      return candles;
+
+    } catch (err) {
+      console.log(`Attempt ${attempt} failed: ${err.message}`);
+      if (attempt === retries) throw err;
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
 }
 
 function sma(data, length) {
@@ -152,7 +180,6 @@ function fractals(highs, lows) {
     }
 
     if (crossDirection && state.lastCrossCandle !== candleTime) {
-
       state.activeDirection = crossDirection;
       state.lastCrossCandle = candleTime;
 
@@ -176,13 +203,8 @@ Waiting for M30 fractal break confirmation...`
 
     let fractalBreak = null;
 
-    if (state.activeDirection === "BUY" && lastUp && closePrice > lastUp) {
-      fractalBreak = "BUY";
-    }
-
-    if (state.activeDirection === "SELL" && lastDown && closePrice < lastDown) {
-      fractalBreak = "SELL";
-    }
+    if (state.activeDirection === "BUY" && lastUp && closePrice > lastUp) fractalBreak = "BUY";
+    if (state.activeDirection === "SELL" && lastDown && closePrice < lastDown) fractalBreak = "SELL";
 
     if (fractalBreak && state.lastConfirmCandle !== candleTime) {
 
@@ -227,17 +249,11 @@ Time: ${isoTime}`
       console.log("Symbol:", SYMBOL_NAME);
       console.log("Time:", isoTime);
       console.log("Close:", closePrice);
-      console.log("SMA4 Prev:", sma4[prev]);
-      console.log("SMA34 Prev:", sma34[prev]);
-      console.log("SMA4 Curr:", sma4[last]);
-      console.log("SMA34 Curr:", sma34[last]);
       console.log("Cross Direction:", crossDirection);
       console.log("Active Direction:", state.activeDirection);
       console.log("Last M30 Up:", lastUp);
       console.log("Last M30 Down:", lastDown);
       console.log("Fractal Break:", fractalBreak);
-      console.log("Last Cross Candle:", state.lastCrossCandle);
-      console.log("Last Confirm Candle:", state.lastConfirmCandle);
       console.log("═══════════════════════");
     }
 
