@@ -1,5 +1,5 @@
 {
-  "activeDirection": "BUY",
+  "activeDirection": null,
   "lastCrossCandle": 1784238300,
-  "lastConfirmCandle": null
+  "lastConfirmCandle": 1784240100
 }
