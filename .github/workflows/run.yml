@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: ice-cream-machine
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   run:
@@ -44,9 +44,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions@github.com"
 
+          # Pull latest state first
+          git pull origin main --rebase
+
           git add state.json
-          git diff --quiet && echo "No changes" && exit 0
+
+          # Exit if nothing changed
+          git diff --cached --quiet && echo "No changes" && exit 0
 
           git commit -m "Auto update state"
-          git pull --rebase origin main
           git push origin HEAD:main
