@@ -10,7 +10,6 @@ const M30 = 1800;
 const CANDLES = 200;
 
 const ATR_PERIOD = 14;
-const ATR_MULTIPLIER = 1.2;
 const RISK_REWARD = 1.5;
 
 const DEBUG = true;
@@ -30,6 +29,7 @@ let state = {
   lastConfirmCandle: null
 };
 
+// ✅ LOAD STATE
 try {
   if (fs.existsSync("state.json")) {
     state = JSON.parse(fs.readFileSync("state.json"));
@@ -37,6 +37,9 @@ try {
 } catch (e) {
   console.log("State load error.");
 }
+
+// ✅ STATE VISIBILITY
+console.log("✅ Loaded state at start:", state);
 
 async function sendTelegram(message) {
   await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
@@ -151,7 +154,6 @@ function fractals(highs, lows) {
 (async () => {
   try {
 
-    // ✅ Ensure candle is finalized
     await new Promise(resolve => setTimeout(resolve, 20000));
 
     const m15 = await getCandles(M15);
@@ -174,7 +176,6 @@ function fractals(highs, lows) {
 
     let crossDirection = null;
 
-    // ✅ Robust crossover detection
     if (sma4[prev] <= sma34[prev] && sma4[last] > sma34[last]) {
       crossDirection = "BUY";
     }
@@ -208,30 +209,26 @@ Waiting for M30 fractal break confirmation...`
 
     let fractalBreak = null;
 
-    if (state.activeDirection === "BUY" && lastUp && closePrice > lastUp) fractalBreak = "BUY";
-    if (state.activeDirection === "SELL" && lastDown && closePrice < lastDown) fractalBreak = "SELL";
+    if (state.activeDirection === "BUY" && lastUp && closePrice > lastUp)
+      fractalBreak = "BUY";
+
+    if (state.activeDirection === "SELL" && lastDown && closePrice < lastDown)
+      fractalBreak = "SELL";
 
     if (fractalBreak && state.lastConfirmCandle !== candleTime) {
 
       let entry = closePrice;
-      let structureStop, atrStop, finalStop, risk, tp;
+      let finalStop, risk, tp;
 
       if (fractalBreak === "BUY") {
-
-    // ✅ Stop slightly below SMA34
-    finalStop = sma34[last] - (atr * 0.7);
-
-    risk = entry - finalStop;
-    tp = entry + (risk * RISK_REWARD);
-
-} else {
-
-    // ✅ Stop slightly above SMA34
-    finalStop = sma34[last] + (atr * 0.7);
-
-    risk = finalStop - entry;
-    tp = entry - (risk * RISK_REWARD);
-}
+        finalStop = sma34[last] - (atr * 0.7);
+        risk = entry - finalStop;
+        tp = entry + (risk * RISK_REWARD);
+      } else {
+        finalStop = sma34[last] + (atr * 0.7);
+        risk = finalStop - entry;
+        tp = entry - (risk * RISK_REWARD);
+      }
 
       await sendTelegram(
 `══════════════════════
@@ -257,10 +254,6 @@ Time: ${isoTime}`
       console.log("Symbol:", SYMBOL_NAME);
       console.log("Time:", isoTime);
       console.log("Close:", closePrice);
-      console.log("SMA4 Prev:", sma4[prev]);
-      console.log("SMA34 Prev:", sma34[prev]);
-      console.log("SMA4 Curr:", sma4[last]);
-      console.log("SMA34 Curr:", sma34[last]);
       console.log("Cross Direction:", crossDirection);
       console.log("Active Direction:", state.activeDirection);
       console.log("Last M30 Up:", lastUp);
