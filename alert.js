@@ -2,8 +2,8 @@ import WebSocket from "ws";
 import fetch from "node-fetch";
 import fs from "fs";
 
-const SYMBOL = "R_100";
-const SYMBOL_NAME = "📊 V100 — R_100";
+const SYMBOL = "R_10";
+const SYMBOL_NAME = "📊 V10 — R_10";
 
 const M15 = 900;
 const M30 = 1800;
