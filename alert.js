@@ -167,7 +167,6 @@ function fractals(highs, lows) {
     const sma34 = sma(closes, 34);
     const atr = calculateATR(m15, ATR_PERIOD);
 
-    // ✅ Use last fully CLOSED candle (never forming candle)
     const last = closes.length - 2;
     const prev = last - 1;
 
@@ -245,6 +244,29 @@ RR: 1 : ${RISK_REWARD}
 
 Time: ${isoTime}`
       );
+
+      // ✅ OMNISIGHT TRADE LOGGING
+      let trades = [];
+
+      if (fs.existsSync("trades.json")) {
+        trades = JSON.parse(fs.readFileSync("trades.json"));
+      }
+
+      const trade = {
+        repo: "Ice Cream Machine",
+        symbol: SYMBOL,
+        direction: fractalBreak,
+        entry: entry,
+        stop: finalStop,
+        tp: tp,
+        rr: RISK_REWARD,
+        openTime: isoTime,
+        closeTime: null,
+        result: null
+      };
+
+      trades.push(trade);
+      fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
 
       state.activeDirection = null;
       state.lastConfirmCandle = candleTime;
