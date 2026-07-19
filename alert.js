@@ -135,17 +135,17 @@ function fractals(highs, lows) {
   let up = [], down = [];
   for (let i = 2; i < highs.length - 2; i++) {
     if (
-      highs[i] > highs[i-1] &&
-      highs[i] > highs[i-2] &&
-      highs[i] > highs[i+1] &&
-      highs[i] > highs[i+2]
+      highs[i] > highs[i - 1] &&
+      highs[i] > highs[i - 2] &&
+      highs[i] > highs[i + 1] &&
+      highs[i] > highs[i + 2]
     ) up[i] = highs[i];
 
     if (
-      lows[i] < lows[i-1] &&
-      lows[i] < lows[i-2] &&
-      lows[i] < lows[i+1] &&
-      lows[i] < lows[i+2]
+      lows[i] < lows[i - 1] &&
+      lows[i] < lows[i - 2] &&
+      lows[i] < lows[i + 1] &&
+      lows[i] < lows[i + 2]
     ) down[i] = lows[i];
   }
   return { up, down };
