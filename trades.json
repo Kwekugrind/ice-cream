@@ -1,1 +1,14 @@
-[]
+[
+  {
+    "repo": "Ice Cream Machine",
+    "symbol": "R_10",
+    "direction": "BUY",
+    "entry": 4845.389,
+    "stop": 4835.419979411766,
+    "tp": 4860.342530882352,
+    "rr": 1.5,
+    "openTime": "2026-07-19T19:45:00.000Z",
+    "closeTime": null,
+    "result": null
+  }
+]
