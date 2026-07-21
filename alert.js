@@ -5,7 +5,7 @@ import fs from "fs";
 const SYMBOL = "R_10";
 const SYMBOL_NAME = "📊 V10 — R_10";
 
-const M5 = 300;          // ✅ Added for MACD warning
+const M5 = 300;
 const M15 = 900;
 const M30 = 1800;
 const CANDLES = 200;
@@ -118,11 +118,9 @@ function ema(data, length) {
   let k = 2 / (length + 1);
   let emaArray = [];
   emaArray[0] = data[0];
-
   for (let i = 1; i < data.length; i++) {
     emaArray[i] = data[i] * k + emaArray[i - 1] * (1 - k);
   }
-
   return emaArray;
 }
 
@@ -168,7 +166,7 @@ function fractals(highs, lows) {
 
     await new Promise(resolve => setTimeout(resolve, 20000));
 
-    const m5 = await getCandles(M5);    // ✅ Added
+    const m5 = await getCandles(M5);
     const m15 = await getCandles(M15);
     const m30 = await getCandles(M30);
 
@@ -197,7 +195,6 @@ function fractals(highs, lows) {
       crossDirection = "SELL";
     }
 
-    // ✅ Trend change alert removed
     if (crossDirection && state.lastCrossCandle !== candleTime) {
       state.activeDirection = crossDirection;
       state.lastCrossCandle = candleTime;
@@ -242,10 +239,9 @@ RR: 1 : ${RISK_REWARD}
 Time: ${isoTime}`
       );
 
-      let trades = [];
-      if (fs.existsSync("trades.json")) {
-        trades = JSON.parse(fs.readFileSync("trades.json"));
-      }
+      let trades = fs.existsSync("trades.json")
+        ? JSON.parse(fs.readFileSync("trades.json"))
+        : [];
 
       const trade = {
         id: `${SYMBOL}-${isoTime}`,
@@ -269,7 +265,7 @@ Time: ${isoTime}`
       state.lastConfirmCandle = candleTime;
     }
 
-    // ✅ MACD WARNING SYSTEM
+    // ✅ URGENT MACD WARNING
     const trades = fs.existsSync("trades.json")
       ? JSON.parse(fs.readFileSync("trades.json"))
       : [];
@@ -277,18 +273,48 @@ Time: ${isoTime}`
     const openTrade = trades.find(t => t.result === null && !t.warningSent);
 
     if (openTrade) {
+
       const m5Closes = m5.map(c => parseFloat(c.close));
       const emaFast = ema(m5Closes, 4);
       const emaSlow = ema(m5Closes, 34);
       const macd = emaFast[emaFast.length - 2] - emaSlow[emaSlow.length - 2];
+      const currentPrice = m5Closes[m5Closes.length - 2];
 
       if (openTrade.direction === "BUY" && macd < 0) {
-        await sendTelegram("⚠ CLOSE BUY NOW — MACD below zero");
+
+        await sendTelegram(`
+⚠⚠⚠ CLOSE BUY TRADE NOW ⚠⚠⚠
+
+Repo: Ice Cream Machine
+Symbol: ${SYMBOL_NAME}
+Direction: BUY
+Entry: ${openTrade.entry}
+Current Price: ${currentPrice}
+
+MACD (M5) is below zero.
+
+EXIT IMMEDIATELY.
+`);
+
         openTrade.warningSent = true;
       }
 
       if (openTrade.direction === "SELL" && macd > 0) {
-        await sendTelegram("⚠ CLOSE SELL NOW — MACD above zero");
+
+        await sendTelegram(`
+⚠⚠⚠ CLOSE SELL TRADE NOW ⚠⚠⚠
+
+Repo: Ice Cream Machine
+Symbol: ${SYMBOL_NAME}
+Direction: SELL
+Entry: ${openTrade.entry}
+Current Price: ${currentPrice}
+
+MACD (M5) is above zero.
+
+EXIT IMMEDIATELY.
+`);
+
         openTrade.warningSent = true;
       }
 
