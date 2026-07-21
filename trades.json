@@ -51,6 +51,7 @@
     "rr": 1.5,
     "openTime": "2026-07-21T14:30:00.000Z",
     "closeTime": null,
-    "result": null
+    "result": null,
+    "warningSent": true
   }
 ]
