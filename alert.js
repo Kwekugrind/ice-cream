@@ -228,10 +228,8 @@ function fractals(highs, lows) {
       }
 
       await sendTelegram(
-`══════════════════════
-${SYMBOL_NAME}
-══════════════════════
-✅ ${fractalBreak} CONFIRMED — Hybrid Stop
+`✅ ${SYMBOL_NAME} CONFIRMED
+
 Entry: ${entry}
 Stop: ${finalStop.toFixed(3)}
 TP: ${tp.toFixed(3)}
@@ -239,34 +237,40 @@ RR: 1 : ${RISK_REWARD}
 Time: ${isoTime}`
       );
 
+      // ✅ OMNISIGHT TRADE LOGGING (With Entry Guard)
       let trades = fs.existsSync("trades.json")
         ? JSON.parse(fs.readFileSync("trades.json"))
         : [];
 
-      const trade = {
-        id: `${SYMBOL}-${isoTime}`,
-        repo: "Ice Cream Machine",
-        symbol: SYMBOL,
-        direction: fractalBreak,
-        entry,
-        stop: finalStop,
-        tp,
-        rr: RISK_REWARD,
-        openTime: isoTime,
-        closeTime: null,
-        result: null,
-        warningSent: false
-      };
+      // Only add new if there isn't an active trade currently
+      const hasOpenTrade = trades.some(t => t.result === null);
 
-      trades.push(trade);
-      fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
+      if (!hasOpenTrade) {
+        const trade = {
+          id: `${SYMBOL}-${isoTime}`,
+          repo: "Ice Cream Machine",
+          symbol: SYMBOL,
+          direction: fractalBreak,
+          entry,
+          stop: finalStop,
+          tp,
+          rr: RISK_REWARD,
+          openTime: isoTime,
+          closeTime: null,
+          result: null,
+          warningSent: false
+        };
+
+        trades.push(trade);
+        fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
+      }
 
       state.activeDirection = null;
       state.lastConfirmCandle = candleTime;
     }
 
-    // ✅ URGENT MACD WARNING
-    const trades = fs.existsSync("trades.json")
+    // ✅ MACD WARNING SYSTEM (URGENT FORMAT)
+    let trades = fs.existsSync("trades.json")
       ? JSON.parse(fs.readFileSync("trades.json"))
       : [];
 
@@ -275,50 +279,33 @@ Time: ${isoTime}`
     if (openTrade) {
 
       const m5Closes = m5.map(c => parseFloat(c.close));
-      const emaFast = ema(m5Closes, 4);
-      const emaSlow = ema(m5Closes, 34);
-      const macd = emaFast[emaFast.length - 2] - emaSlow[emaSlow.length - 2];
+      const m5emaFast = ema(m5Closes, 4);
+      const m5emaSlow = ema(m5Closes, 34);
+      const macd = m5emaFast[m5emaFast.length - 2] - m5emaSlow[m5emaSlow.length - 2];
       const currentPrice = m5Closes[m5Closes.length - 2];
 
-      if (openTrade.direction === "BUY" && macd < 0) {
+      if (
+        (openTrade.direction === "BUY" && macd < 0) ||
+        (openTrade.direction === "SELL" && macd > 0)
+      ) {
 
         await sendTelegram(`
-⚠⚠⚠ CLOSE BUY TRADE NOW ⚠⚠⚠
+⚠⚠⚠ CLOSE ${openTrade.direction} TRADE NOW ⚠⚠⚠
 
 Repo: Ice Cream Machine
 Symbol: ${SYMBOL_NAME}
-Direction: BUY
+Direction: ${openTrade.direction}
 Entry: ${openTrade.entry}
 Current Price: ${currentPrice}
 
-MACD (M5) is below zero.
+MACD (M5) is ${macd < 0 ? "below" : "above"} zero.
 
 EXIT IMMEDIATELY.
 `);
 
         openTrade.warningSent = true;
+        fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
       }
-
-      if (openTrade.direction === "SELL" && macd > 0) {
-
-        await sendTelegram(`
-⚠⚠⚠ CLOSE SELL TRADE NOW ⚠⚠⚠
-
-Repo: Ice Cream Machine
-Symbol: ${SYMBOL_NAME}
-Direction: SELL
-Entry: ${openTrade.entry}
-Current Price: ${currentPrice}
-
-MACD (M5) is above zero.
-
-EXIT IMMEDIATELY.
-`);
-
-        openTrade.warningSent = true;
-      }
-
-      fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
     }
 
     if (DEBUG) {
