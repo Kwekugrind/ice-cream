@@ -66,6 +66,6 @@
     "openTime": "2026-07-21T23:00:00.000Z",
     "closeTime": null,
     "result": null,
-    "warningSent": false
+    "warningSent": true
   }
 ]
