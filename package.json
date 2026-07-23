@@ -1,6 +1,6 @@
 {
-  "name": "ice-cream",
-  "version": "1.0.0",
+  "name": "ice-cream-machine",
+  "version": "3.0.0",
   "type": "module",
   "dependencies": {
     "node-fetch": "^3.3.2",
