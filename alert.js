@@ -4,9 +4,9 @@ import fs from "fs";
 
 // ==================== REPOSITORY CONFIGURATION ====================
 // Change these 3 lines for each respective repo:
-const SYMBOL = "R_75";                     // e.g., "R_75", "stpRNG", "R_50", "R_25", "R_10"
-const SYMBOL_NAME = "Volatility 75 Index"; // e.g., "Volatility 75 Index", "Step Index", etc.
-const REPO_LABEL = "Lery's Elite Alerts";  // e.g., "Lery's Elite Alerts", "Coffee Machine", etc.
+const SYMBOL = "R_10";
+const SYMBOL_NAME = "Volatility 10 Index";
+const REPO_LABEL = "Ice Cream Machine";
 // ==================================================================
 
 const M5 = 300;       // 5 minutes in seconds
