@@ -111,5 +111,23 @@
     "openTime": "2026-07-27 19:35:00",
     "closeTime": "2026-07-27T21:15:23.375Z",
     "result": "LOSS"
+  },
+  {
+    "id": "R_10-2026-07-28T02:10:00.000Z",
+    "repo": "Ice Cream Machine",
+    "symbol": "R_10",
+    "direction": "SELL",
+    "entry": 4885.305,
+    "sl": 4909.577,
+    "tp1": 4848.897000000001,
+    "tp2": 4836.761,
+    "tp3": 4812.4890000000005,
+    "rr": 1.5,
+    "tp1Reached": false,
+    "macdEarlyFlipEpoch": null,
+    "lastInProfit": null,
+    "openTime": "2026-07-28 02:10:00",
+    "closeTime": null,
+    "result": null
   }
 ]
