@@ -12,7 +12,7 @@
     "rr": 1.5,
     "h1OpenAtEntry": 718.38,
     "tp1Reached": true,
-    "macdEarlyFlipEpoch": null,
+    "macdEarlyFlipEpoch": 1785644700,
     "lastInProfit": true,
     "openTime": "2026-08-01 12:50:00",
     "closeTime": null,
