@@ -74,11 +74,12 @@
     "h1OpenAtEntry": 706.77,
     "tp1Reached": false,
     "macdEarlyFlipEpoch": null,
-    "lastInProfit": null,
+    "lastInProfit": true,
     "peakProfit": 8.616557581533549,
     "rr": 1.5,
     "openTime": "2026-08-03 01:25:00",
-    "closeTime": null,
-    "result": null
+    "closeTime": "2026-08-03T03:50:13.255Z",
+    "result": "WIN",
+    "pnlUSD": 5.28
   }
 ]
