@@ -9,5 +9,7 @@
   "anticipatedTrend": null,
   "pendingPullback": null,
   "pullbackEpoch": null,
-  "pullbackTrigger": null
+  "pullbackTrigger": null,
+  "rsiLowerBreakSeen": false,
+  "rsiUpperBreakSeen": false
 }
