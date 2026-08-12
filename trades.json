@@ -54,6 +54,7 @@
     "rr": 1.5,
     "openTime": "2026-08-12 17:05:00",
     "closeTime": null,
-    "result": null
+    "result": null,
+    "breakevenSet": true
   }
 ]
