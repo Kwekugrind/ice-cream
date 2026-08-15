@@ -70,11 +70,12 @@
     "tp3": 650,
     "h1OpenAtEntry": null,
     "tp1Reached": true,
-    "peakProfit": 6.052847453575747,
+    "peakProfit": 6.172362818769912,
     "rr": 1.5,
     "openTime": "2026-08-15 05:20:00",
     "closeTime": null,
     "result": null,
-    "breakevenSet": true
+    "breakevenSet": true,
+    "exitTrigger": "TDI"
   }
 ]
