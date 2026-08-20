@@ -7,7 +7,7 @@
     "symbol": "1HZ100V",
     "direction": "SELL",
     "entry": 645.48,
-    "sl": 657.1430744862,
+    "sl": 656.789882251614,
     "tp1": 630,
     "tp2": 625,
     "tp3": 620,
@@ -20,6 +20,7 @@
     "psarAligned": true,
     "openTime": "2026-08-20 14:20:00",
     "closeTime": null,
-    "result": null
+    "result": null,
+    "orphanRetryCount": 1
   }
 ]
