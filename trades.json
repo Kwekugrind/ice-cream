@@ -421,7 +421,7 @@
     "symbol": "1HZ100V",
     "direction": "SELL",
     "entry": 664.69,
-    "sl": 653.5830653941,
+    "sl": 653.195050816513,
     "tp1": 650,
     "tp2": 645,
     "tp3": 640,
@@ -433,7 +433,8 @@
     "entryType": "PHASE_B_NO_PRIOR_A",
     "psarAligned": true,
     "openTime": "2026-08-19 22:20:00",
-    "closeTime": null,
-    "result": null
+    "closeTime": "2026-08-20 01:51:28",
+    "result": "WIN",
+    "resultSource": "estimated_fallback"
   }
 ]
