@@ -33,7 +33,7 @@
     "symbol": "1HZ100V",
     "direction": "SELL",
     "entry": 673.12,
-    "sl": 677.4759080000001,
+    "sl": 668.23,
     "tp1": 650,
     "tp2": 645,
     "tp3": 640,
@@ -47,7 +47,8 @@
     "brokerSlAmount": 1.44,
     "profitLockPhase": false,
     "openTime": "2026-08-20 21:05:00",
-    "closeTime": null,
-    "result": null
+    "closeTime": "2026-08-20 21:38:49",
+    "result": "LOSS",
+    "resultSource": "estimated_fallback"
   }
 ]
