@@ -99,7 +99,8 @@
     "brokerSlAmount": 0.17,
     "profitLockPhase": false,
     "openTime": "2026-08-21 16:00:00",
-    "closeTime": null,
-    "result": null
+    "closeTime": "2026-08-21 17:23:07",
+    "result": "WIN",
+    "resultSource": "server_history_verified"
   }
 ]
