@@ -125,7 +125,8 @@
     "brokerSlAmount": 2.36,
     "profitLockPhase": false,
     "openTime": "2026-08-21 22:10:00",
-    "closeTime": null,
-    "result": null
+    "closeTime": "2026-08-21 23:03:09",
+    "result": "LOSS",
+    "resultSource": "estimated_fallback"
   }
 ]
