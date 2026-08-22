@@ -13,5 +13,6 @@
   "phaseBPending": "BUY",
   "phaseBStochFreshSeen": true,
   "phaseBCciFreshSeen": false,
-  "phaseBTdiFreshSeen": false
+  "phaseBTdiFreshSeen": false,
+  "phaseBMacdFreshSeen": false
 }
