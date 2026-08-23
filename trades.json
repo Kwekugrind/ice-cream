@@ -198,7 +198,8 @@
     "m15AgainstAtEntry": true,
     "brokerSlAmount": 5,
     "openTime": "2026-08-22 23:50:00",
-    "closeTime": null,
-    "result": null
+    "closeTime": "2026-08-23 01:12:33",
+    "result": "LOSS",
+    "resultSource": "server_history_verified"
   }
 ]
