@@ -250,8 +250,8 @@
     "openTime": "2026-08-23 20:15:00",
     "closeTime": null,
     "result": null,
-    "fractalSl": 722.28,
-    "fractalEpoch": 1787516700
+    "fractalSl": 724.56,
+    "fractalEpoch": 1787518200
   },
   {
     "id": "1HZ100V-2026-08-23T20:35:00.000Z",
@@ -274,8 +274,8 @@
     "m15AgainstAtEntry": false,
     "brokerSlAmount": 5,
     "entryEpoch": 1787517300,
-    "fractalSl": null,
-    "fractalEpoch": null,
+    "fractalSl": 724.56,
+    "fractalEpoch": 1787518200,
     "openTime": "2026-08-23 20:35:00",
     "closeTime": null,
     "result": null
