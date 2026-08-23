@@ -178,6 +178,7 @@ async function executeManualClose(result, reason) {
     const contractType = trade.direction === "BUY" ? "MULTUP" : "MULTDOWN";
     const durationMs = new Date(trade.closeTime) - new Date(trade.openTime);
     const slDollars = parseFloat((trade.brokerSlAmount || STAKE_USD).toFixed(2));
+    const tpDollars = parseFloat((STAKE_USD * RISK_REWARD).toFixed(2));
     const pnlStr = serverPnl >= 0 ? `+$${serverPnl.toFixed(2)}` : `-$${Math.abs(serverPnl).toFixed(2)}`;
     const tp1Status = trade.tp1Reached ? "✅ TP1 hit" : "❌ TP1 not reached";
     await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${finalResult}*\n\nDirection: ${trade.direction} (${contractType})\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${trade.entry.toFixed(4)}\n🏁 Exit: ${currentPrice.toFixed(4)}\n🛑 SL: ${trade.sl ? trade.sl.toFixed(4) : "N/A"} ($${slDollars} hard)\n🎯 TP1: ${trade.tp1.toFixed(4)} (BGA) ${tp1Status}\n\n💵 P&L: ${pnlStr} (Net of comm.)\nReason: ${reason}\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${trade.openTime}\nClosed: ${trade.closeTime}\n` + (trade.contractId ? `Contract: \`${trade.contractId}\`` : ""));
@@ -189,7 +190,7 @@ let state = {
   phaseATriggeredEpoch: null, activeEntryType: null, phaseATaken: false, h1TrendCycleEpoch: null,
   phaseADeadlineEpoch: null, phaseAWindowExpired: false,
   phaseBPending: null,
-  phaseBStochFreshSeen: false, phaseBCciFreshSeen: false, phaseBTdiFreshSeen: false, phaseBMacdFreshSeen: false
+  phaseBStochFreshSeen: false, phaseBTdiFreshSeen: false, phaseBMacdFreshSeen: false
 };
 try {
   const s = JSON.parse(fs.readFileSync("state.json"));
@@ -206,7 +207,6 @@ try {
     phaseAWindowExpired: s.phaseAWindowExpired ?? false,
     phaseBPending: s.phaseBPending ?? null,
     phaseBStochFreshSeen: s.phaseBStochFreshSeen ?? false,
-    phaseBCciFreshSeen: s.phaseBCciFreshSeen ?? false,
     phaseBTdiFreshSeen: s.phaseBTdiFreshSeen ?? false,
     phaseBMacdFreshSeen: s.phaseBMacdFreshSeen ?? false
   };
@@ -620,6 +620,26 @@ function calculateBollingerBands(data, period = 34, deviation = 1.619) {
   return { upper, middle, lower };
 }
 
+// ── Search M5 Candles for Pre-Entry Bill Williams Fractal ──
+function findRecentFractal(candles, currentIndex, direction) {
+  for (let k = currentIndex - 2; k >= 2; k--) {
+    if (direction === "BUY") {
+      const low = parseFloat(candles[k].low);
+      if (low < parseFloat(candles[k-1].low) && low < parseFloat(candles[k-2].low) &&
+          low < parseFloat(candles[k+1].low) && low < parseFloat(candles[k+2].low)) {
+        return low;
+      }
+    } else {
+      const high = parseFloat(candles[k].high);
+      if (high > parseFloat(candles[k-1].high) && high > parseFloat(candles[k-2].high) &&
+          high > parseFloat(candles[k+1].high) && high > parseFloat(candles[k+2].high)) {
+        return high;
+      }
+    }
+  }
+  return null;
+}
+
 function getBGAInfo(price) {
   let step = 100;
   if (price > 20000) step = 250;
@@ -925,11 +945,11 @@ async function runScanMode() {
       };
 
       // ── 0. Phase C Recovery Liquidation Hook ──
-      const hasPhaseC = openTradesList.some(t => t.entryType === 'PHASE_C' && t.direction === openTrade.direction && !t.result);
-      if (openTrade.entryType?.startsWith('PHASE_B') && hasPhaseC) {
-        const phaseBTargetProfit = 0.20;
-        if (pnl >= phaseBTargetProfit) {
-          await closeWith("WIN", `Phase C Recovery — Original Phase B liquidated safely at +$${pnl.toFixed(2)}`);
+      const isPhaseCTradeOpen = openTradesList.some(t => t.entryType === 'PHASE_C' && t.direction === openTrade.direction && !t.result);
+      if (isPhaseCTradeOpen && openTrade.entryType !== 'PHASE_C') {
+        const recoveryTargetProfit = 0.20;
+        if (pnl >= recoveryTargetProfit) {
+          await closeWith("WIN", `Phase C Recovery — Old trade liquidated safely at +$${pnl.toFixed(2)}`);
           continue;
         }
       }
@@ -946,12 +966,14 @@ async function runScanMode() {
               parseFloat(c[fIdx-2].low), parseFloat(c[fIdx-1].low), 
               parseFloat(c[fIdx].low), parseFloat(c[fIdx+1].low), parseFloat(c[fIdx+2].low)
             );
-            if (isBottom) {
-              if (!openTrade.fractalSl || parseFloat(c[fIdx].low) > openTrade.fractalSl) {
-                openTrade.fractalSl = parseFloat(c[fIdx].low);
+            const fractalVal = parseFloat(c[fIdx].low);
+            if (isBottom && fractalVal < openTrade.entry) { // Only track on the loss side
+              if (!openTrade.fractalSl || fractalVal > openTrade.fractalSl) {
+                openTrade.fractalSl = fractalVal;
+                openTrade.sl = Math.max(openTrade.sl, fractalVal); // update the actual software SL
                 openTrade.fractalEpoch = c[fIdx].epoch;
                 fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-                await sendTelegram(`🔎 *${REPO_LABEL}* — New M5 Bottom Fractal Formed\n\nTrade: ${openTrade.direction}\nNew Early Exit SL: ${openTrade.fractalSl.toFixed(4)}`);
+                await sendTelegram(`🔎 *${REPO_LABEL}* — New M5 Bottom Fractal Formed\n\nTrade: ${openTrade.direction}\nNew Early Exit SL: ${openTrade.sl.toFixed(4)}`);
               }
             }
           } else if (openTrade.direction === "SELL") {
@@ -959,24 +981,24 @@ async function runScanMode() {
               parseFloat(c[fIdx-2].high), parseFloat(c[fIdx-1].high), 
               parseFloat(c[fIdx].high), parseFloat(c[fIdx+1].high), parseFloat(c[fIdx+2].high)
             );
-            if (isTop) {
-              if (!openTrade.fractalSl || parseFloat(c[fIdx].high) < openTrade.fractalSl) {
-                openTrade.fractalSl = parseFloat(c[fIdx].high);
+            const fractalVal = parseFloat(c[fIdx].high);
+            if (isTop && fractalVal > openTrade.entry) { // Only track on the loss side
+              if (!openTrade.fractalSl || fractalVal < openTrade.fractalSl) {
+                openTrade.fractalSl = fractalVal;
+                openTrade.sl = Math.min(openTrade.sl, fractalVal); // update the actual software SL
                 openTrade.fractalEpoch = c[fIdx].epoch;
                 fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-                await sendTelegram(`🔎 *${REPO_LABEL}* — New M5 Top Fractal Formed\n\nTrade: ${openTrade.direction}\nNew Early Exit SL: ${openTrade.fractalSl.toFixed(4)}`);
+                await sendTelegram(`🔎 *${REPO_LABEL}* — New M5 Top Fractal Formed\n\nTrade: ${openTrade.direction}\nNew Early Exit SL: ${openTrade.sl.toFixed(4)}`);
               }
             }
           }
         }
       }
 
-      // ── 1. Priority Exit Checks (Fractal SL & Hard SL) ──
+      // ── 1. Priority Exit Checks (Software SL & Hard SL) ──
       const slBreached = openTrade.direction === "BUY" ? currentPrice <= openTrade.sl : currentPrice >= openTrade.sl;
-      const fractalBreached = openTrade.fractalSl ? (openTrade.direction === "BUY" ? currentPrice <= openTrade.fractalSl : currentPrice >= openTrade.fractalSl) : false;
-
-      if (fractalBreached || slBreached) {
-        const reason = fractalBreached ? `M5 Fractal Early Exit Hit (${openTrade.fractalSl.toFixed(4)})` : `Hard SL hit — price ${currentPrice.toFixed(4)} breached SL ${openTrade.sl.toFixed(4)}`;
+      if (slBreached) {
+        const reason = openTrade.fractalSl && openTrade.sl === openTrade.fractalSl ? `M5 Fractal Early Exit Hit (${openTrade.sl.toFixed(4)})` : `Hard SL hit — price ${currentPrice.toFixed(4)} breached SL ${openTrade.sl.toFixed(4)}`;
         await closeWith("LOSS", reason); continue;
       }
       
@@ -1049,7 +1071,7 @@ async function runScanMode() {
     allowScan = true;
   } else if (allLiveContracts.length === 1 && unresolvedTrades.length === 1) {
     const ot = unresolvedTrades[0];
-    if ((ot.entryType === 'PHASE_B' || ot.entryType === 'PHASE_B_NO_PRIOR_A') && ot.m15AgainstAtEntry && !ot.pending) {
+    if (ot.m15AgainstAtEntry && !ot.pending) {
       allowScan = true;
       phaseCTarget = ot;
     }
@@ -1109,14 +1131,14 @@ async function runScanMode() {
     state.waitingFor = h1FreshBuy ? "BUY" : "SELL";
     state.phaseATaken = false; state.phaseAWindowExpired = false;
     state.phaseADeadlineEpoch = h1NewCycleEpoch + PHASE_A_WINDOW_SECONDS;
-    state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBCciFreshSeen = false; state.phaseBTdiFreshSeen = false; state.phaseBMacdFreshSeen = false;
+    state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBTdiFreshSeen = false; state.phaseBMacdFreshSeen = false;
     dbg(`STEP 1: New H1 trend cycle detected at epoch ${h1NewCycleEpoch} (${state.waitingFor}). Phase A window open until ${new Date(state.phaseADeadlineEpoch * 1000).toISOString()}.`);
   }
 
   // ── STEP 2: Trend invalidation ──
   if (h1TrendDir && state.waitingFor && h1TrendDir !== state.waitingFor) {
     dbg("STEP 2: H1 trend flipped against waitingFor. Resetting state.");
-    state.waitingFor = null; state.phaseATaken = false; state.h1TrendCycleEpoch = null; state.phaseADeadlineEpoch = null; state.phaseAWindowExpired = false; state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBCciFreshSeen = false; state.phaseBTdiFreshSeen = false; state.phaseBMacdFreshSeen = false;
+    state.waitingFor = null; state.phaseATaken = false; state.h1TrendCycleEpoch = null; state.phaseADeadlineEpoch = null; state.phaseAWindowExpired = false; state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBTdiFreshSeen = false; state.phaseBMacdFreshSeen = false;
   }
 
   // ── STEP 3: Cold-boot adoption ──
@@ -1146,7 +1168,6 @@ async function runScanMode() {
   // Indicator Calculations for Phase A & B & C (M5 & M15)
   const si = candles.length - 2;
   const stoch = calculateStochastic(candles, 5, 3, 3);
-  const cci = calculateCCI(candles, 34);
   const rsi = calculateRSI(closes, 14);
   const tdi = calculateBollingerBands(rsi, 34, 1.619);
   const macd = calculateMACD(closes, 12, 26, 9);
@@ -1160,7 +1181,7 @@ async function runScanMode() {
   let signalTriggered = false, direction = "", entry, sl, risk, tp1, tp2, tp3; let entryType = null; let m15AgainstAtEntry = false;
 
   if (si >= 1 && stoch.k[si] != null && stoch.d[si] != null && stoch.k[si-1] != null && stoch.d[si-1] != null &&
-      cci[si] != null && cci[si-1] != null && rsi[si] != null && rsi[si-1] != null &&
+      rsi[si] != null && rsi[si-1] != null &&
       tdi.middle[si] != null && tdi.middle[si-1] != null && macd.macd[si] != null && macd.macd[si-1] != null) {
       
     if (phaseCTarget) {
@@ -1169,6 +1190,8 @@ async function runScanMode() {
       if (currentPnl < 0) {
         const currentM15Ema50 = m15Ema50[m15i];
         if (currentM15Ema50 != null) {
+          // Re-calculate M5 CCI just for Phase C
+          const cci = calculateCCI(candles, 34);
           if (phaseCTarget.direction === "BUY") {
             const priceAboveEma = closes[si] > currentM15Ema50;
             const cciAboveZero = cci[si] > 0;
@@ -1205,7 +1228,7 @@ async function runScanMode() {
         }
       }
 
-      // --- PHASE B (3-Indicator Confluence) ---
+      // --- PHASE B (3-Indicator Confluence: Stoch 20/80, TDI 50/MBL, MACD 0) ---
       if (!signalTriggered && (state.phaseATaken || state.phaseAWindowExpired)) {
         const stochCrossBuyB = (stoch.k[si-1] <= 20) && (stoch.k[si] > 20);
         const stochCrossSellB = (stoch.k[si-1] >= 80) && (stoch.k[si] < 80);
@@ -1295,8 +1318,15 @@ async function runScanMode() {
       state.lastProcessedEpoch = currentCandleEpoch; fs.writeFileSync("state.json", JSON.stringify(state, null, 2)); return;
     }
 
+    // Capture initial fractal for Software SL
+    let initialFractal = findRecentFractal(candles, i, direction);
+    if (direction === "BUY" && initialFractal >= entry) initialFractal = null;
+    if (direction === "SELL" && initialFractal <= entry) initialFractal = null;
+
     const slDollars = parseFloat(STAKE_USD.toFixed(2));
-    sl = deriveHardStopPrice(entry, direction);
+    const hardStopPrice = deriveHardStopPrice(entry, direction);
+    sl = initialFractal || hardStopPrice; // Uses fractal if found, else defaults to hard stop
+    
     risk = Math.abs(entry - sl);
     const slDistance = risk;
     const bgaTps = await calculateBgaTakeProfits(entry, direction, slDistance, d1Candles);
@@ -1307,13 +1337,13 @@ async function runScanMode() {
     let setupLabel = entryType === 'PHASE_C' ? 'PHASE C (M15 Rescue Add-On)' 
       : (entryType === 'PHASE_B_NO_PRIOR_A' ? 'PHASE B (Phase A window expired unfilled — fallback re-entry)' : `${entryType} (H1 EMA 50, ${PHASE_A_WINDOW_SECONDS/3600}h Phase A window)`);
     
-    let message = `🚨 *${SYMBOL_NAME.toUpperCase()} CONFIRMED SIGNAL* 🚨\n\nDirection: ${direction}\nRepo: ${REPO_LABEL}\nTimeframe: M5\n\n📍 Entry: ${entry.toFixed(4)}\n🛑 SL: ${sl.toFixed(4)} ($${slDollars} hard, M5 Fractal Trail)\n🎯 TP1: ${tp1.toFixed(4)} (BGA Whole)\n🎯 TP2 (Ultimate TP): ${tp2.toFixed(4)} (BGA)\n🎯 TP3: ${tp3.toFixed(4)} (reference)\n\n💰 Stake: $${STAKE_USD} | Hard SL: $${slDollars}\n⚡ Setup: ${setupLabel}\n️ Confluence: ${bgaTag}\n━━━━━━━━━━━━━━━━━━━━\n⏰ Time (UTC): ${timeFormatted}\n\n💡 To close manually: send \`/close win\` or \`/close loss\` in this chat`;
+    let message = `🚨 *${SYMBOL_NAME.toUpperCase()} CONFIRMED SIGNAL* 🚨\n\nDirection: ${direction}\nRepo: ${REPO_LABEL}\nTimeframe: M5\n\n📍 Entry: ${entry.toFixed(4)}\n🛑 Initial SL: ${sl.toFixed(4)} (${initialFractal ? "M5 Fractal" : "Hard Stop"})\n🎯 TP1: ${tp1.toFixed(4)} (BGA Whole)\n🎯 TP2 (Ultimate TP): ${tp2.toFixed(4)} (BGA)\n🎯 TP3: ${tp3.toFixed(4)} (reference)\n\n💰 Stake: $${STAKE_USD}\n⚡ Setup: ${setupLabel}\n️ Confluence: ${bgaTag}\n━━━━━━━━━━━━━━━━━━━━\n⏰ Time (UTC): ${timeFormatted}\n\n💡 To close manually: send \`/close win\` or \`/close loss\` in this chat`;
     state.lastProcessedEpoch = currentCandleEpoch;
     fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
     
     const pendingTradeRecord = {
       id: `${SYMBOL}-${isoTime}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, tp1, tp2, tp3, h1OpenAtEntry: null, tp1Reached: false, breakevenSet: false, peakProfit: null, rr: RISK_REWARD, entryType, m15AgainstAtEntry, brokerSlAmount: STAKE_USD, 
-      entryEpoch: currentCandleEpoch, fractalSl: null, fractalEpoch: null, openTime: timeFormatted, closeTime: null, result: null
+      entryEpoch: currentCandleEpoch, fractalSl: initialFractal, fractalEpoch: null, openTime: timeFormatted, closeTime: null, result: null
     };
     trades.push(pendingTradeRecord);
     fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
