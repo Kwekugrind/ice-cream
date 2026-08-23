@@ -268,7 +268,7 @@
     "tp3": 752.5,
     "h1OpenAtEntry": null,
     "tp1Reached": false,
-    "breakevenSet": false,
+    "breakevenSet": true,
     "peakProfit": null,
     "rr": 1.5,
     "entryType": "PHASE_C",
