@@ -278,7 +278,8 @@
     "fractalSl": 725.45,
     "fractalEpoch": 1787519100,
     "openTime": "2026-08-23 20:35:00",
-    "closeTime": null,
-    "result": null
+    "closeTime": "2026-08-23 22:16:09",
+    "result": "WIN",
+    "resultSource": "estimated_fallback"
   }
 ]
