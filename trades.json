@@ -223,7 +223,8 @@
     "m15AgainstAtEntry": true,
     "brokerSlAmount": 5,
     "openTime": "2026-08-23 04:25:00",
-    "closeTime": null,
-    "result": null
+    "closeTime": "2026-08-23 05:38:09",
+    "result": "LOSS",
+    "resultSource": "estimated_fallback"
   }
 ]
