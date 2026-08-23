@@ -28,8 +28,8 @@ const SYMBOL = "1HZ100V"; const SYMBOL_NAME = "Volatility 100 (1s) Index"; const
 const TRADING_SYMBOL = SYMBOL;
 const STAKE_USD = 5;
 const RISK_REWARD = 1.5;
-const TARGET_TP1_USD = 4.00; // Target ~$4.00 profit for TP1 (arms Fixed trail)
-const SAFETY_TP_USD = 8.00;  // $8.00 flat profit insurance ceiling on broker side
+const TARGET_TP1_USD = 3.00; // Target ~$3.00 profit for TP1 (arms Fixed trail)
+const SAFETY_TP_USD = 6.00;  // $6.00 flat profit insurance ceiling on broker side
 const BREAKEVEN_ACTIVATE_USD = 2.00; // Move SL to entry once profit hits $2.00
 const CATASTROPHIC_PNL_FLOOR = -5.50; // Server-truth catastrophic loss floor
 const MARKET_DATA_APP_ID = "1089"; // Dedicated public App ID for unauthenticated candle data
@@ -622,12 +622,13 @@ function calculateBollingerBands(data, period = 34, deviation = 1.619) {
 
 function getBGAInfo(price) {
   let step = 100;
-  if (price > 20000) step = 500;
-  else if (price > 10000) step = 200;
-  else if (price > 5000) step = 100;
-  else if (price > 2000) step = 50;
-  else if (price > 1000) step = 20;
-  else step = 10;
+  if (price > 20000) step = 250;
+  else if (price > 10000) step = 100;
+  else if (price > 5000) step = 50;
+  else if (price > 2000) step = 25;
+  else if (price > 1000) step = 10;
+  else step = 5;
+
   const whole = Math.round(price / step) * step;
   const half = whole - (step / 2);
   const isWhole = Math.abs(price - whole) <= (step * 0.05);
@@ -637,22 +638,25 @@ function getBGAInfo(price) {
   return `BGA Zone (Near ${whole})`;
 }
 
-// ── $4.00 Targeted TP1 BGA Snapping Algorithm ──
+// ── $3.00 Targeted TP1 BGA Snapping Algorithm ──
 function calculateBgaTakeProfits(entry, direction, slDistance, d1Candles) {
   let step = 100;
-  if (entry > 20000) step = 500;
-  else if (entry > 10000) step = 200;
-  else if (entry > 5000) step = 100;
-  else if (entry > 2000) step = 50;
-  else if (entry > 1000) step = 20;
-  else step = 10;
+  if (entry > 20000) step = 250;
+  else if (entry > 10000) step = 100;
+  else if (entry > 5000) step = 50;
+  else if (entry > 2000) step = 25;
+  else if (entry > 1000) step = 10;
+  else step = 5;
+
   const halfStep = step / 2;
   const baseWhole = Math.round(entry / step) * step;
 
+  // 1. Calculate ideal price move for ~$3.00 profit
   const requiredRawPnlTp1 = TARGET_TP1_USD + COMMISSION_USD;
   const tp1PriceMove = (requiredRawPnlTp1 / (STAKE_USD * MULTIPLIER)) * entry;
   const idealTp1Price = direction === "BUY" ? entry + tp1PriceMove : entry - tp1PriceMove;
 
+  // 2. Calculate price cap for $6.00 Ultimate TP ceiling
   const requiredRawPnlTp2 = SAFETY_TP_USD + COMMISSION_USD;
   const tp2PriceMove = (requiredRawPnlTp2 / (STAKE_USD * MULTIPLIER)) * entry;
   const idealTp2Price = direction === "BUY" ? entry + tp2PriceMove : entry - tp2PriceMove;
@@ -664,7 +668,7 @@ function calculateBgaTakeProfits(entry, direction, slDistance, d1Candles) {
     const prevLow = parseFloat(prevDay.low);
     const prevRange = prevHigh - prevLow;
     if (prevRange > 0) {
-      fibMaxLimit = direction === "BUY" ? prevHigh + (prevRange * 2.618) : prevLow - (prevRange * 2.618);
+      fibMaxLimit = direction === "BUY" ? prevHigh + (prevRange * 1.618) : prevLow - (prevRange * 1.618);
     }
   }
 
@@ -677,31 +681,45 @@ function calculateBgaTakeProfits(entry, direction, slDistance, d1Candles) {
     const validLevels = allLevels.filter(l => l > entry);
     validLevels.sort((a, b) => Math.abs(a - idealTp1Price) - Math.abs(b - idealTp1Price));
     let tp1 = validLevels[0] || (baseWhole + step);
+
     if (tp1 >= idealTp2Price) {
       const subCeilingLevels = validLevels.filter(l => l < idealTp2Price);
       tp1 = subCeilingLevels[0] || entry + (tp1PriceMove * 0.9);
     }
+
     let futureLevels = allLevels.filter(l => l > tp1).sort((a, b) => Math.abs(a - idealTp2Price) - Math.abs(b - idealTp2Price));
     let tp2 = futureLevels[0] || tp1 + halfStep;
     let tp3 = tp2 + halfStep;
-    if (fibMaxLimit && fibMaxLimit > tp1) { tp2 = Math.min(tp2, fibMaxLimit); tp3 = Math.min(tp3, fibMaxLimit); }
+
+    if (fibMaxLimit && fibMaxLimit > tp1) {
+      tp2 = Math.min(tp2, fibMaxLimit);
+      tp3 = Math.min(tp3, fibMaxLimit);
+    }
     if (tp2 <= tp1) tp2 = tp1 + halfStep;
     if (tp3 <= tp2) tp3 = tp2 + halfStep;
+
     return { tp1, tp2, tp3 };
   } else {
     const validLevels = allLevels.filter(l => l < entry);
     validLevels.sort((a, b) => Math.abs(a - idealTp1Price) - Math.abs(b - idealTp1Price));
     let tp1 = validLevels[0] || (baseWhole - step);
+
     if (tp1 <= idealTp2Price) {
       const subCeilingLevels = validLevels.filter(l => l > idealTp2Price);
       tp1 = subCeilingLevels[0] || entry - (tp1PriceMove * 0.9);
     }
+
     let futureLevels = allLevels.filter(l => l < tp1).sort((a, b) => Math.abs(a - idealTp2Price) - Math.abs(b - idealTp2Price));
     let tp2 = futureLevels[0] || tp1 - halfStep;
     let tp3 = tp2 - halfStep;
-    if (fibMaxLimit && fibMaxLimit < tp1) { tp2 = Math.max(tp2, fibMaxLimit); tp3 = Math.max(tp3, fibMaxLimit); }
+
+    if (fibMaxLimit && fibMaxLimit < tp1) {
+      tp2 = Math.max(tp2, fibMaxLimit);
+      tp3 = Math.max(tp3, fibMaxLimit);
+    }
     if (tp2 >= tp1) tp2 = tp1 - halfStep;
     if (tp3 >= tp2) tp3 = tp2 - halfStep;
+
     return { tp1, tp2, tp3 };
   }
 }
@@ -726,7 +744,6 @@ async function runScanMode() {
     console.warn(`[${REPO_LABEL}] Warning: Failed to fetch live broker portfolio: ${pErr.message}. Aborting scan to prevent duplicates.`); return;
   }
 
-  // Duplicate check to allow exactly 2 trades (Phase B and Phase C)
   if (allLiveContracts.length > 2) {
     console.error(`🚨 [${REPO_LABEL}] DUPLICATE CONTRACTS DETECTED: Found ${allLiveContracts.length} live contracts on Deriv!`);
     const dupDetails = allLiveContracts.map(c => `• Contract ID: \`${c.contract_id}\` (${c.contract_type}) @ ${c.buy_price || 'N/A'}`).join("\n");
@@ -786,11 +803,17 @@ async function runScanMode() {
           t.result = recovered.profit >= 0 ? "WIN" : "LOSS"; t.resultSource = "server_history_verified";
           t.closeTime = t.closeTime || (recovered.sellTime ? new Date(recovered.sellTime * 1000).toISOString().replace("T", " ").substring(0, 19) : new Date().toISOString().replace("T", " ").substring(0, 19));
           console.log(`[${REPO_LABEL}] Recovered true realized PnL from profit_table: $${recovered.profit.toFixed(2)}.`);
+          
+          const icon = t.result === "WIN" ? "✅" : "❌";
+          const durationMs = new Date(t.closeTime) - new Date(t.openTime);
+          const pnlStr = recovered.profit >= 0 ? `+$${recovered.profit.toFixed(2)}` : `-$${Math.abs(recovered.profit).toFixed(2)}`;
+          await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${t.result} (Recovered)*\n\nDirection: ${t.direction}\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${t.entry.toFixed(4)}\n\n💵 P&L: ${pnlStr} (Net of comm.)\nReason: Recovered from Server Profit Table (Native SL/TP)\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${t.openTime}\nClosed: ${t.closeTime}\nContract: \`${t.contractId}\``);
         } else {
           t.orphanRetryCount = (t.orphanRetryCount || 0) + 1;
           if (t.orphanRetryCount >= 3) {
             console.warn(`[${REPO_LABEL}] Contract ${t.contractId} unrecoverable after 3 attempts. Defaulting to LOSS.`);
             t.result = t.result || "LOSS"; t.resultSource = "estimated_fallback"; t.closeTime = t.closeTime || new Date().toISOString().replace("T", " ").substring(0, 19);
+            await sendTelegram(`❌ *${REPO_LABEL} — Trade ${t.result} (Assumed)*\n\nDirection: ${t.direction}\nSymbol: ${SYMBOL_NAME}\n\n💵 P&L: -$5.00 (Estimated)\nReason: Contract unrecoverable after 3 sync attempts. Defaulting to Loss.\nContract: \`${t.contractId}\``);
           }
         }
       }
@@ -809,7 +832,6 @@ async function runScanMode() {
     for (const openTrade of openTradesList) {
       await sleep(1500);
       
-      // Self-Healing Corrupted Entry Spot Guard
       if (openTrade.entry && openTrade.entry <= 10 && currentPrice > 50) {
         console.warn(`[${REPO_LABEL}] Auto-repairing corrupted entry spot ($${openTrade.entry}) for contract ${openTrade.contractId} to real price: ${currentPrice}`);
         openTrade.entry = currentPrice;
@@ -826,18 +848,31 @@ async function runScanMode() {
             dbg(`ContractNotFound for ${openTrade.contractId}. Cross-checking active portfolio...`);
             const activeContracts = await getOpenPortfolio(cachedAccountId);
             const stillActive = activeContracts?.some(c => String(c.contract_id) === String(openTrade.contractId));
-            if (stillActive) { console.warn(`[${REPO_LABEL}] Contract ${openTrade.contractId} returned ContractNotFound but is present in active portfolio. Keeping open.`); }
+            if (stillActive) { 
+              console.warn(`[${REPO_LABEL}] Contract ${openTrade.contractId} returned ContractNotFound but is present in active portfolio. Keeping open.`); 
+            }
             else {
               console.warn(`[${REPO_LABEL}] Contract ${openTrade.contractId} confirmed absent from portfolio. Retiring.`);
               openTrade.result = openTrade.result || "LOSS"; openTrade.resultSource = "estimated_fallback";
               openTrade.closeTime = openTrade.closeTime || new Date().toISOString().replace("T", " ").substring(0, 19);
-              fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2)); continue;
+              fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2)); 
+
+              const icon = openTrade.result === "WIN" ? "✅" : "❌";
+              const durationMs = new Date(openTrade.closeTime) - new Date(openTrade.openTime);
+              await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${openTrade.result}*\n\nDirection: ${openTrade.direction}\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${openTrade.entry.toFixed(4)}\n🏁 Exit: N/A (Closed on Server)\n🛑 SL: ${openTrade.sl ? openTrade.sl.toFixed(4) : "N/A"}\n\n💵 P&L: -$5.00 (Estimated Hard Stop)\nReason: Contract absent from portfolio (Native Stop Loss hit)\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${openTrade.openTime}\nClosed: ${openTrade.closeTime}\nContract: \`${openTrade.contractId}\``);
+              continue;
             }
           } else if (serverStatus && serverStatus.is_sold === 1) {
             console.log(`[${REPO_LABEL}] Contract ${openTrade.contractId} confirmed SOLD on Deriv (Realized PnL: $${serverStatus.profit}). Syncing.`);
             openTrade.result = (typeof serverStatus.profit === 'number' && serverStatus.profit >= 0) ? "WIN" : "LOSS";
             openTrade.resultSource = "server_sold"; openTrade.closeTime = openTrade.closeTime || new Date().toISOString().replace("T", " ").substring(0, 19);
-            fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2)); continue;
+            fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2)); 
+            
+            const icon = openTrade.result === "WIN" ? "✅" : "❌";
+            const durationMs = new Date(openTrade.closeTime) - new Date(openTrade.openTime);
+            const pnlStr = serverStatus.profit >= 0 ? `+$${serverStatus.profit.toFixed(2)}` : `-$${Math.abs(serverStatus.profit).toFixed(2)}`;
+            await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${openTrade.result}*\n\nDirection: ${openTrade.direction}\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${openTrade.entry.toFixed(4)}\n🏁 Exit: N/A (Closed on Server)\n🛑 SL: ${openTrade.sl ? openTrade.sl.toFixed(4) : "N/A"} ($${STAKE_USD.toFixed(2)} hard)\n\n💵 P&L: ${pnlStr} (Net of comm.)\nReason: Native Broker Limit Order Hit (Hard SL / TP)\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${openTrade.openTime}\nClosed: ${openTrade.closeTime}\nContract: \`${openTrade.contractId}\``);
+            continue;
           }
           if (serverStatus && typeof serverStatus.profit === 'number') { pnl = serverStatus.profit; usingServerTruthPnl = true; dbg(`Server-truth PnL for contract ${openTrade.contractId}: $${pnl.toFixed(2)}`); }
         } catch (err) { console.warn(`[${REPO_LABEL}] Warning: Exception fetching server-truth PnL (${err.message}). Falling back to local estimate: $${pnl.toFixed(4)}`); }
@@ -881,8 +916,9 @@ async function runScanMode() {
         const durationMs = new Date(openTrade.closeTime) - new Date(openTrade.openTime);
         const slDollars = parseFloat((openTrade.brokerSlAmount || STAKE_USD).toFixed(2));
         const tpDollars = parseFloat((STAKE_USD * RISK_REWARD).toFixed(2));
+        const tp1Status = openTrade.tp1Reached ? "✅ TP1 hit" : "❌ TP1 not reached";
         const pnlStr = serverPnl >= 0 ? `+$${serverPnl.toFixed(2)}` : `-$${Math.abs(serverPnl).toFixed(2)}`;
-        await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${finalResult}*\n\nDirection: ${openTrade.direction} (${contractType})\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${openTrade.entry.toFixed(4)}\n🏁 Exit: ${currentPrice.toFixed(4)}\n🛑 SL: ${openTrade.sl ? openTrade.sl.toFixed(4) : "N/A"} ($${slDollars} hard)\n💵 P&L: ${pnlStr} (Net of comm.)\nReason: ${exitReason}\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${openTrade.openTime}\nClosed: ${openTrade.closeTime}\n` + (openTrade.contractId ? `Contract: \`${openTrade.contractId}\`` : ""));
+        await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${finalResult}*\n\nDirection: ${openTrade.direction} (${contractType})\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${openTrade.entry.toFixed(4)}\n🏁 Exit: ${currentPrice.toFixed(4)}\n🛑 SL: ${openTrade.sl ? openTrade.sl.toFixed(4) : "N/A"} ($${slDollars} hard)\n🎯 TP1: ${openTrade.tp1.toFixed(4)} (BGA) ${tp1Status}\n\n💵 P&L: ${pnlStr} (Net of comm.)\nReason: ${exitReason}\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${openTrade.openTime}\nClosed: ${openTrade.closeTime}\n` + (openTrade.contractId ? `Contract: \`${openTrade.contractId}\`` : ""));
       };
 
       // ── 0. Phase C Recovery Liquidation Hook ──
@@ -895,23 +931,41 @@ async function runScanMode() {
         }
       }
 
-      // ── Dynamic M15 TDI Opposite Direction Reversal Exit ──
+      // ── Dynamic M15 TDI & CCI Opposite Direction Reversal Exit ──
       let m15TdiReversalExit = false;
       let m15ExitReason = "";
       if (tradeData.m15Candles && tradeData.m15Candles.length >= 50) {
         const m15Closes = tradeData.m15Candles.map(c => parseFloat(c.close));
         const m15Rsi = calculateRSI(m15Closes, 14);
         const m15Tdi = calculateBollingerBands(m15Rsi, 34, 1.619);
+        const m15Cci = calculateCCI(tradeData.m15Candles, 34);
+        
         const mi = tradeData.m15Candles.length - 2;
         const prevMi = mi - 1;
 
-        if (mi >= 1 && m15Rsi[mi] != null && m15Rsi[prevMi] != null && m15Tdi.middle[mi] != null && m15Tdi.middle[prevMi] != null) {
+        if (mi >= 1 && m15Rsi[mi] != null && m15Rsi[prevMi] != null && m15Tdi.middle[mi] != null && m15Tdi.middle[prevMi] != null && m15Cci[mi] != null && m15Cci[prevMi] != null) {
           if (openTrade.direction === "BUY") {
             const m15CrossBelowMbl = (m15Rsi[prevMi] >= m15Tdi.middle[prevMi]) && (m15Rsi[mi] < m15Tdi.middle[mi]);
-            if (m15CrossBelowMbl) { m15TdiReversalExit = true; m15ExitReason = `M15 TDI Reversal — RSI (${m15Rsi[mi].toFixed(2)}) crossed below MBL (${m15Tdi.middle[mi].toFixed(2)})`; }
+            const m15CciCrossBelowZero = openTrade.m15AgainstAtEntry && (m15Cci[prevMi] >= 0) && (m15Cci[mi] < 0);
+
+            if (m15CrossBelowMbl) { 
+                m15TdiReversalExit = true; 
+                m15ExitReason = `M15 TDI Reversal — RSI (${m15Rsi[mi].toFixed(2)}) crossed below MBL (${m15Tdi.middle[mi].toFixed(2)})`; 
+            } else if (m15CciCrossBelowZero) {
+                m15TdiReversalExit = true; 
+                m15ExitReason = `M15 CCI Rescue Exit — CCI (${m15Cci[mi].toFixed(2)}) crossed below 0 (TDI was against trend at entry)`; 
+            }
           } else if (openTrade.direction === "SELL") {
             const m15CrossAboveMbl = (m15Rsi[prevMi] <= m15Tdi.middle[prevMi]) && (m15Rsi[mi] > m15Tdi.middle[mi]);
-            if (m15CrossAboveMbl) { m15TdiReversalExit = true; m15ExitReason = `M15 TDI Reversal — RSI (${m15Rsi[mi].toFixed(2)}) crossed above MBL (${m15Tdi.middle[mi].toFixed(2)})`; }
+            const m15CciCrossAboveZero = openTrade.m15AgainstAtEntry && (m15Cci[prevMi] <= 0) && (m15Cci[mi] > 0);
+
+            if (m15CrossAboveMbl) { 
+                m15TdiReversalExit = true; 
+                m15ExitReason = `M15 TDI Reversal — RSI (${m15Rsi[mi].toFixed(2)}) crossed above MBL (${m15Tdi.middle[mi].toFixed(2)})`; 
+            } else if (m15CciCrossAboveZero) {
+                m15TdiReversalExit = true; 
+                m15ExitReason = `M15 CCI Rescue Exit — CCI (${m15Cci[mi].toFixed(2)}) crossed above 0 (TDI was against trend at entry)`; 
+            }
           }
         }
       }
@@ -944,7 +998,7 @@ async function runScanMode() {
         await closeWith("WIN", `Commission-Covered Breakeven exit — locked +$${pnl.toFixed(2)} net profit (target $${targetNetProfit.toFixed(2)})`); continue;
       }
       
-      // ── 4. TP1 Trigger: Price Level Hit OR Target Profit Hit ($4.00) ──> Arms Fixed Distance Trail ──
+      // ── 4. TP1 Trigger: Price Level Hit OR Target Profit Hit ($3.00) ──> Arms Fixed Distance Trail ──
       const isBuy = openTrade.direction === "BUY";
       const priceHitTp1 = openTrade.tp1 > 0 && (isBuy ? currentPrice >= openTrade.tp1 : currentPrice <= openTrade.tp1);
       const pnlHitTp1 = pnl >= TARGET_TP1_USD;
@@ -956,20 +1010,19 @@ async function runScanMode() {
       }
       
       if (openTrade.tp1Reached) {
-        // Intra-Candle Peak Tracker: Catch the absolute top/bottom within the 5m window
+        // Intra-Candle Peak Tracker
         const currentM5 = tradeData.candles[tradeData.candles.length - 1];
         const bestPriceInCandle = isBuy ? parseFloat(currentM5.high) : parseFloat(currentM5.low);
         const maxPnlInCandle = calcUnrealizedPnL(openTrade, bestPriceInCandle);
         
-        // Ratchet the peak profit up using the highest observed PnL
         const currentHighestPnl = Math.max(pnl, maxPnlInCandle);
         if (openTrade.peakProfit === null || currentHighestPnl > openTrade.peakProfit) {
           openTrade.peakProfit = currentHighestPnl; 
           fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
         }
         
-        // Fixed Trailing Distance: Always lock exactly $2.00 behind the highest peak
-        const trailingDistance = TARGET_TP1_USD * 0.50; // $2.00
+        // Fixed Trailing Distance: $1.50
+        const trailingDistance = TARGET_TP1_USD * 0.50;
         const lockLevel = openTrade.peakProfit - trailingDistance;
         
         if (openTrade.peakProfit > 0 && pnl <= lockLevel) {
