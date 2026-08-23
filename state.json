@@ -12,7 +12,7 @@
   "phaseAWindowExpired": true,
   "phaseBPending": null,
   "phaseBStochFreshSeen": false,
-  "phaseBCciFreshSeen": false,
   "phaseBTdiFreshSeen": false,
-  "phaseBMacdFreshSeen": false
+  "phaseBMacdFreshSeen": false,
+  "phaseBCciFreshSeen": false
 }
