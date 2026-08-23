@@ -931,40 +931,24 @@ async function runScanMode() {
         }
       }
 
-      // ── Dynamic M15 TDI & CCI Opposite Direction Reversal Exit ──
-      let m15TdiReversalExit = false;
+      // ── Dynamic M15 CCI Rescue Exit ──
+      let m15CciRescueExit = false;
       let m15ExitReason = "";
-      if (tradeData.m15Candles && tradeData.m15Candles.length >= 50) {
-        const m15Closes = tradeData.m15Candles.map(c => parseFloat(c.close));
-        const m15Rsi = calculateRSI(m15Closes, 14);
-        const m15Tdi = calculateBollingerBands(m15Rsi, 34, 1.619);
+      if (tradeData.m15Candles && tradeData.m15Candles.length >= 50 && openTrade.m15AgainstAtEntry) {
         const m15Cci = calculateCCI(tradeData.m15Candles, 34);
-        
         const mi = tradeData.m15Candles.length - 2;
         const prevMi = mi - 1;
 
-        if (mi >= 1 && m15Rsi[mi] != null && m15Rsi[prevMi] != null && m15Tdi.middle[mi] != null && m15Tdi.middle[prevMi] != null && m15Cci[mi] != null && m15Cci[prevMi] != null) {
+        if (mi >= 1 && m15Cci[mi] != null && m15Cci[prevMi] != null) {
           if (openTrade.direction === "BUY") {
-            const m15CrossBelowMbl = (m15Rsi[prevMi] >= m15Tdi.middle[prevMi]) && (m15Rsi[mi] < m15Tdi.middle[mi]);
-            const m15CciCrossBelowZero = openTrade.m15AgainstAtEntry && (m15Cci[prevMi] >= 0) && (m15Cci[mi] < 0);
-
-            if (m15CrossBelowMbl) { 
-                m15TdiReversalExit = true; 
-                m15ExitReason = `M15 TDI Reversal — RSI (${m15Rsi[mi].toFixed(2)}) crossed below MBL (${m15Tdi.middle[mi].toFixed(2)})`; 
-            } else if (m15CciCrossBelowZero) {
-                m15TdiReversalExit = true; 
-                m15ExitReason = `M15 CCI Rescue Exit — CCI (${m15Cci[mi].toFixed(2)}) crossed below 0 (TDI was against trend at entry)`; 
+            if (m15Cci[prevMi] >= 0 && m15Cci[mi] < 0) {
+              m15CciRescueExit = true; 
+              m15ExitReason = `M15 CCI Rescue Exit — CCI (${m15Cci[mi].toFixed(2)}) crossed below 0 (TDI was against trend at entry)`; 
             }
           } else if (openTrade.direction === "SELL") {
-            const m15CrossAboveMbl = (m15Rsi[prevMi] <= m15Tdi.middle[prevMi]) && (m15Rsi[mi] > m15Tdi.middle[mi]);
-            const m15CciCrossAboveZero = openTrade.m15AgainstAtEntry && (m15Cci[prevMi] <= 0) && (m15Cci[mi] > 0);
-
-            if (m15CrossAboveMbl) { 
-                m15TdiReversalExit = true; 
-                m15ExitReason = `M15 TDI Reversal — RSI (${m15Rsi[mi].toFixed(2)}) crossed above MBL (${m15Tdi.middle[mi].toFixed(2)})`; 
-            } else if (m15CciCrossAboveZero) {
-                m15TdiReversalExit = true; 
-                m15ExitReason = `M15 CCI Rescue Exit — CCI (${m15Cci[mi].toFixed(2)}) crossed above 0 (TDI was against trend at entry)`; 
+            if (m15Cci[prevMi] <= 0 && m15Cci[mi] > 0) {
+              m15CciRescueExit = true; 
+              m15ExitReason = `M15 CCI Rescue Exit — CCI (${m15Cci[mi].toFixed(2)}) crossed above 0 (TDI was against trend at entry)`; 
             }
           }
         }
@@ -972,8 +956,8 @@ async function runScanMode() {
 
       // ── 1. Priority Exit Checks ──
       const slBreached = openTrade.direction === "BUY" ? currentPrice <= openTrade.sl : currentPrice >= openTrade.sl;
-      if (m15TdiReversalExit || slBreached) {
-        const reason = m15TdiReversalExit ? m15ExitReason : `Hard SL hit — price ${currentPrice.toFixed(4)} breached SL ${openTrade.sl.toFixed(4)}`;
+      if (m15CciRescueExit || slBreached) {
+        const reason = m15CciRescueExit ? m15ExitReason : `Hard SL hit — price ${currentPrice.toFixed(4)} breached SL ${openTrade.sl.toFixed(4)}`;
         await closeWith("LOSS", reason); continue;
       }
       
@@ -1263,8 +1247,8 @@ async function runScanMode() {
         }
       }
 
-      // Record M15 TDI State for Phase B Trades (Allows Future Phase C Rescues)
-      if (signalTriggered && (entryType === 'PHASE_B' || entryType === 'PHASE_B_NO_PRIOR_A') && m15Rsi[m15i] != null && m15Tdi.middle[m15i] != null) {
+      // Record M15 TDI State for ALL Trades (Arms M15 CCI Rescue)
+      if (signalTriggered && m15Rsi[m15i] != null && m15Tdi.middle[m15i] != null) {
         if (direction === "BUY") m15AgainstAtEntry = m15Rsi[m15i] < m15Tdi.middle[m15i];
         else m15AgainstAtEntry = m15Rsi[m15i] > m15Tdi.middle[m15i];
       }
@@ -1307,7 +1291,7 @@ async function runScanMode() {
     let setupLabel = entryType === 'PHASE_C' ? 'PHASE C (M15 Rescue Add-On)' 
       : (entryType === 'PHASE_B_NO_PRIOR_A' ? 'PHASE B (Phase A window expired unfilled — fallback re-entry)' : `${entryType} (H1 EMA 50, ${PHASE_A_WINDOW_SECONDS/3600}h Phase A window)`);
     
-    let message = `🚨 *${SYMBOL_NAME.toUpperCase()} CONFIRMED SIGNAL* 🚨\n\nDirection: ${direction}\nRepo: ${REPO_LABEL}\nTimeframe: M5\n\n📍 Entry: ${entry.toFixed(4)}\n🛑 SL: ${sl.toFixed(4)} ($${slDollars} hard, M15 TDI Dynamic Exit)\n🎯 TP1: ${tp1.toFixed(4)} (BGA Whole)\n🎯 TP2 (Ultimate TP): ${tp2.toFixed(4)} (BGA)\n🎯 TP3: ${tp3.toFixed(4)} (reference)\n\n💰 Stake: $${STAKE_USD} | Hard SL: $${slDollars}\n⚡ Setup: ${setupLabel}\n️ Confluence: ${bgaTag}\n━━━━━━━━━━━━━━━━━━━━\n⏰ Time (UTC): ${timeFormatted}\n\n💡 To close manually: send \`/close win\` or \`/close loss\` in this chat`;
+    let message = `🚨 *${SYMBOL_NAME.toUpperCase()} CONFIRMED SIGNAL* 🚨\n\nDirection: ${direction}\nRepo: ${REPO_LABEL}\nTimeframe: M5\n\n📍 Entry: ${entry.toFixed(4)}\n🛑 SL: ${sl.toFixed(4)} ($${slDollars} hard${m15AgainstAtEntry ? ", M15 CCI Rescue ARMED" : ""})\n🎯 TP1: ${tp1.toFixed(4)} (BGA Whole)\n🎯 TP2 (Ultimate TP): ${tp2.toFixed(4)} (BGA)\n🎯 TP3: ${tp3.toFixed(4)} (reference)\n\n💰 Stake: $${STAKE_USD} | Hard SL: $${slDollars}\n⚡ Setup: ${setupLabel}\n️ Confluence: ${bgaTag}\n━━━━━━━━━━━━━━━━━━━━\n⏰ Time (UTC): ${timeFormatted}\n\n💡 To close manually: send \`/close win\` or \`/close loss\` in this chat`;
     state.lastProcessedEpoch = currentCandleEpoch;
     fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
     
