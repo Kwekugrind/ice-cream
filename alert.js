@@ -514,8 +514,8 @@ function ema(data, period) {
   return result;
 }
 
-// Default MACD (12, 26, 9)
-function calculateMACD(closes, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
+// MACD (2, 50, 1) - Updated Parameters
+function calculateMACD(closes, fastPeriod = 2, slowPeriod = 50, signalPeriod = 1) {
   const fastEma = ema(closes, fastPeriod);
   const slowEma = ema(closes, slowPeriod);
   const macdLine = closes.map((_, i) => {
@@ -764,7 +764,6 @@ async function runScanMode() {
     console.warn(`[${REPO_LABEL}] Warning: Failed to fetch live broker portfolio: ${pErr.message}. Aborting scan to prevent duplicates.`); return;
   }
 
-  // Duplicate check to allow exactly 2 trades (Phase B and Phase C)
   if (allLiveContracts.length > 2) {
     console.error(`🚨 [${REPO_LABEL}] DUPLICATE CONTRACTS DETECTED: Found ${allLiveContracts.length} live contracts on Deriv!`);
     const dupDetails = allLiveContracts.map(c => `• Contract ID: \`${c.contract_id}\` (${c.contract_type}) @ ${c.buy_price || 'N/A'}`).join("\n");
@@ -854,7 +853,6 @@ async function runScanMode() {
     for (const openTrade of openTradesList) {
       await sleep(1500);
       
-      // Self-Healing Corrupted Entry Spot Guard
       if (openTrade.entry && openTrade.entry <= 10 && currentPrice > 50) {
         console.warn(`[${REPO_LABEL}] Auto-repairing corrupted entry spot ($${openTrade.entry}) for contract ${openTrade.contractId} to real price: ${currentPrice}`);
         openTrade.entry = currentPrice;
@@ -945,11 +943,11 @@ async function runScanMode() {
       };
 
       // ── 0. Phase C Recovery Liquidation Hook ──
-      const isPhaseCTradeOpen = openTradesList.some(t => t.entryType === 'PHASE_C' && t.direction === openTrade.direction && !t.result);
-      if (isPhaseCTradeOpen && openTrade.entryType !== 'PHASE_C') {
-        const recoveryTargetProfit = 0.20;
-        if (pnl >= recoveryTargetProfit) {
-          await closeWith("WIN", `Phase C Recovery — Old trade liquidated safely at +$${pnl.toFixed(2)}`);
+      const hasPhaseC = openTradesList.some(t => t.entryType === 'PHASE_C' && t.direction === openTrade.direction && !t.result);
+      if (openTrade.entryType?.startsWith('PHASE_B') && hasPhaseC) {
+        const phaseBTargetProfit = 0.20;
+        if (pnl >= phaseBTargetProfit) {
+          await closeWith("WIN", `Phase C Recovery — Original Phase B liquidated safely at +$${pnl.toFixed(2)}`);
           continue;
         }
       }
@@ -1071,7 +1069,7 @@ async function runScanMode() {
     allowScan = true;
   } else if (allLiveContracts.length === 1 && unresolvedTrades.length === 1) {
     const ot = unresolvedTrades[0];
-    if (ot.m15AgainstAtEntry && !ot.pending) {
+    if ((ot.entryType === 'PHASE_B' || ot.entryType === 'PHASE_B_NO_PRIOR_A') && ot.m15AgainstAtEntry && !ot.pending) {
       allowScan = true;
       phaseCTarget = ot;
     }
@@ -1170,7 +1168,7 @@ async function runScanMode() {
   const stoch = calculateStochastic(candles, 5, 3, 3);
   const rsi = calculateRSI(closes, 14);
   const tdi = calculateBollingerBands(rsi, 34, 1.619);
-  const macd = calculateMACD(closes, 12, 26, 9);
+  const macd = calculateMACD(closes, 2, 50, 1); // Fast: 2, Slow: 50, Signal: 1
 
   const m15Closes = m15Candles.map(c => parseFloat(c.close));
   const m15Ema50 = ema(m15Closes, 50);
