@@ -514,7 +514,7 @@ function ema(data, period) {
   return result;
 }
 
-// MACD (2, 50, 1) - Updated Parameters
+// MACD (2, 50, 1)
 function calculateMACD(closes, fastPeriod = 2, slowPeriod = 50, signalPeriod = 1) {
   const fastEma = ema(closes, fastPeriod);
   const slowEma = ema(closes, slowPeriod);
@@ -848,7 +848,12 @@ async function runScanMode() {
   if (openTradesList.length > 0) {
     let tradeData;
     try { tradeData = await fetchOpenTradeData(); } catch (err) { console.warn(`[${REPO_LABEL}] Failed to fetch open trade data: ${err.message}. Skipping management loop.`); return; }
+    
+    // Safety check for evaluating active candle spikes
+    const currentM5 = tradeData.candles[tradeData.candles.length - 1];
     const currentPrice = tradeData.price;
+    const candleHigh = parseFloat(currentM5.high);
+    const candleLow = parseFloat(currentM5.low);
     
     for (const openTrade of openTradesList) {
       await sleep(1500);
@@ -936,7 +941,6 @@ async function runScanMode() {
         const contractType = openTrade.direction === "BUY" ? "MULTUP" : "MULTDOWN";
         const durationMs = new Date(openTrade.closeTime) - new Date(openTrade.openTime);
         const slDollars = parseFloat((openTrade.brokerSlAmount || STAKE_USD).toFixed(2));
-        const tpDollars = parseFloat((STAKE_USD * RISK_REWARD).toFixed(2));
         const tp1Status = openTrade.tp1Reached ? "✅ TP1 hit" : "❌ TP1 not reached";
         const pnlStr = serverPnl >= 0 ? `+$${serverPnl.toFixed(2)}` : `-$${Math.abs(serverPnl).toFixed(2)}`;
         await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${finalResult}*\n\nDirection: ${openTrade.direction} (${contractType})\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${openTrade.entry.toFixed(4)}\n🏁 Exit: ${currentPrice.toFixed(4)}\n🛑 SL: ${openTrade.sl ? openTrade.sl.toFixed(4) : "N/A"} ($${slDollars} hard)\n🎯 TP1: ${openTrade.tp1.toFixed(4)} (BGA) ${tp1Status}\n\n💵 P&L: ${pnlStr} (Net of comm.)\nReason: ${exitReason}\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${openTrade.openTime}\nClosed: ${openTrade.closeTime}\n` + (openTrade.contractId ? `Contract: \`${openTrade.contractId}\`` : ""));
@@ -994,9 +998,12 @@ async function runScanMode() {
       }
 
       // ── 1. Priority Exit Checks (Software SL & Hard SL) ──
-      const slBreached = openTrade.direction === "BUY" ? currentPrice <= openTrade.sl : currentPrice >= openTrade.sl;
+      const slBreached = openTrade.direction === "BUY" 
+        ? (currentPrice <= openTrade.sl || candleLow <= openTrade.sl) 
+        : (currentPrice >= openTrade.sl || candleHigh >= openTrade.sl);
+        
       if (slBreached) {
-        const reason = openTrade.fractalSl && openTrade.sl === openTrade.fractalSl ? `M5 Fractal Early Exit Hit (${openTrade.sl.toFixed(4)})` : `Hard SL hit — price ${currentPrice.toFixed(4)} breached SL ${openTrade.sl.toFixed(4)}`;
+        const reason = openTrade.fractalSl && openTrade.sl === openTrade.fractalSl ? `M5 Fractal Early Exit Hit (${openTrade.sl.toFixed(4)})` : `Hard SL hit — price breached SL ${openTrade.sl.toFixed(4)}`;
         await closeWith("LOSS", reason); continue;
       }
       
@@ -1005,8 +1012,11 @@ async function runScanMode() {
       }
       
       // ── 2. Decoupled Ultimate TP ($6.00 Software Target) ──
-      const tp2Hit = openTrade.direction === "BUY" ? (openTrade.tp2 > 0 && currentPrice >= openTrade.tp2) : (openTrade.tp2 > 0 && currentPrice <= openTrade.tp2);
+      const tp2Hit = openTrade.direction === "BUY" 
+        ? (openTrade.tp2 > 0 && (currentPrice >= openTrade.tp2 || candleHigh >= openTrade.tp2)) 
+        : (openTrade.tp2 > 0 && (currentPrice <= openTrade.tp2 || candleLow <= openTrade.tp2));
       const pnlHitTp2 = pnl >= SOFTWARE_TP_USD;
+      
       if (tp2Hit || pnlHitTp2) {
         await closeWith("WIN", `Ultimate Target hit — price reached BGA level ${openTrade.tp2.toFixed(4)} or PnL hit $${SOFTWARE_TP_USD.toFixed(2)}`); continue;
       }
@@ -1026,7 +1036,9 @@ async function runScanMode() {
       
       // ── 4. TP1 Trigger: Price Level Hit OR Target Profit Hit ($3.00) ──> Arms Fixed Distance Trail ──
       const isBuy = openTrade.direction === "BUY";
-      const priceHitTp1 = openTrade.tp1 > 0 && (isBuy ? currentPrice >= openTrade.tp1 : currentPrice <= openTrade.tp1);
+      const priceHitTp1 = openTrade.tp1 > 0 && (isBuy 
+        ? (currentPrice >= openTrade.tp1 || candleHigh >= openTrade.tp1) 
+        : (currentPrice <= openTrade.tp1 || candleLow <= openTrade.tp1));
       const pnlHitTp1 = pnl >= TARGET_TP1_USD;
       
       if (!openTrade.tp1Reached && (priceHitTp1 || pnlHitTp1)) {
@@ -1037,8 +1049,7 @@ async function runScanMode() {
       
       if (openTrade.tp1Reached) {
         // Intra-Candle Peak Tracker
-        const currentM5 = tradeData.candles[tradeData.candles.length - 1];
-        const bestPriceInCandle = isBuy ? parseFloat(currentM5.high) : parseFloat(currentM5.low);
+        const bestPriceInCandle = isBuy ? candleHigh : candleLow;
         const maxPnlInCandle = calcUnrealizedPnL(openTrade, bestPriceInCandle);
         
         const currentHighestPnl = Math.max(pnl, maxPnlInCandle);
@@ -1168,7 +1179,7 @@ async function runScanMode() {
   const stoch = calculateStochastic(candles, 5, 3, 3);
   const rsi = calculateRSI(closes, 14);
   const tdi = calculateBollingerBands(rsi, 34, 1.619);
-  const macd = calculateMACD(closes, 2, 50, 1); // Fast: 2, Slow: 50, Signal: 1
+  const macd = calculateMACD(closes, 2, 50, 1);
 
   const m15Closes = m15Candles.map(c => parseFloat(c.close));
   const m15Ema50 = ema(m15Closes, 50);
@@ -1237,6 +1248,14 @@ async function runScanMode() {
         const macdCrossBuyB = macd.macd[si-1] <= 0 && macd.macd[si] > 0;
         const macdCrossSellB = macd.macd[si-1] >= 0 && macd.macd[si] < 0;
 
+        const stochValidBuy = stoch.k[si] > 20;
+        const tdiValidBuy = rsi[si] > 50 || rsi[si] > tdi.middle[si];
+        const macdValidBuy = macd.macd[si] > 0;
+
+        const stochValidSell = stoch.k[si] < 80;
+        const tdiValidSell = rsi[si] < 50 || rsi[si] < tdi.middle[si];
+        const macdValidSell = macd.macd[si] < 0;
+
         if (state.waitingFor === "BUY") {
           if (stoch.k[si] < 20) state.phaseBStochFreshSeen = false;
           if (rsi[si] < 50 && rsi[si] < tdi.middle[si]) state.phaseBTdiFreshSeen = false;
@@ -1256,7 +1275,9 @@ async function runScanMode() {
           }
 
           if (state.phaseBPending === "BUY" && !state.phaseBStochFreshSeen && !state.phaseBTdiFreshSeen && !state.phaseBMacdFreshSeen) { state.phaseBPending = null; }
-          if (state.phaseBPending === "BUY" && state.phaseBStochFreshSeen && state.phaseBTdiFreshSeen && state.phaseBMacdFreshSeen) {
+          
+          // LIVE VALIDATION: Must be fresh AND currently valid
+          if (state.phaseBPending === "BUY" && state.phaseBStochFreshSeen && state.phaseBTdiFreshSeen && state.phaseBMacdFreshSeen && stochValidBuy && tdiValidBuy && macdValidBuy) {
             signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A'; state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBTdiFreshSeen = false; state.phaseBMacdFreshSeen = false;
           }
         } else if (state.waitingFor === "SELL") {
@@ -1278,7 +1299,9 @@ async function runScanMode() {
           }
 
           if (state.phaseBPending === "SELL" && !state.phaseBStochFreshSeen && !state.phaseBTdiFreshSeen && !state.phaseBMacdFreshSeen) { state.phaseBPending = null; }
-          if (state.phaseBPending === "SELL" && state.phaseBStochFreshSeen && state.phaseBTdiFreshSeen && state.phaseBMacdFreshSeen) {
+          
+          // LIVE VALIDATION: Must be fresh AND currently valid
+          if (state.phaseBPending === "SELL" && state.phaseBStochFreshSeen && state.phaseBTdiFreshSeen && state.phaseBMacdFreshSeen && stochValidSell && tdiValidSell && macdValidSell) {
             signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A'; state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBTdiFreshSeen = false; state.phaseBMacdFreshSeen = false;
           }
         }
