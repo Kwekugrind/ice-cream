@@ -1,7 +1,7 @@
 {
   "waitingFor": "BUY",
   "setupEpoch": null,
-  "lastProcessedEpoch": 1787586000,
+  "lastProcessedEpoch": 1787586300,
   "lastTgUpdateId": 803403917,
   "h1TrendEpoch": null,
   "phaseATriggeredEpoch": null,
@@ -10,9 +10,9 @@
   "h1TrendCycleEpoch": 1787353200,
   "phaseADeadlineEpoch": 1787362200,
   "phaseAWindowExpired": true,
-  "phaseBPending": "BUY",
-  "phaseBStochFreshSeen": true,
-  "phaseBTdiFreshSeen": true,
+  "phaseBPending": null,
+  "phaseBStochFreshSeen": false,
+  "phaseBTdiFreshSeen": false,
   "phaseBMacdFreshSeen": false,
   "phaseBCciFreshSeen": false
 }
