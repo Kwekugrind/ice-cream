@@ -55,7 +55,7 @@ const DEBUG = process.env.DEBUG === "true";
 function dbg(...a) { if (DEBUG) console.log("[DBG]", ...a); }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-// Universal Symbol Extractor (Handles API v2/v3 schema differences)
+// Universal Symbol Extractor
 function getContractSymbol(c) {
   if (!c) return "";
   return c.underlying_symbol || c.symbol || (c.shortcode ? c.shortcode.split("_")[1] : "");
@@ -179,8 +179,8 @@ async function executeManualClose(result, reason) {
     const contractType = trade.direction === "BUY" ? "MULTUP" : "MULTDOWN";
     const durationMs = new Date(trade.closeTime) - new Date(trade.openTime);
     const slDollars = parseFloat((trade.brokerSlAmount || STAKE_USD).toFixed(2));
-    const tp1Status = trade.tp1Reached ? "✅ TP1 hit" : "❌ TP1 not reached";
     const pnlStr = serverPnl >= 0 ? `+$${serverPnl.toFixed(2)}` : `-$${Math.abs(serverPnl).toFixed(2)}`;
+    const tp1Status = trade.tp1Reached ? "✅ TP1 hit" : "❌ TP1 not reached";
     await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${finalResult}*\n\nDirection: ${trade.direction} (${contractType})\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${trade.entry.toFixed(4)}\n🏁 Exit: ${currentPrice.toFixed(4)}\n🛑 SL: ${trade.sl ? trade.sl.toFixed(4) : "N/A"} ($${slDollars} hard)\n🎯 TP1: ${trade.tp1.toFixed(4)} (BGA) ${tp1Status}\n\n💵 P&L: ${pnlStr} (Net of comm.)\nReason: ${reason}\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${trade.openTime}\nClosed: ${trade.closeTime}\n` + (trade.contractId ? `Contract: \`${trade.contractId}\`` : ""));
   }
 }
@@ -190,7 +190,7 @@ let state = {
   phaseATriggeredEpoch: null, activeEntryType: null, phaseATaken: false, h1TrendCycleEpoch: null,
   phaseADeadlineEpoch: null, phaseAWindowExpired: false,
   phaseBPending: null,
-  phaseBStochFreshSeen: false, phaseBTdiFreshSeen: false, phaseBMacdFreshSeen: false
+  phaseBStochFreshSeen: false, phaseBMacdFreshSeen: false
 };
 try {
   const s = JSON.parse(fs.readFileSync("state.json"));
@@ -207,7 +207,6 @@ try {
     phaseAWindowExpired: s.phaseAWindowExpired ?? false,
     phaseBPending: s.phaseBPending ?? null,
     phaseBStochFreshSeen: s.phaseBStochFreshSeen ?? false,
-    phaseBTdiFreshSeen: s.phaseBTdiFreshSeen ?? false,
     phaseBMacdFreshSeen: s.phaseBMacdFreshSeen ?? false
   };
 } catch {}
@@ -518,7 +517,7 @@ function ema(data, period) {
   return result;
 }
 
-// MACD (2, 50, 1)
+// MACD (2, 50, 1) - Updated Parameters
 function calculateMACD(closes, fastPeriod = 2, slowPeriod = 50, signalPeriod = 1) {
   const fastEma = ema(closes, fastPeriod);
   const slowEma = ema(closes, slowPeriod);
@@ -565,63 +564,6 @@ function calculateStochastic(candles, kPeriod = 5, dPeriod = 3, slowing = 3) {
   const smoothedD = sma(validK, dPeriod);
   const dLine = smoothedD.map((val, idx) => kLine[idx] === null ? null : val);
   return { k: kLine, d: dLine };
-}
-
-function calculateCCI(candles, period = 34) {
-  const tp = candles.map(c => (parseFloat(c.high) + parseFloat(c.low) + parseFloat(c.close)) / 3);
-  const smaTp = sma(tp, period);
-  return tp.map((_, i) => {
-    if (i < period - 1 || smaTp[i] == null) return null;
-    const sliceTp = tp.slice(i - period + 1, i + 1);
-    const meanTp = smaTp[i];
-    const meanDev = sliceTp.reduce((sum, val) => sum + Math.abs(val - meanTp), 0) / period;
-    if (meanDev === 0) return 0;
-    return (tp[i] - meanTp) / (0.015 * meanDev);
-  });
-}
-
-function calculateRSI(data, period = 14) {
-  const result = new Array(data.length).fill(null);
-  if (data.length <= period) return result;
-  let gainSum = 0, lossSum = 0;
-  for (let i = 1; i <= period; i++) {
-    const diff = data[i] - data[i-1];
-    if (diff >= 0) gainSum += diff;
-    else lossSum -= diff;
-  }
-  let avgGain = gainSum / period;
-  let avgLoss = lossSum / period;
-  let rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-  result[period] = 100 - (100 / (1 + rs));
-  for (let i = period + 1; i < data.length; i++) {
-    const diff = data[i] - data[i-1];
-    const gain = diff >= 0 ? diff : 0;
-    const loss = diff >= 0 ? 0 : -diff;
-    avgGain = ((avgGain * (period - 1)) + gain) / period;
-    avgLoss = ((avgLoss * (period - 1)) + loss) / period;
-    rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-    result[i] = 100 - (100 / (1 + rs));
-  }
-  return result;
-}
-
-function calculateBollingerBands(data, period = 34, deviation = 1.619) {
-  const middle = sma(data, period);
-  const upper = [];
-  const lower = [];
-  for (let i = 0; i < data.length; i++) {
-    if (i < period - 1 || middle[i] == null || data[i] == null) {
-      upper.push(null); lower.push(null); continue;
-    }
-    const slice = data.slice(i - period + 1, i + 1);
-    if (slice.some(val => val == null)) { upper.push(null); lower.push(null); continue; }
-    const mean = middle[i];
-    const variance = slice.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / period;
-    const stdev = Math.sqrt(variance);
-    upper.push(mean + (stdev * deviation));
-    lower.push(mean - (stdev * deviation));
-  }
-  return { upper, middle, lower };
 }
 
 // ── Search Candles for Pre-Entry Bill Williams Fractal ──
@@ -853,6 +795,7 @@ async function runScanMode() {
   if (openTradesList.length > 0) {
     let tradeData;
     try { tradeData = await fetchOpenTradeData(); } catch (err) { console.warn(`[${REPO_LABEL}] Failed to fetch open trade data: ${err.message}. Skipping management loop.`); return; }
+    
     const currentPrice = tradeData.price;
     const currentM5 = tradeData.candles[tradeData.candles.length - 1];
     const candleHigh = parseFloat(currentM5.high);
@@ -968,6 +911,7 @@ async function runScanMode() {
         
         const currentIndex = c.length - 2; 
         
+        // Loop chronologically to catch the first fractal that forms after the trade opened
         for (let k = 2; k <= currentIndex - 2; k++) {
           if (c[k].epoch > tradeEntryEpoch) {
             if (openTrade.direction === "BUY") {
@@ -1006,12 +950,28 @@ async function runScanMode() {
       }
 
       // ── 1. Priority Exit Checks (Software SL & Hard SL) ──
-      const slBreached = openTrade.direction === "BUY" 
-        ? (currentPrice <= openTrade.sl || candleLow <= openTrade.sl) 
-        : (currentPrice >= openTrade.sl || candleHigh >= openTrade.sl);
+      const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction);
+      const hardSlBreached = openTrade.direction === "BUY" 
+        ? (currentPrice <= hardStopPrice || candleLow <= hardStopPrice) 
+        : (currentPrice >= hardStopPrice || candleHigh >= hardStopPrice);
         
-      if (slBreached) {
-        const reason = openTrade.fractalSl && openTrade.sl === openTrade.fractalSl ? `M30 Fractal Early Exit Hit (${openTrade.sl.toFixed(4)})` : `Hard SL hit — price breached SL ${openTrade.sl.toFixed(4)}`;
+      let fractalBreached = false;
+      let closedM30Price = null;
+
+      if (openTrade.fractalSl && tradeData.m30Candles && tradeData.m30Candles.length >= 2) {
+        const lastClosedM30 = tradeData.m30Candles[tradeData.m30Candles.length - 2];
+        closedM30Price = parseFloat(lastClosedM30.close);
+        if (openTrade.direction === "BUY" && closedM30Price < openTrade.fractalSl) {
+          fractalBreached = true;
+        } else if (openTrade.direction === "SELL" && closedM30Price > openTrade.fractalSl) {
+          fractalBreached = true;
+        }
+      }
+
+      if (hardSlBreached || fractalBreached) {
+        const reason = fractalBreached 
+          ? `M30 Fractal Early Exit Hit (M30 Closed ${openTrade.direction === "BUY" ? "below" : "above"} ${openTrade.fractalSl.toFixed(4)})` 
+          : `Hard SL hit — price breached SL ${hardStopPrice.toFixed(4)}`;
         await closeWith("LOSS", reason); continue;
       }
       
@@ -1066,7 +1026,7 @@ async function runScanMode() {
           fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
         }
         
-        // Fixed Trailing Distance: $1.25
+        // Fixed Trailing Distance: Dynamic 50% of TP1 (e.g. $1.25)
         const trailingDistance = TARGET_TP1_USD * 0.50;
         const lockLevel = openTrade.peakProfit - trailingDistance;
         
@@ -1150,14 +1110,14 @@ async function runScanMode() {
     state.waitingFor = h1FreshBuy ? "BUY" : "SELL";
     state.phaseATaken = false; state.phaseAWindowExpired = false;
     state.phaseADeadlineEpoch = h1NewCycleEpoch + PHASE_A_WINDOW_SECONDS;
-    state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBTdiFreshSeen = false; state.phaseBMacdFreshSeen = false;
+    state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBMacdFreshSeen = false;
     dbg(`STEP 1: New H1 trend cycle detected at epoch ${h1NewCycleEpoch} (${state.waitingFor}). Phase A window open until ${new Date(state.phaseADeadlineEpoch * 1000).toISOString()}.`);
   }
 
   // ── STEP 2: Trend invalidation ──
   if (h1TrendDir && state.waitingFor && h1TrendDir !== state.waitingFor) {
     dbg("STEP 2: H1 trend flipped against waitingFor. Resetting state.");
-    state.waitingFor = null; state.phaseATaken = false; state.h1TrendCycleEpoch = null; state.phaseADeadlineEpoch = null; state.phaseAWindowExpired = false; state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBTdiFreshSeen = false; state.phaseBMacdFreshSeen = false;
+    state.waitingFor = null; state.phaseATaken = false; state.h1TrendCycleEpoch = null; state.phaseADeadlineEpoch = null; state.phaseAWindowExpired = false; state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBMacdFreshSeen = false;
   }
 
   // ── STEP 3: Cold-boot adoption ──
@@ -1187,48 +1147,30 @@ async function runScanMode() {
   // Indicator Calculations for Phase A & B & C (M5 & M15)
   const si = candles.length - 2;
   const stoch = calculateStochastic(candles, 5, 3, 3);
-  const rsi = calculateRSI(closes, 14);
-  const tdi = calculateBollingerBands(rsi, 34, 1.619);
   const macd = calculateMACD(closes, 2, 50, 1);
 
   const m15Closes = m15Candles.map(c => parseFloat(c.close));
-  const m15Ema50 = ema(m15Closes, 50);
   const m15Rsi = calculateRSI(m15Closes, 14);
   const m15Tdi = calculateBollingerBands(m15Rsi, 34, 1.619);
   const m15i = m15Candles.length - 2;
 
   let signalTriggered = false, direction = "", entry, sl, risk, tp1, tp2, tp3; let entryType = null; let m15AgainstAtEntry = false;
 
-  if (si >= 1 && stoch.k[si] != null && stoch.d[si] != null && stoch.k[si-1] != null && stoch.d[si-1] != null &&
-      rsi[si] != null && rsi[si-1] != null &&
-      tdi.middle[si] != null && tdi.middle[si-1] != null && macd.macd[si] != null && macd.macd[si-1] != null) {
+  if (si >= 1 && stoch.k[si] != null && stoch.d[si] != null && stoch.k[si-1] != null && stoch.d[si-1] != null && macd.macd[si] != null && macd.macd[si-1] != null) {
       
     if (phaseCTarget) {
-      // ==== PHASE C EVALUATION ENGINE (Decoupled Freshness) ====
+      // ==== PHASE C EVALUATION ENGINE ====
       const currentPnl = calcUnrealizedPnL(phaseCTarget, closes[i]);
       if (currentPnl < 0) {
-        const currentM15Ema50 = m15Ema50[m15i];
-        if (currentM15Ema50 != null) {
-          // Re-calculate M5 CCI just for Phase C
-          const cci = calculateCCI(candles, 34);
-          if (phaseCTarget.direction === "BUY") {
-            const priceAboveEma = closes[si] > currentM15Ema50;
-            const cciAboveZero = cci[si] > 0;
-            const freshEmaCross = closes[si-1] <= currentM15Ema50 && priceAboveEma;
-            const freshCciCross = cci[si-1] <= 0 && cciAboveZero;
-
-            if (priceAboveEma && cciAboveZero && (freshEmaCross || freshCciCross)) {
-              signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = 'PHASE_C';
-            }
-          } else if (phaseCTarget.direction === "SELL") {
-            const priceBelowEma = closes[si] < currentM15Ema50;
-            const cciBelowZero = cci[si] < 0;
-            const freshEmaCross = closes[si-1] >= currentM15Ema50 && priceBelowEma;
-            const freshCciCross = cci[si-1] >= 0 && cciBelowZero;
-
-            if (priceBelowEma && cciBelowZero && (freshEmaCross || freshCciCross)) {
-              signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = 'PHASE_C';
-            }
+        if (phaseCTarget.direction === "BUY") {
+          const stochCrossBuyPhaseC = stoch.k[si-1] <= 20 && stoch.k[si] > 20;
+          if (stochCrossBuyPhaseC) {
+            signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = 'PHASE_C';
+          }
+        } else if (phaseCTarget.direction === "SELL") {
+          const stochCrossSellPhaseC = stoch.k[si-1] >= 80 && stoch.k[si] < 80;
+          if (stochCrossSellPhaseC) {
+            signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = 'PHASE_C';
           }
         }
       }
@@ -1247,36 +1189,56 @@ async function runScanMode() {
         }
       }
 
-      // --- PHASE B (3-Indicator Confluence: Stoch 20/80, TDI 50/MBL, MACD 0) ---
+      // --- PHASE B (Stoch 20/80 + MACD 0 Cross) ---
       if (!signalTriggered && (state.phaseATaken || state.phaseAWindowExpired)) {
         const stochCrossBuyB = (stoch.k[si-1] <= 20) && (stoch.k[si] > 20);
         const stochCrossSellB = (stoch.k[si-1] >= 80) && (stoch.k[si] < 80);
-        
-        const tdiCrossBuyB = (rsi[si-1] <= 50 && rsi[si] > 50) || (rsi[si-1] <= tdi.middle[si-1] && rsi[si] > tdi.middle[si]);
-        const tdiCrossSellB = (rsi[si-1] >= 50 && rsi[si] < 50) || (rsi[si-1] >= tdi.middle[si-1] && rsi[si] < tdi.middle[si]);
-        
         const macdCrossBuyB = macd.macd[si-1] <= 0 && macd.macd[si] > 0;
         const macdCrossSellB = macd.macd[si-1] >= 0 && macd.macd[si] < 0;
 
         const stochValidBuy = stoch.k[si] > 20;
-        const tdiValidBuy = rsi[si] > 50 || rsi[si] > tdi.middle[si];
         const macdValidBuy = macd.macd[si] > 0;
 
         const stochValidSell = stoch.k[si] < 80;
-        const tdiValidSell = rsi[si] < 50 || rsi[si] < tdi.middle[si];
         const macdValidSell = macd.macd[si] < 0;
 
         if (state.waitingFor === "BUY") {
-          const anyFreshCross = stochCrossBuyB || tdiCrossBuyB || macdCrossBuyB;
-          if (anyFreshCross && stochValidBuy && tdiValidBuy && macdValidBuy) {
-            signalTriggered = true; direction = "BUY"; entry = closes[i]; 
-            entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A';
+          if (stoch.k[si] < 20) state.phaseBStochFreshSeen = false;
+          if (macd.macd[si] < 0) state.phaseBMacdFreshSeen = false;
+
+          if (!state.phaseBPending) {
+            if (stochCrossBuyB || macdCrossBuyB) {
+              state.phaseBPending = "BUY";
+              if (stochCrossBuyB) state.phaseBStochFreshSeen = true;
+              if (macdCrossBuyB) state.phaseBMacdFreshSeen = true;
+            }
+          } else {
+            if (stochCrossBuyB) state.phaseBStochFreshSeen = true;
+            if (macdCrossBuyB) state.phaseBMacdFreshSeen = true;
+          }
+
+          if (state.phaseBPending === "BUY" && !state.phaseBStochFreshSeen && !state.phaseBMacdFreshSeen) { state.phaseBPending = null; }
+          if (state.phaseBPending === "BUY" && state.phaseBStochFreshSeen && state.phaseBMacdFreshSeen && stochValidBuy && macdValidBuy) {
+            signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A'; state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBMacdFreshSeen = false;
           }
         } else if (state.waitingFor === "SELL") {
-          const anyFreshCross = stochCrossSellB || tdiCrossSellB || macdCrossSellB;
-          if (anyFreshCross && stochValidSell && tdiValidSell && macdValidSell) {
-            signalTriggered = true; direction = "SELL"; entry = closes[i]; 
-            entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A';
+          if (stoch.k[si] > 80) state.phaseBStochFreshSeen = false;
+          if (macd.macd[si] > 0) state.phaseBMacdFreshSeen = false;
+
+          if (!state.phaseBPending) {
+            if (stochCrossSellB || macdCrossSellB) {
+              state.phaseBPending = "SELL";
+              if (stochCrossSellB) state.phaseBStochFreshSeen = true;
+              if (macdCrossSellB) state.phaseBMacdFreshSeen = true;
+            }
+          } else {
+            if (stochCrossSellB) state.phaseBStochFreshSeen = true;
+            if (macdCrossSellB) state.phaseBMacdFreshSeen = true;
+          }
+
+          if (state.phaseBPending === "SELL" && !state.phaseBStochFreshSeen && !state.phaseBMacdFreshSeen) { state.phaseBPending = null; }
+          if (state.phaseBPending === "SELL" && state.phaseBStochFreshSeen && state.phaseBMacdFreshSeen && stochValidSell && macdValidSell) {
+            signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A'; state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBMacdFreshSeen = false;
           }
         }
       }
