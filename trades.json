@@ -418,8 +418,9 @@
     "fractalSl": 725.36,
     "fractalEpoch": 1787592600,
     "openTime": "2026-08-24 17:15:00",
-    "closeTime": null,
-    "result": null
+    "closeTime": "2026-08-24 18:08:11",
+    "result": "LOSS",
+    "resultSource": "estimated_fallback"
   },
   {
     "id": "1HZ100V-2026-08-24T17:35:00.000Z",
