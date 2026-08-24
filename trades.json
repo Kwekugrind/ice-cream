@@ -309,5 +309,32 @@
     "closeTime": "2026-08-24 04:38:03",
     "result": "LOSS",
     "resultSource": "estimated_fallback"
+  },
+  {
+    "id": "1HZ100V-2026-08-24T06:25:00.000Z",
+    "contractId": 10343931939,
+    "pending": false,
+    "repo": "Ice Cream Machine",
+    "symbol": "1HZ100V",
+    "direction": "BUY",
+    "entry": 716.62,
+    "sl": 707.45,
+    "tp1": 727.5,
+    "tp2": 737.5,
+    "tp3": 740,
+    "h1OpenAtEntry": null,
+    "tp1Reached": false,
+    "breakevenSet": false,
+    "peakProfit": null,
+    "rr": 1.5,
+    "entryType": "PHASE_B_NO_PRIOR_A",
+    "m15AgainstAtEntry": false,
+    "brokerSlAmount": 5,
+    "entryEpoch": 1787552700,
+    "fractalSl": 707.45,
+    "fractalEpoch": null,
+    "openTime": "2026-08-24 06:25:00",
+    "closeTime": null,
+    "result": null
   }
 ]
