@@ -532,6 +532,51 @@ function calculateMACD(closes, fastPeriod = 2, slowPeriod = 50, signalPeriod = 1
   return { macd: macdLine, signal: signalLine, histogram };
 }
 
+// INJECTED: Missing RSI and Bollinger Bands required for M15 TDI (Phase C m15AgainstAtEntry tracker)
+function calculateRSI(data, period = 14) {
+  const result = new Array(data.length).fill(null);
+  if (data.length <= period) return result;
+  let gainSum = 0, lossSum = 0;
+  for (let i = 1; i <= period; i++) {
+    const diff = data[i] - data[i-1];
+    if (diff >= 0) gainSum += diff;
+    else lossSum -= diff;
+  }
+  let avgGain = gainSum / period;
+  let avgLoss = lossSum / period;
+  let rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+  result[period] = 100 - (100 / (1 + rs));
+  for (let i = period + 1; i < data.length; i++) {
+    const diff = data[i] - data[i-1];
+    const gain = diff >= 0 ? diff : 0;
+    const loss = diff >= 0 ? 0 : -diff;
+    avgGain = ((avgGain * (period - 1)) + gain) / period;
+    avgLoss = ((avgLoss * (period - 1)) + loss) / period;
+    rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+    result[i] = 100 - (100 / (1 + rs));
+  }
+  return result;
+}
+
+function calculateBollingerBands(data, period = 34, deviation = 1.619) {
+  const middle = sma(data, period);
+  const upper = [];
+  const lower = [];
+  for (let i = 0; i < data.length; i++) {
+    if (i < period - 1 || middle[i] == null || data[i] == null) {
+      upper.push(null); lower.push(null); continue;
+    }
+    const slice = data.slice(i - period + 1, i + 1);
+    if (slice.some(val => val == null)) { upper.push(null); lower.push(null); continue; }
+    const mean = middle[i];
+    const variance = slice.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / period;
+    const stdev = Math.sqrt(variance);
+    upper.push(mean + (stdev * deviation));
+    lower.push(mean - (stdev * deviation));
+  }
+  return { upper, middle, lower };
+}
+
 function deriveHardStopPrice(entry, direction) {
   const targetLoss = -5.00;
   const requiredRawPnl = targetLoss + COMMISSION_USD;
