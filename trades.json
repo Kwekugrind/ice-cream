@@ -560,7 +560,8 @@
     "fractalTimeframe": "M15",
     "m30FractalUpgraded": false,
     "openTime": "2026-08-25 12:50:00",
-    "closeTime": null,
-    "result": null
+    "closeTime": "2026-08-25 14:53:10",
+    "result": "WIN",
+    "resultSource": "estimated_fallback"
   }
 ]
