@@ -502,8 +502,9 @@
     "fractalSl": 720.57,
     "fractalEpoch": null,
     "openTime": "2026-08-25 06:35:00",
-    "closeTime": null,
-    "result": null
+    "closeTime": "2026-08-25 08:03:08",
+    "result": "WIN",
+    "resultSource": "estimated_fallback"
   },
   {
     "id": "1HZ100V-2026-08-25T07:20:00.000Z",
@@ -518,9 +519,9 @@
     "tp2": 745,
     "tp3": 747.5,
     "h1OpenAtEntry": null,
-    "tp1Reached": false,
-    "breakevenSet": false,
-    "peakProfit": null,
+    "tp1Reached": true,
+    "breakevenSet": true,
+    "peakProfit": 2.61080810866717,
     "rr": 1.5,
     "entryType": "PHASE_C",
     "m15AgainstAtEntry": false,
