@@ -790,7 +790,7 @@ async function runScanMode() {
         contractId: liveContract.contract_id,
         pending: false, repo: REPO_LABEL, symbol: SYMBOL, direction: dir, entry: entryPrice, sl: calculatedSl,
         tp1: 0, tp2: 0, tp3: 0, h1OpenAtEntry: null, tp1Reached: false, breakevenSet: false, peakProfit: null, rr: RISK_REWARD, entryType: 'RECOVERED_LIVE', m15AgainstAtEntry: false, brokerSlAmount: STAKE_USD,
-        entryEpoch: liveStartTime ? Math.floor(liveStartTime / 1000) : Math.floor(Date.now() / 1000), fractalSl: null, fractalEpoch: null,
+        entryEpoch: liveStartTime ? Math.floor(liveStartTime / 1000) : Math.floor(Date.now() / 1000), fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false,
         openTime: liveStartTime ? new Date(liveStartTime).toISOString().replace("T", " ").substring(0, 19) : new Date().toISOString().replace("T", " ").substring(0, 19),
         closeTime: null, result: null
       };
@@ -948,11 +948,10 @@ async function runScanMode() {
         }
       }
 
-      // ── M30 Fractal SL Tracking (One-Time Update if Missing at Entry) ──
-      if (!openTrade.fractalSl && tradeData.m30Candles && tradeData.m30Candles.length >= 5) {
+      // ── M30 Fractal SL Tracking (Upgrade from M15) ──
+      if (!openTrade.m30FractalUpgraded && tradeData.m30Candles && tradeData.m30Candles.length >= 5) {
         const c = tradeData.m30Candles;
         const tradeEntryEpoch = openTrade.entryEpoch || Math.floor(new Date(openTrade.openTime).getTime() / 1000);
-        const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction);
         
         const currentIndex = c.length - 2; 
         
@@ -966,12 +965,16 @@ async function runScanMode() {
               );
               const fractalVal = parseFloat(c[k].low);
               
-              if (isBottom && fractalVal < openTrade.entry && fractalVal > hardStopPrice) {
-                openTrade.fractalSl = fractalVal;
-                openTrade.sl = fractalVal; 
-                openTrade.fractalEpoch = c[k].epoch;
-                fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-                await sendTelegram(`🔎 *${REPO_LABEL}* — New M30 Bottom Fractal Formed\n\nTrade: ${openTrade.direction}\nInitial SL Updated to M30 Fractal: ${openTrade.sl.toFixed(4)}`);
+              if (isBottom) {
+                openTrade.m30FractalUpgraded = true; // Mark that we found the first post-entry M30 fractal
+                if (fractalVal > openTrade.sl && fractalVal < openTrade.entry) { // Anti-widening check + sanity check
+                  openTrade.fractalSl = fractalVal;
+                  openTrade.sl = fractalVal; 
+                  openTrade.fractalEpoch = c[k].epoch;
+                  openTrade.fractalTimeframe = 'M30';
+                  fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
+                  await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M30 Structure\n\nTrade: ${openTrade.direction}\nNew M30 Bottom Fractal SL: ${openTrade.sl.toFixed(4)}`);
+                }
                 break; 
               }
             } else if (openTrade.direction === "SELL") {
@@ -981,12 +984,16 @@ async function runScanMode() {
               );
               const fractalVal = parseFloat(c[k].high);
               
-              if (isTop && fractalVal > openTrade.entry && fractalVal < hardStopPrice) {
-                openTrade.fractalSl = fractalVal;
-                openTrade.sl = fractalVal;
-                openTrade.fractalEpoch = c[k].epoch;
-                fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-                await sendTelegram(`🔎 *${REPO_LABEL}* — New M30 Top Fractal Formed\n\nTrade: ${openTrade.direction}\nInitial SL Updated to M30 Fractal: ${openTrade.sl.toFixed(4)}`);
+              if (isTop) {
+                openTrade.m30FractalUpgraded = true; // Mark that we found the first post-entry M30 fractal
+                if (fractalVal < openTrade.sl && fractalVal > openTrade.entry) { // Anti-widening check + sanity check
+                  openTrade.fractalSl = fractalVal;
+                  openTrade.sl = fractalVal;
+                  openTrade.fractalEpoch = c[k].epoch;
+                  openTrade.fractalTimeframe = 'M30';
+                  fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
+                  await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M30 Structure\n\nTrade: ${openTrade.direction}\nNew M30 Top Fractal SL: ${openTrade.sl.toFixed(4)}`);
+                }
                 break; 
               }
             }
@@ -1001,21 +1008,30 @@ async function runScanMode() {
         : (currentPrice >= hardStopPrice || candleHigh >= hardStopPrice);
         
       let fractalBreached = false;
-      let closedM30Price = null;
+      let closedCandlePrice = null;
+      let evalTimeframe = openTrade.fractalTimeframe;
 
-      if (openTrade.fractalSl && tradeData.m30Candles && tradeData.m30Candles.length >= 2) {
-        const lastClosedM30 = tradeData.m30Candles[tradeData.m30Candles.length - 2];
-        closedM30Price = parseFloat(lastClosedM30.close);
-        if (openTrade.direction === "BUY" && closedM30Price < openTrade.fractalSl) {
-          fractalBreached = true;
-        } else if (openTrade.direction === "SELL" && closedM30Price > openTrade.fractalSl) {
-          fractalBreached = true;
+      if (openTrade.fractalSl && evalTimeframe) {
+        if (evalTimeframe === 'M30' && tradeData.m30Candles && tradeData.m30Candles.length >= 2) {
+          const lastClosedM30 = tradeData.m30Candles[tradeData.m30Candles.length - 2];
+          closedCandlePrice = parseFloat(lastClosedM30.close);
+        } else if (evalTimeframe === 'M15' && tradeData.m15Candles && tradeData.m15Candles.length >= 2) {
+          const lastClosedM15 = tradeData.m15Candles[tradeData.m15Candles.length - 2];
+          closedCandlePrice = parseFloat(lastClosedM15.close);
+        }
+
+        if (closedCandlePrice !== null) {
+          if (openTrade.direction === "BUY" && closedCandlePrice < openTrade.fractalSl) {
+            fractalBreached = true;
+          } else if (openTrade.direction === "SELL" && closedCandlePrice > openTrade.fractalSl) {
+            fractalBreached = true;
+          }
         }
       }
 
       if (hardSlBreached || fractalBreached) {
         const reason = fractalBreached 
-          ? `M30 Fractal Early Exit Hit (M30 Closed ${openTrade.direction === "BUY" ? "below" : "above"} ${openTrade.fractalSl.toFixed(4)})` 
+          ? `${evalTimeframe} Fractal Early Exit Hit (${evalTimeframe} Closed ${openTrade.direction === "BUY" ? "below" : "above"} ${openTrade.fractalSl.toFixed(4)})` 
           : `Hard SL hit — price breached SL ${hardStopPrice.toFixed(4)}`;
         await closeWith("LOSS", reason); continue;
       }
@@ -1320,8 +1336,8 @@ async function runScanMode() {
       state.lastProcessedEpoch = currentCandleEpoch; fs.writeFileSync("state.json", JSON.stringify(state, null, 2)); return;
     }
 
-    // Capture initial fractal on M30 for Software SL
-    let initialFractal = findRecentFractal(m30Candles, m30Candles.length - 2, direction);
+    // Capture initial fractal on M15 for Software SL
+    let initialFractal = findRecentFractal(m15Candles, m15Candles.length - 2, direction);
     
     const slDollars = parseFloat(STAKE_USD.toFixed(2));
     const hardStopPrice = deriveHardStopPrice(entry, direction);
@@ -1342,6 +1358,7 @@ async function runScanMode() {
       }
     }
     
+    let fractalTimeframe = initialFractal ? 'M15' : null;
     risk = Math.abs(entry - sl);
     const slDistance = risk;
     const bgaTps = await calculateBgaTakeProfits(entry, direction, slDistance, d1Candles);
@@ -1352,13 +1369,13 @@ async function runScanMode() {
     let setupLabel = entryType === 'PHASE_C' ? 'PHASE C (M15 Rescue Add-On)' 
       : (entryType === 'PHASE_B_NO_PRIOR_A' ? 'PHASE B (Phase A window expired unfilled — fallback re-entry)' : `${entryType} (H1 EMA 50, ${PHASE_A_WINDOW_SECONDS/3600}h Phase A window)`);
     
-    let message = `🚨 *${SYMBOL_NAME.toUpperCase()} CONFIRMED SIGNAL* 🚨\n\nDirection: ${direction}\nRepo: ${REPO_LABEL}\nTimeframe: M5\n\n📍 Entry: ${entry.toFixed(4)}\n🛑 Initial SL: ${sl.toFixed(4)} (${initialFractal ? "M30 Fractal" : "Hard Stop"})\n🎯 TP1: ${tp1.toFixed(4)} (BGA Whole)\n🎯 TP2 (Ultimate TP): ${tp2.toFixed(4)} (BGA)\n🎯 TP3: ${tp3.toFixed(4)} (reference)\n\n💰 Stake: $${STAKE_USD}\n⚡ Setup: ${setupLabel}\n️ Confluence: ${bgaTag}\n━━━━━━━━━━━━━━━━━━━━\n⏰ Time (UTC): ${timeFormatted}\n\n💡 To close manually: send \`/close win\` or \`/close loss\` in this chat`;
+    let message = `🚨 *${SYMBOL_NAME.toUpperCase()} CONFIRMED SIGNAL* 🚨\n\nDirection: ${direction}\nRepo: ${REPO_LABEL}\nTimeframe: M5\n\n📍 Entry: ${entry.toFixed(4)}\n🛑 Initial SL: ${sl.toFixed(4)} (${initialFractal ? "M15 Fractal" : "Hard Stop"})\n🎯 TP1: ${tp1.toFixed(4)} (BGA Whole)\n🎯 TP2 (Ultimate TP): ${tp2.toFixed(4)} (BGA)\n🎯 TP3: ${tp3.toFixed(4)} (reference)\n\n💰 Stake: $${STAKE_USD}\n⚡ Setup: ${setupLabel}\n️ Confluence: ${bgaTag}\n━━━━━━━━━━━━━━━━━━━━\n⏰ Time (UTC): ${timeFormatted}\n\n💡 To close manually: send \`/close win\` or \`/close loss\` in this chat`;
     state.lastProcessedEpoch = currentCandleEpoch;
     fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
     
     const pendingTradeRecord = {
       id: `${SYMBOL}-${isoTime}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, tp1, tp2, tp3, h1OpenAtEntry: null, tp1Reached: false, breakevenSet: false, peakProfit: null, rr: RISK_REWARD, entryType, m15AgainstAtEntry, brokerSlAmount: STAKE_USD, 
-      entryEpoch: currentCandleEpoch, fractalSl: initialFractal, fractalEpoch: null, openTime: timeFormatted, closeTime: null, result: null
+      entryEpoch: currentCandleEpoch, fractalSl: initialFractal, fractalEpoch: null, fractalTimeframe, m30FractalUpgraded: false, openTime: timeFormatted, closeTime: null, result: null
     };
     trades.push(pendingTradeRecord);
     fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
