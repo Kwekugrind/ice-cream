@@ -29,7 +29,8 @@ const TRADING_SYMBOL = SYMBOL;
 const STAKE_USD = 5;
 const RISK_REWARD = 1.5;
 const TARGET_TP1_USD = 2.50;  // Target ~$2.50 profit for TP1 (arms Fixed trail)
-const SOFTWARE_TP_USD = 5.00; // $5.00 local software take-profit target
+const SOFTWARE_TP_USD = 3.60; // $3.60 local software take-profit target (Updated)
+const SOFTWARE_SL_USD = -3.60; // -$3.60 local software stop-loss target (New)
 const SERVER_TP_USD = 10.00;  // $10.00 flat profit insurance ceiling on broker side
 const BREAKEVEN_ACTIVATE_USD = 2.00; // Move SL to entry once profit hits $2.00
 const CATASTROPHIC_PNL_FLOOR = -5.50; // Server-truth catastrophic loss floor
@@ -667,7 +668,7 @@ function calculateBgaTakeProfits(entry, direction, slDistance, d1Candles) {
   const tp1PriceMove = (requiredRawPnlTp1 / (STAKE_USD * MULTIPLIER)) * entry;
   const idealTp1Price = direction === "BUY" ? entry + tp1PriceMove : entry - tp1PriceMove;
 
-  // 2. Calculate price cap for $5.00 Ultimate TP ceiling
+  // 2. Calculate price cap for new Ultimate TP ceiling
   const requiredRawPnlTp2 = SOFTWARE_TP_USD + COMMISSION_USD;
   const tp2PriceMove = (requiredRawPnlTp2 / (STAKE_USD * MULTIPLIER)) * entry;
   const idealTp2Price = direction === "BUY" ? entry + tp2PriceMove : entry - tp2PriceMove;
@@ -1039,8 +1040,12 @@ async function runScanMode() {
       if (usingServerTruthPnl && pnl <= CATASTROPHIC_PNL_FLOOR) {
         await closeWith("LOSS", `Server-truth catastrophic stop — realized pnl $${pnl.toFixed(2)} breached floor $${CATASTROPHIC_PNL_FLOOR.toFixed(2)}`); continue;
       }
+
+      if (pnl <= SOFTWARE_SL_USD) {
+        await closeWith("LOSS", `Software Stop Loss hit — PnL dropped to $${pnl.toFixed(2)} (Limit: $${SOFTWARE_SL_USD.toFixed(2)})`); continue;
+      }
       
-      // ── 2. Decoupled Ultimate TP ($5.00 Software Target) ──
+      // ── 2. Decoupled Ultimate TP ($3.60 Software Target) ──
       const tp2Hit = openTrade.direction === "BUY" 
         ? (openTrade.tp2 > 0 && (currentPrice >= openTrade.tp2 || candleHigh >= openTrade.tp2)) 
         : (openTrade.tp2 > 0 && (currentPrice <= openTrade.tp2 || candleLow <= openTrade.tp2));
@@ -1213,7 +1218,9 @@ async function runScanMode() {
   const m15Closes = m15Candles.map(c => parseFloat(c.close));
   const m15Rsi = calculateRSI(m15Closes, 14);
   const m15Tdi = calculateBollingerBands(m15Rsi, 34, 1.619);
+  const m15Macd = calculateMACD(m15Closes, 2, 50, 1);
   const m15i = m15Candles.length - 2;
+  const liveM15Macd = m15Macd.macd[m15Closes.length - 1]; // Live forming M15 candle
 
   let signalTriggered = false, direction = "", entry, sl, risk, tp1, tp2, tp3; let entryType = null; let m15AgainstAtEntry = false;
 
@@ -1225,13 +1232,19 @@ async function runScanMode() {
       if (currentPnl < 0) {
         if (phaseCTarget.direction === "BUY") {
           const stochCrossBuyPhaseC = stoch.k[si-1] <= 20 && stoch.k[si] > 20;
-          if (stochCrossBuyPhaseC) {
+          const macdValid = liveM15Macd !== null && liveM15Macd >= 0;
+          if (stochCrossBuyPhaseC && macdValid) {
             signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = 'PHASE_C';
+          } else if (stochCrossBuyPhaseC && !macdValid) {
+            dbg(`Phase C BUY blocked: M15 MACD is against trend (${liveM15Macd})`);
           }
         } else if (phaseCTarget.direction === "SELL") {
           const stochCrossSellPhaseC = stoch.k[si-1] >= 80 && stoch.k[si] < 80;
-          if (stochCrossSellPhaseC) {
+          const macdValid = liveM15Macd !== null && liveM15Macd <= 0;
+          if (stochCrossSellPhaseC && macdValid) {
             signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = 'PHASE_C';
+          } else if (stochCrossSellPhaseC && !macdValid) {
+            dbg(`Phase C SELL blocked: M15 MACD is against trend (${liveM15Macd})`);
           }
         }
       }
