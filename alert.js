@@ -29,8 +29,8 @@ const TRADING_SYMBOL = SYMBOL;
 const STAKE_USD = 5;
 const RISK_REWARD = 1.5;
 const TARGET_TP1_USD = 2.50;  // Target ~$2.50 profit for TP1 (arms Fixed trail)
-const SOFTWARE_TP_USD = 3.60; // $3.60 local software take-profit target (Updated)
-const SOFTWARE_SL_USD = -3.60; // -$3.60 local software stop-loss target (New)
+const SOFTWARE_TP_USD = 3.60; // $3.60 local software take-profit target
+const SOFTWARE_SL_USD = -3.60; // -$3.60 local software stop-loss target
 const SERVER_TP_USD = 10.00;  // $10.00 flat profit insurance ceiling on broker side
 const BREAKEVEN_ACTIVATE_USD = 2.00; // Move SL to entry once profit hits $2.00
 const CATASTROPHIC_PNL_FLOOR = -5.50; // Server-truth catastrophic loss floor
@@ -1276,6 +1276,9 @@ async function runScanMode() {
         const stochValidSell = stoch.k[si] < 80;
         const macdValidSell = macd.macd[si] < 0;
 
+        const m15MacdValidBuy = liveM15Macd !== null && liveM15Macd >= 0;
+        const m15MacdValidSell = liveM15Macd !== null && liveM15Macd <= 0;
+
         if (state.waitingFor === "BUY") {
           if (stoch.k[si] < 20) state.phaseBStochFreshSeen = false;
           if (macd.macd[si] < 0) state.phaseBMacdFreshSeen = false;
@@ -1293,7 +1296,11 @@ async function runScanMode() {
 
           if (state.phaseBPending === "BUY" && !state.phaseBStochFreshSeen && !state.phaseBMacdFreshSeen) { state.phaseBPending = null; }
           if (state.phaseBPending === "BUY" && state.phaseBStochFreshSeen && state.phaseBMacdFreshSeen && stochValidBuy && macdValidBuy) {
-            signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A'; state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBMacdFreshSeen = false;
+            if (m15MacdValidBuy) {
+              signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A'; state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBMacdFreshSeen = false;
+            } else {
+              dbg(`Phase B BUY blocked: M15 MACD is against H1 trend (${liveM15Macd})`);
+            }
           }
         } else if (state.waitingFor === "SELL") {
           if (stoch.k[si] > 80) state.phaseBStochFreshSeen = false;
@@ -1312,7 +1319,11 @@ async function runScanMode() {
 
           if (state.phaseBPending === "SELL" && !state.phaseBStochFreshSeen && !state.phaseBMacdFreshSeen) { state.phaseBPending = null; }
           if (state.phaseBPending === "SELL" && state.phaseBStochFreshSeen && state.phaseBMacdFreshSeen && stochValidSell && macdValidSell) {
-            signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A'; state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBMacdFreshSeen = false;
+            if (m15MacdValidSell) {
+              signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A'; state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBMacdFreshSeen = false;
+            } else {
+              dbg(`Phase B SELL blocked: M15 MACD is against H1 trend (${liveM15Macd})`);
+            }
           }
         }
       }
