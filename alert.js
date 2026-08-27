@@ -190,8 +190,7 @@ let state = {
   waitingFor: null, setupEpoch: null, lastProcessedEpoch: null, lastTgUpdateId: 0, h1TrendEpoch: null, 
   phaseATriggeredEpoch: null, activeEntryType: null, phaseATaken: false, h1TrendCycleEpoch: null,
   phaseADeadlineEpoch: null, phaseAWindowExpired: false,
-  phaseBPending: null,
-  phaseBStochFreshSeen: false, phaseBMacdFreshSeen: false
+  phaseBStochCrossEpoch: null, phaseBStochDir: null
 };
 try {
   const s = JSON.parse(fs.readFileSync("state.json"));
@@ -206,9 +205,8 @@ try {
     h1TrendCycleEpoch: s.h1TrendCycleEpoch ?? null,
     phaseADeadlineEpoch: s.phaseADeadlineEpoch ?? null,
     phaseAWindowExpired: s.phaseAWindowExpired ?? false,
-    phaseBPending: s.phaseBPending ?? null,
-    phaseBStochFreshSeen: s.phaseBStochFreshSeen ?? false,
-    phaseBMacdFreshSeen: s.phaseBMacdFreshSeen ?? false
+    phaseBStochCrossEpoch: s.phaseBStochCrossEpoch ?? null,
+    phaseBStochDir: s.phaseBStochDir ?? null
   };
 } catch {}
 
@@ -518,8 +516,8 @@ function ema(data, period) {
   return result;
 }
 
-// MACD (2, 50, 1) - Updated Parameters
-function calculateMACD(closes, fastPeriod = 2, slowPeriod = 50, signalPeriod = 1) {
+// MACD Variable Parameters
+function calculateMACD(closes, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
   const fastEma = ema(closes, fastPeriod);
   const slowEma = ema(closes, slowPeriod);
   const macdLine = closes.map((_, i) => {
@@ -533,7 +531,6 @@ function calculateMACD(closes, fastPeriod = 2, slowPeriod = 50, signalPeriod = 1
   return { macd: macdLine, signal: signalLine, histogram };
 }
 
-// INJECTED: Missing RSI and Bollinger Bands required for M15 TDI (Phase C m15AgainstAtEntry tracker)
 function calculateRSI(data, period = 14) {
   const result = new Array(data.length).fill(null);
   if (data.length <= period) return result;
@@ -1176,14 +1173,14 @@ async function runScanMode() {
     state.waitingFor = h1FreshBuy ? "BUY" : "SELL";
     state.phaseATaken = false; state.phaseAWindowExpired = false;
     state.phaseADeadlineEpoch = h1NewCycleEpoch + PHASE_A_WINDOW_SECONDS;
-    state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBMacdFreshSeen = false;
+    state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
     dbg(`STEP 1: New H1 trend cycle detected at epoch ${h1NewCycleEpoch} (${state.waitingFor}). Phase A window open until ${new Date(state.phaseADeadlineEpoch * 1000).toISOString()}.`);
   }
 
   // ── STEP 2: Trend invalidation ──
   if (h1TrendDir && state.waitingFor && h1TrendDir !== state.waitingFor) {
     dbg("STEP 2: H1 trend flipped against waitingFor. Resetting state.");
-    state.waitingFor = null; state.phaseATaken = false; state.h1TrendCycleEpoch = null; state.phaseADeadlineEpoch = null; state.phaseAWindowExpired = false; state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBMacdFreshSeen = false;
+    state.waitingFor = null; state.phaseATaken = false; state.h1TrendCycleEpoch = null; state.phaseADeadlineEpoch = null; state.phaseAWindowExpired = false; state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
   }
 
   // ── STEP 3: Cold-boot adoption ──
@@ -1213,38 +1210,43 @@ async function runScanMode() {
   // Indicator Calculations for Phase A & B & C (M5 & M15)
   const si = candles.length - 2;
   const stoch = calculateStochastic(candles, 5, 3, 3);
-  const macd = calculateMACD(closes, 2, 50, 1);
+  
+  // Phase B M5 MACD uses standard 12, 26, 9
+  const macd_m5 = calculateMACD(closes, 12, 26, 9);
 
   const m15Closes = m15Candles.map(c => parseFloat(c.close));
   const m15Rsi = calculateRSI(m15Closes, 14);
   const m15Tdi = calculateBollingerBands(m15Rsi, 34, 1.619);
-  const m15Macd = calculateMACD(m15Closes, 2, 50, 1);
+  
   const m15i = m15Candles.length - 2;
-  const liveM15Macd = m15Macd.macd[m15Closes.length - 1]; // Live forming M15 candle
+  
+  // Phase B and Phase C M15 Trend Filter uses 12, 26, 9
+  const macd_m15 = calculateMACD(m15Closes, 12, 26, 9);
+  const liveM15Macd = macd_m15.macd[m15Closes.length - 1]; // Live forming M15 candle
 
   let signalTriggered = false, direction = "", entry, sl, risk, tp1, tp2, tp3; let entryType = null; let m15AgainstAtEntry = false;
 
-  if (si >= 1 && stoch.k[si] != null && stoch.d[si] != null && stoch.k[si-1] != null && stoch.d[si-1] != null && macd.macd[si] != null && macd.macd[si-1] != null) {
+  if (si >= 1 && stoch.k[si] != null && stoch.d[si] != null && stoch.k[si-1] != null && stoch.d[si-1] != null && macd_m5.macd[si] != null && macd_m5.macd[si-1] != null) {
       
     if (phaseCTarget) {
       // ==== PHASE C EVALUATION ENGINE ====
       const currentPnl = calcUnrealizedPnL(phaseCTarget, closes[i]);
       if (currentPnl < 0) {
         if (phaseCTarget.direction === "BUY") {
-          const stochCrossBuyPhaseC = stoch.k[si-1] <= 20 && stoch.k[si] > 20;
+          const stochCrossBuyPhaseC = (stoch.k[si-1] <= 20 && stoch.d[si-1] <= 20) && (stoch.k[si] > 20 && stoch.d[si] > 20);
           const macdValid = liveM15Macd !== null && liveM15Macd >= 0;
           if (stochCrossBuyPhaseC && macdValid) {
             signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = 'PHASE_C';
           } else if (stochCrossBuyPhaseC && !macdValid) {
-            dbg(`Phase C BUY blocked: M15 MACD is against trend (${liveM15Macd})`);
+            dbg(`Phase C BUY blocked: M15 MACD (12,26,9) is against trend (${liveM15Macd})`);
           }
         } else if (phaseCTarget.direction === "SELL") {
-          const stochCrossSellPhaseC = stoch.k[si-1] >= 80 && stoch.k[si] < 80;
+          const stochCrossSellPhaseC = (stoch.k[si-1] >= 80 && stoch.d[si-1] >= 80) && (stoch.k[si] < 80 && stoch.d[si] < 80);
           const macdValid = liveM15Macd !== null && liveM15Macd <= 0;
           if (stochCrossSellPhaseC && macdValid) {
             signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = 'PHASE_C';
           } else if (stochCrossSellPhaseC && !macdValid) {
-            dbg(`Phase C SELL blocked: M15 MACD is against trend (${liveM15Macd})`);
+            dbg(`Phase C SELL blocked: M15 MACD (12,26,9) is against trend (${liveM15Macd})`);
           }
         }
       }
@@ -1263,66 +1265,59 @@ async function runScanMode() {
         }
       }
 
-      // --- PHASE B (Stoch 20/80 + MACD 0 Cross) ---
+      // --- PHASE B (Stoch 20/80 + MACD 12,26,9 0 Cross) ---
       if (!signalTriggered && (state.phaseATaken || state.phaseAWindowExpired)) {
-        const stochCrossBuyB = (stoch.k[si-1] <= 20) && (stoch.k[si] > 20);
-        const stochCrossSellB = (stoch.k[si-1] >= 80) && (stoch.k[si] < 80);
-        const macdCrossBuyB = macd.macd[si-1] <= 0 && macd.macd[si] > 0;
-        const macdCrossSellB = macd.macd[si-1] >= 0 && macd.macd[si] < 0;
+        const stochCrossBuyB = (stoch.k[si-1] <= 20 && stoch.d[si-1] <= 20) && (stoch.k[si] > 20 && stoch.d[si] > 20);
+        const stochCrossSellB = (stoch.k[si-1] >= 80 && stoch.d[si-1] >= 80) && (stoch.k[si] < 80 && stoch.d[si] < 80);
 
-        const stochValidBuy = stoch.k[si] > 20;
-        const macdValidBuy = macd.macd[si] > 0;
+        const macdBuyB = macd_m5.macd[si] > 0;
+        const macdSellB = macd_m5.macd[si] < 0;
 
-        const stochValidSell = stoch.k[si] < 80;
-        const macdValidSell = macd.macd[si] < 0;
-
-        const m15MacdValidBuy = liveM15Macd !== null && liveM15Macd >= 0;
-        const m15MacdValidSell = liveM15Macd !== null && liveM15Macd <= 0;
+        const m15MacdValidBuyB = liveM15Macd !== null && liveM15Macd >= 0;
+        const m15MacdValidSellB = liveM15Macd !== null && liveM15Macd <= 0;
 
         if (state.waitingFor === "BUY") {
-          if (stoch.k[si] < 20) state.phaseBStochFreshSeen = false;
-          if (macd.macd[si] < 0) state.phaseBMacdFreshSeen = false;
-
-          if (!state.phaseBPending) {
-            if (stochCrossBuyB || macdCrossBuyB) {
-              state.phaseBPending = "BUY";
-              if (stochCrossBuyB) state.phaseBStochFreshSeen = true;
-              if (macdCrossBuyB) state.phaseBMacdFreshSeen = true;
-            }
-          } else {
-            if (stochCrossBuyB) state.phaseBStochFreshSeen = true;
-            if (macdCrossBuyB) state.phaseBMacdFreshSeen = true;
+          // Trigger memory on Stochastic Cross
+          if (stochCrossBuyB) {
+            state.phaseBStochCrossEpoch = currentCandleEpoch;
+            state.phaseBStochDir = "BUY";
+          }
+          
+          // Clear memory if 35-minute window expires (2100 seconds)
+          if (state.phaseBStochCrossEpoch && (currentCandleEpoch - state.phaseBStochCrossEpoch > 2100)) {
+            state.phaseBStochCrossEpoch = null;
+            state.phaseBStochDir = null;
           }
 
-          if (state.phaseBPending === "BUY" && !state.phaseBStochFreshSeen && !state.phaseBMacdFreshSeen) { state.phaseBPending = null; }
-          if (state.phaseBPending === "BUY" && state.phaseBStochFreshSeen && state.phaseBMacdFreshSeen && stochValidBuy && macdValidBuy) {
-            if (m15MacdValidBuy) {
-              signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A'; state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBMacdFreshSeen = false;
+          // Evaluate MACD cross/alignment while memory is active
+          if (state.phaseBStochDir === "BUY" && macdBuyB) {
+            if (m15MacdValidBuyB) {
+              signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A';
+              state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null; // Reset memory after entry
             } else {
-              dbg(`Phase B BUY blocked: M15 MACD is against H1 trend (${liveM15Macd})`);
+              dbg(`Phase B BUY blocked: M15 MACD (12,26,9) is against H1 trend (${liveM15Macd})`);
             }
           }
         } else if (state.waitingFor === "SELL") {
-          if (stoch.k[si] > 80) state.phaseBStochFreshSeen = false;
-          if (macd.macd[si] > 0) state.phaseBMacdFreshSeen = false;
-
-          if (!state.phaseBPending) {
-            if (stochCrossSellB || macdCrossSellB) {
-              state.phaseBPending = "SELL";
-              if (stochCrossSellB) state.phaseBStochFreshSeen = true;
-              if (macdCrossSellB) state.phaseBMacdFreshSeen = true;
-            }
-          } else {
-            if (stochCrossSellB) state.phaseBStochFreshSeen = true;
-            if (macdCrossSellB) state.phaseBMacdFreshSeen = true;
+          // Trigger memory on Stochastic Cross
+          if (stochCrossSellB) {
+            state.phaseBStochCrossEpoch = currentCandleEpoch;
+            state.phaseBStochDir = "SELL";
           }
 
-          if (state.phaseBPending === "SELL" && !state.phaseBStochFreshSeen && !state.phaseBMacdFreshSeen) { state.phaseBPending = null; }
-          if (state.phaseBPending === "SELL" && state.phaseBStochFreshSeen && state.phaseBMacdFreshSeen && stochValidSell && macdValidSell) {
-            if (m15MacdValidSell) {
-              signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A'; state.phaseBPending = null; state.phaseBStochFreshSeen = false; state.phaseBMacdFreshSeen = false;
+          // Clear memory if 35-minute window expires (2100 seconds)
+          if (state.phaseBStochCrossEpoch && (currentCandleEpoch - state.phaseBStochCrossEpoch > 2100)) {
+            state.phaseBStochCrossEpoch = null;
+            state.phaseBStochDir = null;
+          }
+
+          // Evaluate MACD cross/alignment while memory is active
+          if (state.phaseBStochDir === "SELL" && macdSellB) {
+            if (m15MacdValidSellB) {
+              signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A';
+              state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null; // Reset memory after entry
             } else {
-              dbg(`Phase B SELL blocked: M15 MACD is against H1 trend (${liveM15Macd})`);
+              dbg(`Phase B SELL blocked: M15 MACD (12,26,9) is against H1 trend (${liveM15Macd})`);
             }
           }
         }
