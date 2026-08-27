@@ -1417,15 +1417,18 @@ async function runScanMode() {
 
 // ==================== EXECUTION MODES ====================
 (async () => {
-  // Enhanced 15-second per-server spacing
+  // Global 12-second spacing to prevent Proxy/Deriv collisions across all servers
   const REPO_INDEX = { 
-    // Server 1
-    "R_75": 0, "1HZ75V": 1, "R_100": 2, "R_25": 3, 
-    // Server 2
-    "R_10": 0, "R_50": 1, "1HZ100V": 2 
+    "R_75": 0,       // Lery
+    "1HZ75V": 1,     // Coffee
+    "R_100": 2,      // Milk
+    "R_25": 3,       // Tea
+    "1HZ100V": 4,    // Ice Cream
+    "R_50": 5,       // OmniSight
+    "R_10": 6        // Test Bot
   }[SYMBOL] ?? 0;
   
-  const jitterMs = (REPO_INDEX * 15000) + Math.floor(Math.random() * 2000);
+  const jitterMs = (REPO_INDEX * 12000) + Math.floor(Math.random() * 1000);
   dbg(`Staggering execution by ${jitterMs}ms (Repo Index: ${REPO_INDEX})...`);
   await sleep(jitterMs);
 
