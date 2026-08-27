@@ -4,26 +4,17 @@ import fs from "fs";
 
 // ==================== REPOSITORY CONFIGURATION ====================
 // UNCOMMENT THE CONFIGURATION MATCHING YOUR REPOSITORY:
-// --- 1. Test Bot (Live) ---
+
+// --- Server 2 Bots ---
 // const SYMBOL = "R_10"; const SYMBOL_NAME = "Volatility 10 Index"; const REPO_LABEL = "Test Bot (V10 Live)"; const MULTIPLIER = 400; const COMMISSION_USD = 0.16;
-
-// --- 2. OmniSight (Live) ---
 // const SYMBOL = "R_50"; const SYMBOL_NAME = "Volatility 50 Index"; const REPO_LABEL = "OmniSight (V50)"; const MULTIPLIER = 80; const COMMISSION_USD = 0.16;
-
-// --- 3. Lery's Alerts (Demo) ---
-// const SYMBOL = "R_75"; const SYMBOL_NAME = "Volatility 75 Index"; const REPO_LABEL = "Lery's Alerts (V75 Demo)"; const MULTIPLIER = 50; const COMMISSION_USD = 0.15;
-
-// --- 4. Coffee (Demo) ---
-// const SYMBOL = "1HZ75V"; const SYMBOL_NAME = "Volatility 75 (1s) Index"; const REPO_LABEL = "Coffee (V75-1s Demo)"; const MULTIPLIER = 50; const COMMISSION_USD = 0.15;
-
-// --- 5. Milk (Demo) ---
-// const SYMBOL = "R_100"; const SYMBOL_NAME = "Volatility 100 Index"; const REPO_LABEL = "Milk (V100 Demo)"; const MULTIPLIER = 40; const COMMISSION_USD = 0.15;
-
-// --- 6. Tea (Demo) ---
-// const SYMBOL = "R_25"; const SYMBOL_NAME = "Volatility 25 Index"; const REPO_LABEL = "Tea (V25 Demo)"; const MULTIPLIER = 160; const COMMISSION_USD = 0.15;
-
-// --- 7. Ice Cream Machine (Demo) ---
 const SYMBOL = "1HZ100V"; const SYMBOL_NAME = "Volatility 100 (1s) Index"; const REPO_LABEL = "Ice Cream Machine"; const MULTIPLIER = 40; const COMMISSION_USD = 0.15;
+
+// --- Server 1 Bots ---
+// const SYMBOL = "R_75"; const SYMBOL_NAME = "Volatility 75 Index"; const REPO_LABEL = "Lery's Alerts (V75 Demo)"; const MULTIPLIER = 50; const COMMISSION_USD = 0.15;
+// const SYMBOL = "1HZ75V"; const SYMBOL_NAME = "Volatility 75 (1s) Index"; const REPO_LABEL = "Coffee (V75-1s Demo)"; const MULTIPLIER = 50; const COMMISSION_USD = 0.15;
+// const SYMBOL = "R_100"; const SYMBOL_NAME = "Volatility 100 Index"; const REPO_LABEL = "Milk (V100 Demo)"; const MULTIPLIER = 40; const COMMISSION_USD = 0.15;
+// const SYMBOL = "R_25"; const SYMBOL_NAME = "Volatility 25 Index"; const REPO_LABEL = "Tea (V25 Demo)"; const MULTIPLIER = 160; const COMMISSION_USD = 0.15;
 
 const TRADING_SYMBOL = SYMBOL;
 const STAKE_USD = 5;
@@ -221,7 +212,7 @@ function openWS() {
 }
 
 // Resilient RateLimit Backoff
-async function withRetry(fn, retries = 3, delay = 4000) {
+async function withRetry(fn, retries = 3, delay = 8000) {
   for (let i = 0; i < retries; i++) {
     try {
       return await fn();
@@ -1211,8 +1202,8 @@ async function runScanMode() {
   const si = candles.length - 2;
   const stoch = calculateStochastic(candles, 5, 3, 3);
   
-  // Phase B M5 MACD uses standard 12, 26, 9
-  const macd_m5 = calculateMACD(closes, 12, 26, 9);
+  // M5 MACD uses 12, 16, 9
+  const macd_m5 = calculateMACD(closes, 12, 16, 9);
 
   const m15Closes = m15Candles.map(c => parseFloat(c.close));
   const m15Rsi = calculateRSI(m15Closes, 14);
@@ -1265,7 +1256,7 @@ async function runScanMode() {
         }
       }
 
-      // --- PHASE B (Stoch 20/80 + MACD 12,26,9 0 Cross) ---
+      // --- PHASE B (Stoch 20/80 + MACD 12,16,9 0 Cross) ---
       if (!signalTriggered && (state.phaseATaken || state.phaseAWindowExpired)) {
         const stochCrossBuyB = (stoch.k[si-1] <= 20 && stoch.d[si-1] <= 20) && (stoch.k[si] > 20 && stoch.d[si] > 20);
         const stochCrossSellB = (stoch.k[si-1] >= 80 && stoch.d[si-1] >= 80) && (stoch.k[si] < 80 && stoch.d[si] < 80);
@@ -1426,8 +1417,15 @@ async function runScanMode() {
 
 // ==================== EXECUTION MODES ====================
 (async () => {
-  const REPO_INDEX = { R_10: 0, R_50: 1, R_75: 2, "1HZ75V": 3, R_100: 4, R_25: 5, "1HZ100V": 6 }[SYMBOL] ?? 0;
-  const jitterMs = (REPO_INDEX * 10000) + Math.floor(Math.random() * 2000);
+  // Enhanced 15-second per-server spacing
+  const REPO_INDEX = { 
+    // Server 1
+    "R_75": 0, "1HZ75V": 1, "R_100": 2, "R_25": 3, 
+    // Server 2
+    "R_10": 0, "R_50": 1, "1HZ100V": 2 
+  }[SYMBOL] ?? 0;
+  
+  const jitterMs = (REPO_INDEX * 15000) + Math.floor(Math.random() * 2000);
   dbg(`Staggering execution by ${jitterMs}ms (Repo Index: ${REPO_INDEX})...`);
   await sleep(jitterMs);
 
