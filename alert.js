@@ -1033,6 +1033,28 @@ async function runScanMode() {
         await closeWith("LOSS", `Software Stop Loss hit — PnL dropped to $${pnl.toFixed(2)} (Limit: $${SOFTWARE_SL_USD.toFixed(2)})`); continue;
       }
       
+      // ── 1.5 M15 Stochastic Early Exit (Opposite 50 Cross in Loss) ──
+      if (pnl < 0 && tradeData.m15Candles && tradeData.m15Candles.length > 5) {
+        const m15StochData = calculateStochastic(tradeData.m15Candles, 5, 3, 3);
+        const m15Idx = tradeData.m15Candles.length - 2;
+        const m15K_prev = m15StochData.k[m15Idx - 1];
+        const m15K_curr = m15StochData.k[m15Idx];
+        
+        if (m15K_prev !== null && m15K_curr !== null) {
+          let stochEarlyExit = false;
+          if (openTrade.direction === "BUY" && m15K_prev >= 50 && m15K_curr < 50) {
+            stochEarlyExit = true;
+          } else if (openTrade.direction === "SELL" && m15K_prev <= 50 && m15K_curr > 50) {
+            stochEarlyExit = true;
+          }
+          
+          if (stochEarlyExit) {
+             await closeWith("LOSS", `Early Exit: M15 Stochastic %K crossed 50 against trend (PnL: $${pnl.toFixed(2)})`); 
+             continue;
+          }
+        }
+      }
+
       // ── 2. Decoupled Ultimate TP ($3.60 Software Target) ──
       const tp2Hit = openTrade.direction === "BUY" 
         ? (openTrade.tp2 > 0 && (currentPrice >= openTrade.tp2 || candleHigh >= openTrade.tp2)) 
@@ -1202,7 +1224,7 @@ async function runScanMode() {
   const si = candles.length - 2;
   const stoch = calculateStochastic(candles, 5, 3, 3);
   
-  // M5 MACD uses 12, 16, 9
+  // Phase B M5 MACD uses 12, 16, 9
   const macd_m5 = calculateMACD(closes, 12, 16, 9);
 
   const m15Closes = m15Candles.map(c => parseFloat(c.close));
@@ -1211,33 +1233,37 @@ async function runScanMode() {
   
   const m15i = m15Candles.length - 2;
   
-  // Phase B and Phase C M15 Trend Filter uses 12, 26, 9
-  const macd_m15 = calculateMACD(m15Closes, 12, 26, 9);
-  const liveM15Macd = macd_m15.macd[m15Closes.length - 1]; // Live forming M15 candle
+  // Phase B M15 Trend Filter uses 12, 26, 9
+  const macd_m15_12_26_9 = calculateMACD(m15Closes, 12, 26, 9);
+  const liveM15Macd_12_26_9 = macd_m15_12_26_9.macd[m15Closes.length - 1]; 
+  
+  // Phase C M15 Guard uses 12, 16, 9
+  const macd_m15_12_16_9 = calculateMACD(m15Closes, 12, 16, 9);
+  const liveM15Macd_12_16_9 = macd_m15_12_16_9.macd[m15Closes.length - 1]; 
 
   let signalTriggered = false, direction = "", entry, sl, risk, tp1, tp2, tp3; let entryType = null; let m15AgainstAtEntry = false;
 
-  if (si >= 1 && stoch.k[si] != null && stoch.d[si] != null && stoch.k[si-1] != null && stoch.d[si-1] != null && macd_m5.macd[si] != null && macd_m5.macd[si-1] != null) {
+  if (si >= 1 && stoch.k[si] != null && stoch.k[si-1] != null && macd_m5.macd[si] != null && macd_m5.macd[si-1] != null) {
       
     if (phaseCTarget) {
       // ==== PHASE C EVALUATION ENGINE ====
       const currentPnl = calcUnrealizedPnL(phaseCTarget, closes[i]);
       if (currentPnl < 0) {
         if (phaseCTarget.direction === "BUY") {
-          const stochCrossBuyPhaseC = (stoch.k[si-1] <= 20 && stoch.d[si-1] <= 20) && (stoch.k[si] > 20 && stoch.d[si] > 20);
-          const macdValid = liveM15Macd !== null && liveM15Macd >= 0;
+          const stochCrossBuyPhaseC = stoch.k[si-1] <= 20 && stoch.k[si] > 20;
+          const macdValid = liveM15Macd_12_16_9 !== null && liveM15Macd_12_16_9 >= 0;
           if (stochCrossBuyPhaseC && macdValid) {
             signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = 'PHASE_C';
           } else if (stochCrossBuyPhaseC && !macdValid) {
-            dbg(`Phase C BUY blocked: M15 MACD (12,26,9) is against trend (${liveM15Macd})`);
+            dbg(`Phase C BUY blocked: M15 MACD (12,16,9) is against trend (${liveM15Macd_12_16_9})`);
           }
         } else if (phaseCTarget.direction === "SELL") {
-          const stochCrossSellPhaseC = (stoch.k[si-1] >= 80 && stoch.d[si-1] >= 80) && (stoch.k[si] < 80 && stoch.d[si] < 80);
-          const macdValid = liveM15Macd !== null && liveM15Macd <= 0;
+          const stochCrossSellPhaseC = stoch.k[si-1] >= 80 && stoch.k[si] < 80;
+          const macdValid = liveM15Macd_12_16_9 !== null && liveM15Macd_12_16_9 <= 0;
           if (stochCrossSellPhaseC && macdValid) {
             signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = 'PHASE_C';
           } else if (stochCrossSellPhaseC && !macdValid) {
-            dbg(`Phase C SELL blocked: M15 MACD (12,26,9) is against trend (${liveM15Macd})`);
+            dbg(`Phase C SELL blocked: M15 MACD (12,16,9) is against trend (${liveM15Macd_12_16_9})`);
           }
         }
       }
@@ -1249,23 +1275,23 @@ async function runScanMode() {
         if (deadlinePassed) {
           state.phaseAWindowExpired = true; dbg(`Phase A window EXPIRED at ${new Date(currentCandleEpoch*1000).toISOString()} — falling back to Phase B.`);
         } else {
-          const stochCrossBuyPhaseA = (stoch.k[si-1] <= 20 && stoch.d[si-1] <= 20) && (stoch.k[si] > 20 && stoch.d[si] > 20) && (stoch.k[si-1] <= stoch.d[si-1]) && (stoch.k[si] > stoch.d[si]);
-          const stochCrossSellPhaseA = (stoch.k[si-1] >= 80 && stoch.d[si-1] >= 80) && (stoch.k[si] < 80 && stoch.d[si] < 80) && (stoch.k[si-1] >= stoch.d[si-1]) && (stoch.k[si] < stoch.d[si]);
+          const stochCrossBuyPhaseA = stoch.k[si-1] <= 20 && stoch.k[si] > 20;
+          const stochCrossSellPhaseA = stoch.k[si-1] >= 80 && stoch.k[si] < 80;
           if (state.waitingFor === "BUY" && stochCrossBuyPhaseA) { signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = 'PHASE_A'; state.phaseATaken = true; }
           else if (state.waitingFor === "SELL" && stochCrossSellPhaseA) { signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = 'PHASE_A'; state.phaseATaken = true; }
         }
       }
 
-      // --- PHASE B (Stoch 20/80 + MACD 12,16,9 0 Cross) ---
+      // --- PHASE B (Stoch 20/80 %K only + MACD 12,16,9 0 Cross) ---
       if (!signalTriggered && (state.phaseATaken || state.phaseAWindowExpired)) {
-        const stochCrossBuyB = (stoch.k[si-1] <= 20 && stoch.d[si-1] <= 20) && (stoch.k[si] > 20 && stoch.d[si] > 20);
-        const stochCrossSellB = (stoch.k[si-1] >= 80 && stoch.d[si-1] >= 80) && (stoch.k[si] < 80 && stoch.d[si] < 80);
+        const stochCrossBuyB = stoch.k[si-1] <= 20 && stoch.k[si] > 20;
+        const stochCrossSellB = stoch.k[si-1] >= 80 && stoch.k[si] < 80;
 
         const macdBuyB = macd_m5.macd[si] > 0;
         const macdSellB = macd_m5.macd[si] < 0;
 
-        const m15MacdValidBuyB = liveM15Macd !== null && liveM15Macd >= 0;
-        const m15MacdValidSellB = liveM15Macd !== null && liveM15Macd <= 0;
+        const m15MacdValidBuyB = liveM15Macd_12_26_9 !== null && liveM15Macd_12_26_9 >= 0;
+        const m15MacdValidSellB = liveM15Macd_12_26_9 !== null && liveM15Macd_12_26_9 <= 0;
 
         if (state.waitingFor === "BUY") {
           // Trigger memory on Stochastic Cross
@@ -1286,7 +1312,7 @@ async function runScanMode() {
               signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A';
               state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null; // Reset memory after entry
             } else {
-              dbg(`Phase B BUY blocked: M15 MACD (12,26,9) is against H1 trend (${liveM15Macd})`);
+              dbg(`Phase B BUY blocked: M15 MACD (12,26,9) is against H1 trend (${liveM15Macd_12_26_9})`);
             }
           }
         } else if (state.waitingFor === "SELL") {
@@ -1308,7 +1334,7 @@ async function runScanMode() {
               signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A';
               state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null; // Reset memory after entry
             } else {
-              dbg(`Phase B SELL blocked: M15 MACD (12,26,9) is against H1 trend (${liveM15Macd})`);
+              dbg(`Phase B SELL blocked: M15 MACD (12,26,9) is against H1 trend (${liveM15Macd_12_26_9})`);
             }
           }
         }
