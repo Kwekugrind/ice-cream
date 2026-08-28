@@ -1417,7 +1417,7 @@ async function runScanMode() {
 
 // ==================== EXECUTION MODES ====================
 (async () => {
-  // Global 12-second spacing to prevent Proxy/Deriv collisions across all servers
+  // Ultra-safe 25-second spacing (Takes advantage of the new 5-minute cron window)
   const REPO_INDEX = { 
     "R_75": 0,       // Lery
     "1HZ75V": 1,     // Coffee
@@ -1428,7 +1428,7 @@ async function runScanMode() {
     "R_10": 6        // Test Bot
   }[SYMBOL] ?? 0;
   
-  const jitterMs = (REPO_INDEX * 12000) + Math.floor(Math.random() * 1000);
+  const jitterMs = (REPO_INDEX * 25000) + Math.floor(Math.random() * 1000);
   dbg(`Staggering execution by ${jitterMs}ms (Repo Index: ${REPO_INDEX})...`);
   await sleep(jitterMs);
 
