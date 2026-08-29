@@ -19,19 +19,19 @@ const SYMBOL = "1HZ100V"; const SYMBOL_NAME = "Volatility 100 (1s) Index"; const
 const TRADING_SYMBOL = SYMBOL;
 const STAKE_USD = 5;
 const RISK_REWARD = 1.5;
-const TARGET_TP1_USD = 2.50;  // Target ~$2.50 profit for TP1 (arms Fixed trail)
-const SOFTWARE_TP_USD = 3.60; // $3.60 local software take-profit target
-const SOFTWARE_SL_USD = -3.60; // -$3.60 local software stop-loss target
-const SERVER_TP_USD = 10.00;  // $10.00 flat profit insurance ceiling on broker side
-const BREAKEVEN_ACTIVATE_USD = 2.00; // Move SL to entry once profit hits $2.00
-const CATASTROPHIC_PNL_FLOOR = -5.50; // Server-truth catastrophic loss floor
-const MARKET_DATA_APP_ID = "1089"; // Dedicated public App ID for unauthenticated candle data
-const DERIV_APP_ID = process.env.DERIV_APP_ID || "67418"; // Personal App ID for trading/OTP
+const TARGET_TP1_USD = 2.50;  
+const SOFTWARE_TP_USD = 3.60; 
+const SOFTWARE_SL_USD = -3.60; 
+const SERVER_TP_USD = 10.00;  
+const BREAKEVEN_ACTIVATE_USD = 2.00; 
+const CATASTROPHIC_PNL_FLOOR = -5.50; 
+const MARKET_DATA_APP_ID = "1089"; 
+
+const GATEWAY_URL = process.env.GATEWAY_URL || "http://127.0.0.1:3000";
+const GATEWAY_SECRET = process.env.GATEWAY_SECRET;
+
 const TG_TOKEN = process.env.TG_BOT_TOKEN || process.env.TG_TOKEN;
 const TG_CHAT_ID = process.env.TG_CHAT_ID;
-const DERIV_TOKEN = process.env.DERIV_API_TOKEN;
-const PROXY_URL = process.env.PROXY_URL;
-const PROXY_SECRET = process.env.PROXY_SECRET;
 const MODE = process.env.MODE || "cronjob";
 const TRIGGER_SOURCE = process.env.TRIGGER_SOURCE || "manual";
 
@@ -41,13 +41,12 @@ const M30 = 30 * 60;
 const H1 = 60 * 60;
 const D1 = 24 * 60 * 60;
 
-const PHASE_A_WINDOW_SECONDS = 2.5 * 60 * 60; // 2h 30m window for Phase A after H1 fresh cross
+const PHASE_A_WINDOW_SECONDS = 2.5 * 60 * 60;
 
 const DEBUG = process.env.DEBUG === "true";
 function dbg(...a) { if (DEBUG) console.log("[DBG]", ...a); }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-// Universal Symbol Extractor
 function getContractSymbol(c) {
   if (!c) return "";
   return c.underlying_symbol || c.symbol || (c.shortcode ? c.shortcode.split("_")[1] : "");
@@ -55,10 +54,7 @@ function getContractSymbol(c) {
 
 // ==================== TELEGRAM & UTILS ====================
 async function sendTelegram(msg) {
-  if (!TG_TOKEN || !TG_CHAT_ID) {
-    console.warn("Telegram not configured: TG_TOKEN or TG_CHAT_ID is missing. Skipping sendTelegram.");
-    return { ok: false, error: "missing_credentials" };
-  }
+  if (!TG_TOKEN || !TG_CHAT_ID) return { ok: false, error: "missing_credentials" };
   const send = async (text, parseMode) => {
     const body = { chat_id: TG_CHAT_ID, text };
     if (parseMode) body.parse_mode = parseMode;
@@ -74,17 +70,13 @@ async function sendTelegram(msg) {
   try {
     const data = await send(msg, "Markdown");
     if (!data.ok) {
-      console.error(`Telegram Markdown rejected (${data.error_code || data.error || 'unknown'}): ${data.description || JSON.stringify(data)}`);
       const plain = msg.replace(/[*_`\[\]]/g, "");
       const retry = await send(plain, "");
-      if (!retry.ok) {
-        console.error(`Telegram plain-text retry also failed: ${retry.description || JSON.stringify(retry)}`);
-        return { ok: false, error: "telegram_send_failed", detail: retry };
-      }
+      if (!retry.ok) return { ok: false, error: "telegram_send_failed", detail: retry };
       return { ok: true, via: "plain_text", detail: retry };
     }
     return { ok: true, via: "markdown", detail: data };
-  } catch (e) { console.error("Telegram fetch error:", e.message); return { ok: false, error: e.message }; }
+  } catch (e) { return { ok: false, error: e.message }; }
 }
 
 function formatDuration(ms) {
@@ -105,385 +97,115 @@ async function runSummary(label) {
   await sendTelegram(msg);
 }
 
-async function checkTelegramCommands() {
-  if (!TG_TOKEN || !TG_CHAT_ID) return;
-  try {
-    const url = `https://api.telegram.org/bot${TG_TOKEN}/getUpdates?offset=${state.lastTgUpdateId + 1}&limit=10&timeout=0`;
-    const res = await fetch(url); const data = await res.json();
-    if (!data.ok) return;
-    for (const update of data.result) {
-      state.lastTgUpdateId = update.update_id;
-      const text = update.message?.text?.trim()?.toLowerCase();
-      if (text === "/status") {
-        const trades = fs.existsSync("trades.json") ? JSON.parse(fs.readFileSync("trades.json")) : [];
-        const open = trades.filter(t => !t.result && !t.pending);
-        await sendTelegram(open.length ? `📍 Open trades:\n${open.map(t=>`• ${t.direction} @ ${t.entry}`).join("\n")}` : "No open trades.");
-      }
-      if (text === "/close win" || text === "/closewin") { await executeManualClose("WIN", "telegram command"); }
-      if (text === "/close loss" || text === "/closeloss") { await executeManualClose("LOSS", "telegram command"); }
-    }
-    fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
-  } catch (e) { console.error("TG check error:", e.message); }
-}
-
-async function executeManualClose(result, reason) {
-  const trades = fs.existsSync("trades.json") ? JSON.parse(fs.readFileSync("trades.json")) : [];
-  const open = trades.filter(t => !t.result && !t.pending);
-  if (!open.length) { await sendTelegram(`⚠️ *${REPO_LABEL}*\n\nNo open trade found to close.`); return; }
-  for (const trade of open) {
-    const currentPrice = await getCurrentPrice(trade.symbol);
-    let serverPnl = calcUnrealizedPnL(trade, currentPrice);
-    let resultSource = "manual_command";
-    if (trade.contractId) {
-      try {
-        const closeRes = await closeContract(trade.contractId);
-        if (!closeRes || closeRes.error) {
-          const errCode = closeRes.error?.code;
-          const errDesc = closeRes.error?.message || JSON.stringify(closeRes.error);
-          if (errCode === "ContractNotFound" || errDesc.includes("not found among your open positions")) {
-            serverPnl = -5.00;
-            resultSource = "estimated_fallback";
-          } else {
-            await sendTelegram(`⚠️ *${REPO_LABEL}* — Manual Close Warning\n\nFailed to close contract \`${trade.contractId}\` on Deriv: ${errDesc}. Retrying next scan.`);
-            continue;
-          }
-        }
-        if (typeof closeRes.sell?.profit === 'number') {
-          serverPnl = closeRes.sell.profit;
-          resultSource = "manual_command";
-        }
-      } catch (e) {
-        if (e.message.includes("ContractNotFound") || e.message.includes("not found among your open positions")) {
-          serverPnl = -5.00;
-          resultSource = "estimated_fallback";
-        } else {
-          console.error("Close error:", e.message);
-          continue;
-        }
-      }
-    }
-    const finalResult = (typeof serverPnl === 'number') ? (serverPnl >= 0 ? "WIN" : "LOSS") : result;
-    trade.result = finalResult;
-    trade.resultSource = resultSource;
-    trade.closeTime = new Date().toISOString().replace("T"," ").substring(0,19);
-    fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-    const icon = finalResult === "WIN" ? "✅" : "❌";
-    const contractType = trade.direction === "BUY" ? "MULTUP" : "MULTDOWN";
-    const durationMs = new Date(trade.closeTime) - new Date(trade.openTime);
-    const slDollars = parseFloat((trade.brokerSlAmount || STAKE_USD).toFixed(2));
-    const pnlStr = serverPnl >= 0 ? `+$${serverPnl.toFixed(2)}` : `-$${Math.abs(serverPnl).toFixed(2)}`;
-    const tp1Status = trade.tp1Reached ? "✅ TP1 hit" : "❌ TP1 not reached";
-    await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${finalResult}*\n\nDirection: ${trade.direction} (${contractType})\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${trade.entry.toFixed(4)}\n🏁 Exit: ${currentPrice.toFixed(4)}\n🛑 SL: ${trade.sl ? trade.sl.toFixed(4) : "N/A"} ($${slDollars} hard)\n🎯 TP1: ${trade.tp1.toFixed(4)} (BGA) ${tp1Status}\n\n💵 P&L: ${pnlStr} (Net of comm.)\nReason: ${reason}\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${trade.openTime}\nClosed: ${trade.closeTime}\n` + (trade.contractId ? `Contract: \`${trade.contractId}\`` : ""));
+// ==================== GATEWAY CLIENT CALLS ====================
+async function gatewayFetch(endpoint, method = "GET", body = null) {
+  const res = await fetch(`${GATEWAY_URL}${endpoint}`, {
+    method,
+    headers: { "Content-Type": "application/json", "x-gateway-secret": GATEWAY_SECRET },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Gateway HTTP error ${res.status}: ${errText}`);
   }
+  return await res.json();
 }
 
-let state = { 
-  waitingFor: null, setupEpoch: null, lastProcessedEpoch: null, lastTgUpdateId: 0, h1TrendEpoch: null, 
-  phaseATriggeredEpoch: null, activeEntryType: null, phaseATaken: false, h1TrendCycleEpoch: null,
-  phaseADeadlineEpoch: null, phaseAWindowExpired: false,
-  phaseBStochCrossEpoch: null, phaseBStochDir: null
-};
-try {
-  const s = JSON.parse(fs.readFileSync("state.json"));
-  state = {
-    ...state, ...s,
-    waitingFor: s.waitingFor ?? null,
-    setupEpoch: s.setupEpoch ?? null,
-    h1TrendEpoch: s.h1TrendEpoch ?? null,
-    phaseATriggeredEpoch: s.phaseATriggeredEpoch ?? null,
-    activeEntryType: s.activeEntryType ?? null,
-    phaseATaken: s.phaseATaken ?? false,
-    h1TrendCycleEpoch: s.h1TrendCycleEpoch ?? null,
-    phaseADeadlineEpoch: s.phaseADeadlineEpoch ?? null,
-    phaseAWindowExpired: s.phaseAWindowExpired ?? false,
-    phaseBStochCrossEpoch: s.phaseBStochCrossEpoch ?? null,
-    phaseBStochDir: s.phaseBStochDir ?? null
+async function getOpenPortfolio() {
+  const res = await gatewayFetch("/portfolio");
+  if (!res.ok || !res.authorized) throw new Error("Gateway is currently disconnected or not authorized with Deriv");
+  if (!res.lastUpdate || (Date.now() - res.lastUpdate > 60000)) {
+    const ageSeconds = Math.round((Date.now() - (res.lastUpdate || 0)) / 1000);
+    throw new Error(`Gateway portfolio cache is stale (${ageSeconds}s old)`);
+  }
+  return res.portfolio || [];
+}
+
+async function executeTrade(direction) {
+  const expectedContractType = direction === "BUY" ? "MULTUP" : "MULTDOWN";
+  const slDollars = parseFloat(STAKE_USD.toFixed(2));
+  const tpValue = typeof SERVER_TP_USD !== 'undefined' ? SERVER_TP_USD : 10.00;
+  const payload = {
+    buy: "1", price: STAKE_USD,
+    parameters: { contract_type: expectedContractType, underlying_symbol: TRADING_SYMBOL, currency: "USD", amount: STAKE_USD, basis: "stake", multiplier: MULTIPLIER, limit_order: { stop_loss: slDollars, take_profit: tpValue } }
   };
-} catch {}
-
-// ==================== DERIV API & PROXY HELPERS ====================
-function openWS() {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
-    ws.on("open", () => resolve(ws));
-    ws.on("error", reject);
-    setTimeout(() => reject(new Error("WS timeout")), 15000);
-  });
+  const data = await gatewayFetch("/buy", "POST", payload);
+  if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+  return data.buy?.contract_id;
 }
 
-// Resilient RateLimit Backoff
-async function withRetry(fn, retries = 3, delay = 8000) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await fn();
-    } catch (e) {
-      const isRateLimit = e.message.includes("429") || e.message.includes("RateLimit");
-      if (i === retries - 1) throw e;
-      const currentDelay = isRateLimit ? (delay * (i + 1) + Math.floor(Math.random() * 2000)) : delay;
-      dbg(`Retry ${i+1}/${retries} after error: ${e.message}. Waiting ${currentDelay}ms...`);
-      await sleep(currentDelay);
-    }
+async function closeContract(contractId) {
+  const payload = { sell: contractId, price: 0 };
+  const data = await gatewayFetch("/sell", "POST", payload);
+  if (data.error) {
+    if (data.error.code === "ContractNotFound" || String(data.error.message).includes("not found")) return { error: { code: "ContractNotFound", message: data.error.message } };
+    throw new Error(data.error.message || JSON.stringify(data.error));
   }
+  return data;
 }
 
-// Consolidated Data Fetcher (M5, H1, D1, M15, M30)
+async function getContractProfitFromHistory(contractId, approxOpenEpoch) {
+  const payload = { profit_table: 1, description: 1, limit: 25, sort: "DESC", date_from: approxOpenEpoch ? approxOpenEpoch - 300 : undefined };
+  const data = await gatewayFetch("/profit_table", "POST", payload);
+  const transactions = data.profit_table?.transactions || [];
+  const match = transactions.find(tx => String(tx.contract_id) === String(contractId));
+  if (!match) return null;
+  const profit = typeof match.profit === 'number' ? match.profit : (parseFloat(match.sell_price) - parseFloat(match.buy_price));
+  return { profit, sellTime: match.sell_time };
+}
+
+// ==================== MARKET DATA FETCHERS ====================
 async function fetchAllData() {
-  return withRetry(async () => {
-    return new Promise((resolve, reject) => {
-      const ws = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
-      const results = {};
-      ws.on("open", () => {
-        ws.send(JSON.stringify({ req_id: 1, ticks_history: SYMBOL, granularity: M5, count: 120, end: "latest", style: "candles" }));
-        ws.send(JSON.stringify({ req_id: 2, ticks_history: SYMBOL, granularity: H1, count: 250, end: "latest", style: "candles" }));
-        ws.send(JSON.stringify({ req_id: 4, ticks_history: SYMBOL, granularity: M15, count: 250, end: "latest", style: "candles" }));
-        ws.send(JSON.stringify({ req_id: 5, ticks_history: SYMBOL, granularity: D1, count: 5, end: "latest", style: "candles" }));
-        ws.send(JSON.stringify({ req_id: 6, ticks_history: SYMBOL, granularity: M30, count: 120, end: "latest", style: "candles" }));
-      });
-      ws.on("message", d => {
-        const msg = JSON.parse(d);
-        if (msg.req_id === 1) results.m5 = msg.candles;
-        if (msg.req_id === 2) results.h1 = msg.candles;
-        if (msg.req_id === 4) results.m15 = msg.candles;
-        if (msg.req_id === 5) results.d1 = msg.candles;
-        if (msg.req_id === 6) results.m30 = msg.candles;
-        if (results.m5 && results.h1 && results.d1 && results.m15 && results.m30) {
-          ws.close();
-          resolve(results);
-        }
-      });
-      ws.on("error", (err) => { ws.close(); reject(err); });
-      setTimeout(() => { ws.close(); reject(new Error("fetchAllData timeout")); }, 20000);
+  return new Promise((resolve, reject) => {
+    const wsPublic = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
+    const results = {};
+    wsPublic.on("open", () => {
+      wsPublic.send(JSON.stringify({ req_id: 1, ticks_history: SYMBOL, granularity: M5, count: 120, end: "latest", style: "candles" }));
+      wsPublic.send(JSON.stringify({ req_id: 2, ticks_history: SYMBOL, granularity: H1, count: 250, end: "latest", style: "candles" }));
+      wsPublic.send(JSON.stringify({ req_id: 4, ticks_history: SYMBOL, granularity: M15, count: 250, end: "latest", style: "candles" }));
+      wsPublic.send(JSON.stringify({ req_id: 5, ticks_history: SYMBOL, granularity: D1, count: 5, end: "latest", style: "candles" }));
+      wsPublic.send(JSON.stringify({ req_id: 6, ticks_history: SYMBOL, granularity: M30, count: 120, end: "latest", style: "candles" }));
     });
+    wsPublic.on("message", d => {
+      const msg = JSON.parse(d);
+      if (msg.req_id === 1) results.m5 = msg.candles;
+      if (msg.req_id === 2) results.h1 = msg.candles;
+      if (msg.req_id === 4) results.m15 = msg.candles;
+      if (msg.req_id === 5) results.d1 = msg.candles;
+      if (msg.req_id === 6) results.m30 = msg.candles;
+      if (results.m5 && results.h1 && results.d1 && results.m15 && results.m30) { wsPublic.close(); resolve(results); }
+    });
+    wsPublic.on("error", err => { wsPublic.close(); reject(err); });
+    setTimeout(() => { wsPublic.close(); reject(new Error("fetchAllData timeout")); }, 15000);
   });
 }
 
-// Consolidated Open Trade Fetcher (Price + M5 + M15 + M30 Candles for Exits & Fractals)
 async function fetchOpenTradeData() {
-  return withRetry(async () => {
-    return new Promise((resolve, reject) => {
-      const ws = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
-      const results = {};
-      ws.on("open", () => {
-        ws.send(JSON.stringify({ req_id: 1, ticks_history: SYMBOL, granularity: M5, count: 120, end: "latest", style: "candles" }));
-        ws.send(JSON.stringify({ req_id: 2, ticks_history: SYMBOL, granularity: M15, count: 250, end: "latest", style: "candles" }));
-        ws.send(JSON.stringify({ req_id: 3, ticks_history: SYMBOL, count: 1, end: "latest", style: "ticks" }));
-        ws.send(JSON.stringify({ req_id: 6, ticks_history: SYMBOL, granularity: M30, count: 120, end: "latest", style: "candles" }));
-      });
-      ws.on("message", d => {
-        const msg = JSON.parse(d);
-        if (msg.req_id === 1) results.candles = msg.candles;
-        if (msg.req_id === 2) results.m15Candles = msg.candles;
-        if (msg.req_id === 3) results.price = msg.history?.prices?.[msg.history.prices.length - 1];
-        if (msg.req_id === 6) results.m30Candles = msg.candles;
-        if (results.candles && results.m15Candles && results.price !== undefined && results.m30Candles) {
-          ws.close();
-          resolve(results);
-        }
-      });
-      ws.on("error", (err) => { ws.close(); reject(err); });
-      setTimeout(() => { ws.close(); reject(new Error("fetchOpenTradeData timeout")); }, 15000);
+  return new Promise((resolve, reject) => {
+    const wsPublic = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
+    const results = {};
+    wsPublic.on("open", () => {
+      wsPublic.send(JSON.stringify({ req_id: 1, ticks_history: SYMBOL, granularity: M5, count: 120, end: "latest", style: "candles" }));
+      wsPublic.send(JSON.stringify({ req_id: 2, ticks_history: SYMBOL, granularity: M15, count: 250, end: "latest", style: "candles" }));
+      wsPublic.send(JSON.stringify({ req_id: 3, ticks_history: SYMBOL, count: 1, end: "latest", style: "ticks" }));
+      wsPublic.send(JSON.stringify({ req_id: 6, ticks_history: SYMBOL, granularity: M30, count: 120, end: "latest", style: "candles" }));
     });
+    wsPublic.on("message", d => {
+      const msg = JSON.parse(d);
+      if (msg.req_id === 1) results.candles = msg.candles;
+      if (msg.req_id === 2) results.m15Candles = msg.candles;
+      if (msg.req_id === 3) results.price = msg.history?.prices?.[msg.history.prices.length - 1];
+      if (msg.req_id === 6) results.m30Candles = msg.candles;
+      if (results.candles && results.m15Candles && results.price !== undefined && results.m30Candles) { wsPublic.close(); resolve(results); }
+    });
+    wsPublic.on("error", err => { wsPublic.close(); reject(err); });
+    setTimeout(() => { wsPublic.close(); reject(new Error("fetchOpenTradeData timeout")); }, 15000);
   });
 }
 
 async function getCurrentPrice(sym = SYMBOL) {
   const data = await fetchOpenTradeData();
   return data.price;
-}
-
-async function getDerivAccountId() {
-  const res = await fetch("https://api.derivws.com/trading/v1/options/accounts", {
-    headers: { "Deriv-App-ID": DERIV_APP_ID, "Authorization": `Bearer ${DERIV_TOKEN}` }
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(`getAccounts failed: ${JSON.stringify(json.errors || json)}`);
-  const accounts = json.data;
-  if (!accounts || accounts.length === 0) throw new Error("No Deriv accounts found");
-  const account = accounts.find(a => a.account_type === "demo") || accounts[0];
-  console.log(` Account ID: ${account.account_id} (${account.account_type})`);
-  return account.account_id;
-}
-
-async function getDerivOTP(accountId) {
-  const res = await fetch(`https://api.derivws.com/trading/v1/options/accounts/${accountId}/otp`, {
-    method: "POST", headers: { "Deriv-App-ID": DERIV_APP_ID, "Authorization": `Bearer ${DERIV_TOKEN}` }
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(`getOTP failed: ${JSON.stringify(json.errors || json)}`);
-  return json.data.url;
-}
-
-// ── Authenticated Server Contract Status (Fresh OTP per request) ──
-async function getServerContractStatus(contractId, preAccountId = null) {
-  if (!DERIV_TOKEN || !contractId || !PROXY_URL || !PROXY_SECRET || !DERIV_APP_ID) return null;
-  return withRetry(async () => {
-    const accountId = preAccountId || await getDerivAccountId();
-    const wsUrl = await getDerivOTP(accountId);
-    const response = await fetch(PROXY_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-proxy-secret": PROXY_SECRET },
-      body: JSON.stringify({
-        wsUrl,
-        action: "proposal_open_contract",
-        params: { proposal_open_contract: 1, contract_id: contractId }
-      })
-    });
-    const data = await response.json();
-    dbg("Server contract status response:", JSON.stringify(data));
-    const errCode = data.error?.code || data.errors?.code;
-    if (errCode === "ContractNotFound") { return { error: "ContractNotFound" }; }
-    if (data.error || data.errors) { throw new Error(`getServerContractStatus error: ${JSON.stringify(data.error || data.errors)}`); }
-    const poc = data.proposal_open_contract;
-    if (poc) {
-      return {
-        profit: poc.profit,
-        bid_price: poc.bid_price,
-        current_spot: poc.current_spot,
-        entry_spot: poc.entry_spot || poc.barrier || poc.entry_tick,
-        is_sold: poc.is_sold,
-        is_expired: poc.is_expired,
-        status: poc.status
-      };
-    }
-    return null;
-  }, 3, 3000);
-}
-
-// ── Authenticated Portfolio Fetcher (Fresh OTP per request) ──
-async function getOpenPortfolio(preAccountId = null) {
-  if (!DERIV_TOKEN || !PROXY_URL || !PROXY_SECRET || !DERIV_APP_ID) return null;
-  return withRetry(async () => {
-    const accountId = preAccountId || await getDerivAccountId();
-    const wsUrl = await getDerivOTP(accountId);
-    const response = await fetch(PROXY_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-proxy-secret": PROXY_SECRET },
-      body: JSON.stringify({ wsUrl, action: "portfolio", params: { portfolio: 1 } })
-    });
-    const data = await response.json();
-    dbg("Portfolio response:", JSON.stringify(data));
-    if (data.error || data.errors) { throw new Error(`getOpenPortfolio error: ${JSON.stringify(data.error || data.errors)}`); }
-    return data.portfolio?.contracts || [];
-  }, 3, 3000);
-}
-
-// ── Authenticated Profit Table Lookup (Fresh OTP per request) ──
-async function getContractProfitFromHistory(contractId, approxOpenEpoch, preAccountId = null) {
-  if (!DERIV_TOKEN || !contractId || !PROXY_URL || !PROXY_SECRET || !DERIV_APP_ID) return null;
-  return withRetry(async () => {
-    const accountId = preAccountId || await getDerivAccountId();
-    const wsUrl = await getDerivOTP(accountId);
-    const response = await fetch(PROXY_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-proxy-secret": PROXY_SECRET },
-      body: JSON.stringify({
-        wsUrl,
-        action: "profit_table",
-        params: { profit_table: 1, description: 1, limit: 25, sort: "DESC", date_from: approxOpenEpoch ? approxOpenEpoch - 300 : undefined }
-      })
-    });
-    const data = await response.json();
-    dbg("Profit table response:", JSON.stringify(data));
-    if (data.error || data.errors) { throw new Error(`getContractProfitFromHistory error: ${JSON.stringify(data.error || data.errors)}`); }
-    const transactions = data.profit_table?.transactions || [];
-    const match = transactions.find(tx => String(tx.contract_id) === String(contractId));
-    if (!match) return null;
-    const profit = typeof match.profit === 'number' ? match.profit : (parseFloat(match.sell_price) - parseFloat(match.buy_price));
-    return { profit, sellTime: match.sell_time };
-  }, 3, 3000);
-}
-
-// ── Idempotent Trade Execution ──
-async function executeTrade(direction) {
-  if (!DERIV_TOKEN || !DERIV_APP_ID || !PROXY_URL || !PROXY_SECRET) return null;
-  const startTimeEpoch = Math.floor(Date.now() / 1000);
-  const expectedContractType = direction === "BUY" ? "MULTUP" : "MULTDOWN";
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    if (attempt > 1) {
-      console.log(`[${REPO_LABEL}] Checking live portfolio before retry attempt ${attempt}/3 to prevent duplicate order...`);
-      try {
-        const liveContracts = await getOpenPortfolio();
-        const existingMatch = liveContracts?.find(c => getContractSymbol(c) === TRADING_SYMBOL && c.contract_type === expectedContractType && (c.date_start ? c.date_start >= startTimeEpoch - 15 : true));
-        if (existingMatch && existingMatch.contract_id) {
-          console.log(`✅ [${REPO_LABEL}] Recovered active contract ${existingMatch.contract_id} from broker! Aborting duplicate buy.`);
-          return existingMatch.contract_id;
-        }
-      } catch (checkErr) {
-        console.warn(`[${REPO_LABEL}] Pre-retry portfolio check failed: ${checkErr.message}. Aborting trade.`);
-        return null;
-      }
-    }
-    try {
-      console.log(`🔄 Sending ${direction} trade via Cloudflare proxy (attempt ${attempt}/3)...`);
-      const accountId = await getDerivAccountId();
-      const wsUrl = await getDerivOTP(accountId);
-      const slDollars = parseFloat(STAKE_USD.toFixed(2));
-      const tpValue = typeof SERVER_TP_USD !== 'undefined' ? SERVER_TP_USD : 10.00;
-      const params = {
-        buy: "1", price: STAKE_USD,
-        parameters: { contract_type: expectedContractType, underlying_symbol: TRADING_SYMBOL, currency: "USD", amount: STAKE_USD, basis: "stake", multiplier: MULTIPLIER, limit_order: { stop_loss: slDollars, take_profit: tpValue } }
-      };
-      const response = await fetch(PROXY_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-proxy-secret": PROXY_SECRET },
-        body: JSON.stringify({ wsUrl, action: "buy", params })
-      });
-      const data = await response.json();
-      console.log("📨 Proxy response:", JSON.stringify(data));
-      if (data.error || data.errors) {
-        const errObj = data.error || data.errors;
-        const errCode = errObj?.code || "";
-        const errMsg = errObj?.message || JSON.stringify(errObj);
-        const isRateLimit = errCode === "RateLimit" || errObj?.status === 429 || String(errMsg).toLowerCase().includes("rate limit");
-        if (isRateLimit) {
-          console.warn(`429 RateLimit on buy. Waiting before retry...`);
-          await sleep(4000 * attempt);
-          continue;
-        }
-        throw new Error(`Broker error: ${errMsg}`);
-      }
-      const contractId = data.buy?.contract_id;
-      if (contractId) {
-        console.log(`✅ Trade Executed! (Fresh submit) Contract ID: ${contractId}`);
-        return contractId;
-      }
-      throw new Error("No contract ID returned in buy response");
-    } catch (err) {
-      console.warn(`[${REPO_LABEL}] Buy attempt ${attempt} network error: ${err.message}.`);
-      if (attempt === 3) throw err;
-      await sleep(3000 * attempt);
-    }
-  }
-  return null;
-}
-
-// ── Resilient Contract Closing ──
-async function closeContract(contractId, preAccountId = null) {
-  if (!DERIV_TOKEN || !contractId || !PROXY_URL || !PROXY_SECRET || !DERIV_APP_ID) return null;
-  return withRetry(async () => {
-    console.log(`🔄 Closing contract ${contractId} via proxy...`);
-    const accountId = preAccountId || await getDerivAccountId();
-    const wsUrl = await getDerivOTP(accountId);
-    const response = await fetch(PROXY_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-proxy-secret": PROXY_SECRET },
-      body: JSON.stringify({ wsUrl, action: "sell", params: { sell: contractId, price: 0 } })
-    });
-    const data = await response.json();
-    console.log("📨 Close response:", JSON.stringify(data));
-    if (data.error || data.errors) {
-      const errObj = data.error || data.errors;
-      const errCode = errObj?.code || "";
-      const errMsg = errObj?.message || JSON.stringify(errObj);
-      if (errCode === "ContractNotFound" || String(errMsg).includes("not found among your open positions")) {
-        return { error: { code: "ContractNotFound", message: errMsg } };
-      }
-      const isRateLimit = errCode === "RateLimit" || errObj?.status === 429 || String(errMsg).toLowerCase().includes("rate limit");
-      if (isRateLimit) { throw new Error(`429/RateLimit on close: ${errMsg}`); }
-      throw new Error(`Close error: ${errMsg}`);
-    }
-    return data;
-  }, 4, 4000);
 }
 
 // ==================== TECHNICAL ANALYSIS & INDICATORS ====================
@@ -507,7 +229,6 @@ function ema(data, period) {
   return result;
 }
 
-// MACD Variable Parameters
 function calculateMACD(closes, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
   const fastEma = ema(closes, fastPeriod);
   const slowEma = ema(closes, slowPeriod);
@@ -600,21 +321,16 @@ function calculateStochastic(candles, kPeriod = 5, dPeriod = 3, slowing = 3) {
   return { k: kLine, d: dLine };
 }
 
-// ── Search Candles for Pre-Entry Bill Williams Fractal ──
 function findRecentFractal(candles, currentIndex, direction) {
   for (let k = currentIndex - 2; k >= 2; k--) {
     if (direction === "BUY") {
       const low = parseFloat(candles[k].low);
       if (low < parseFloat(candles[k-1].low) && low < parseFloat(candles[k-2].low) &&
-          low < parseFloat(candles[k+1].low) && low < parseFloat(candles[k+2].low)) {
-        return low;
-      }
+          low < parseFloat(candles[k+1].low) && low < parseFloat(candles[k+2].low)) return low;
     } else {
       const high = parseFloat(candles[k].high);
       if (high > parseFloat(candles[k-1].high) && high > parseFloat(candles[k-2].high) &&
-          high > parseFloat(candles[k+1].high) && high > parseFloat(candles[k+2].high)) {
-        return high;
-      }
+          high > parseFloat(candles[k+1].high) && high > parseFloat(candles[k+2].high)) return high;
     }
   }
   return null;
@@ -638,7 +354,6 @@ function getBGAInfo(price) {
   return `BGA Zone (Near ${whole})`;
 }
 
-// ── $2.50 Targeted TP1 BGA Snapping Algorithm ──
 function calculateBgaTakeProfits(entry, direction, slDistance, d1Candles) {
   let step = 100;
   if (entry > 20000) step = 250;
@@ -651,12 +366,10 @@ function calculateBgaTakeProfits(entry, direction, slDistance, d1Candles) {
   const halfStep = step / 2;
   const baseWhole = Math.round(entry / step) * step;
 
-  // 1. Calculate ideal price move for ~$2.50 profit
   const requiredRawPnlTp1 = TARGET_TP1_USD + COMMISSION_USD;
   const tp1PriceMove = (requiredRawPnlTp1 / (STAKE_USD * MULTIPLIER)) * entry;
   const idealTp1Price = direction === "BUY" ? entry + tp1PriceMove : entry - tp1PriceMove;
 
-  // 2. Calculate price cap for new Ultimate TP ceiling
   const requiredRawPnlTp2 = SOFTWARE_TP_USD + COMMISSION_USD;
   const tp2PriceMove = (requiredRawPnlTp2 / (STAKE_USD * MULTIPLIER)) * entry;
   const idealTp2Price = direction === "BUY" ? entry + tp2PriceMove : entry - tp2PriceMove;
@@ -667,15 +380,11 @@ function calculateBgaTakeProfits(entry, direction, slDistance, d1Candles) {
     const prevHigh = parseFloat(prevDay.high);
     const prevLow = parseFloat(prevDay.low);
     const prevRange = prevHigh - prevLow;
-    if (prevRange > 0) {
-      fibMaxLimit = direction === "BUY" ? prevHigh + (prevRange * 1.618) : prevLow - (prevRange * 1.618);
-    }
+    if (prevRange > 0) fibMaxLimit = direction === "BUY" ? prevHigh + (prevRange * 1.618) : prevLow - (prevRange * 1.618);
   }
 
   const allLevels = [];
-  for (let offset = -20 * step; offset <= 25 * step; offset += halfStep) {
-    allLevels.push(baseWhole + offset);
-  }
+  for (let offset = -20 * step; offset <= 25 * step; offset += halfStep) allLevels.push(baseWhole + offset);
 
   if (direction === "BUY") {
     const validLevels = allLevels.filter(l => l > entry);
@@ -691,10 +400,7 @@ function calculateBgaTakeProfits(entry, direction, slDistance, d1Candles) {
     let tp2 = futureLevels[0] || tp1 + halfStep;
     let tp3 = tp2 + halfStep;
 
-    if (fibMaxLimit && fibMaxLimit > tp1) {
-      tp2 = Math.min(tp2, fibMaxLimit);
-      tp3 = Math.min(tp3, fibMaxLimit);
-    }
+    if (fibMaxLimit && fibMaxLimit > tp1) { tp2 = Math.min(tp2, fibMaxLimit); tp3 = Math.min(tp3, fibMaxLimit); }
     if (tp2 <= tp1) tp2 = tp1 + halfStep;
     if (tp3 <= tp2) tp3 = tp2 + halfStep;
 
@@ -713,10 +419,7 @@ function calculateBgaTakeProfits(entry, direction, slDistance, d1Candles) {
     let tp2 = futureLevels[0] || tp1 - halfStep;
     let tp3 = tp2 - halfStep;
 
-    if (fibMaxLimit && fibMaxLimit < tp1) {
-      tp2 = Math.max(tp2, fibMaxLimit);
-      tp3 = Math.max(tp3, fibMaxLimit);
-    }
+    if (fibMaxLimit && fibMaxLimit < tp1) { tp2 = Math.max(tp2, fibMaxLimit); tp3 = Math.max(tp3, fibMaxLimit); }
     if (tp2 >= tp1) tp2 = tp1 - halfStep;
     if (tp3 >= tp2) tp3 = tp2 - halfStep;
 
@@ -725,34 +428,40 @@ function calculateBgaTakeProfits(entry, direction, slDistance, d1Candles) {
 }
 
 // ==================== MAIN SCANNER & TRADE LOGIC ====================
+let state = { 
+  waitingFor: null, setupEpoch: null, lastProcessedEpoch: null, lastTgUpdateId: 0, h1TrendEpoch: null, 
+  phaseATriggeredEpoch: null, activeEntryType: null, phaseATaken: false, h1TrendCycleEpoch: null,
+  phaseADeadlineEpoch: null, phaseAWindowExpired: false,
+  phaseBStochCrossEpoch: null, phaseBStochDir: null
+};
+try {
+  const s = JSON.parse(fs.readFileSync("state.json"));
+  state = { ...state, ...s };
+} catch {}
+
 async function runScanMode() {
   console.log(`[${REPO_LABEL}] Scan started — ${new Date().toISOString()}`);
   let trades = [];
   try { trades = JSON.parse(fs.readFileSync("trades.json")); } catch {}
 
-  let cachedAccountId = null;
-  try { cachedAccountId = await getDerivAccountId(); } catch (e) { dbg(`[${REPO_LABEL}] Failed to pre-fetch account ID for this scan cycle: ${e.message}`); }
-
-  // ── STEP 0: SERVER-TRUTH BROKER PORTFOLIO RECONCILIATION ──
+  // ── STEP 0: 0ms RAM PORTFOLIO READ VIA LOCAL GATEWAY ──
   let allLiveContracts = [];
   try {
-    const allPortfolio = await getOpenPortfolio(cachedAccountId);
-    if (!Array.isArray(allPortfolio)) { console.warn(`[${REPO_LABEL}] Warning: getOpenPortfolio returned non-array. Aborting scan to prevent duplicates.`); return; }
+    const allPortfolio = await getOpenPortfolio();
     allLiveContracts = allPortfolio.filter(c => getContractSymbol(c) === TRADING_SYMBOL);
-    dbg(`Live broker contracts on Deriv for ${TRADING_SYMBOL}: ${allLiveContracts.length}`);
+    dbg(`Live broker contracts for ${TRADING_SYMBOL}: ${allLiveContracts.length}`);
   } catch (pErr) {
-    console.warn(`[${REPO_LABEL}] Warning: Failed to fetch live broker portfolio: ${pErr.message}. Aborting scan to prevent duplicates.`); return;
+    console.warn(`[${REPO_LABEL}] Warning: Failed to read gateway portfolio: ${pErr.message}. Aborting scan.`);
+    return;
   }
 
-  // Duplicate check to allow exactly 2 trades (Phase B and Phase C)
+  // Duplicate check
   if (allLiveContracts.length > 2) {
-    console.error(`🚨 [${REPO_LABEL}] DUPLICATE CONTRACTS DETECTED: Found ${allLiveContracts.length} live contracts on Deriv!`);
     const dupDetails = allLiveContracts.map(c => `• Contract ID: \`${c.contract_id}\` (${c.contract_type}) @ ${c.buy_price || 'N/A'}`).join("\n");
     await sendTelegram(`🚨 *DUPLICATE CONTRACTS DETECTED — ${REPO_LABEL}*\n\nFound *${allLiveContracts.length}* live open contracts on Deriv simultaneously:\n${dupDetails}\n\n⚠️ Bot will manage all contracts independently.`);
   }
 
   for (const liveContract of allLiveContracts) {
-    await sleep(500);
     const liveStartTime = liveContract.date_start ? liveContract.date_start * 1000 : null;
     const expectedType = liveContract.contract_type === "MULTUP" ? "BUY" : "SELL";
     let matchedTrade = trades.find(t => String(t.contractId) === String(liveContract.contract_id) || (t.pending && t.direction === expectedType && liveStartTime && Math.abs(new Date(t.openTime).getTime() - liveStartTime) <= 60000));
@@ -762,17 +471,10 @@ async function runScanMode() {
         matchedTrade.contractId = liveContract.contract_id;
         matchedTrade.pending = false;
         matchedTrade.brokerSlAmount = STAKE_USD;
-        dbg(`Reconciled pending trade record to live contract ${liveContract.contract_id}`);
       }
     } else {
-      console.warn(`[${REPO_LABEL}] Unmanaged active contract ${liveContract.contract_id} found on Deriv! Adopting.`);
       const dir = expectedType;
-      let entryPrice = 0;
-      try {
-        const poc = await getServerContractStatus(liveContract.contract_id, cachedAccountId);
-        if (poc && (poc.entry_spot || poc.current_spot)) { entryPrice = parseFloat(poc.entry_spot || poc.current_spot); }
-      } catch {}
-      if (!entryPrice || entryPrice <= 10) { entryPrice = await getCurrentPrice(TRADING_SYMBOL); }
+      let entryPrice = await getCurrentPrice(TRADING_SYMBOL);
       const calculatedSl = deriveHardStopPrice(entryPrice, dir);
       const adoptedRecord = {
         id: `${SYMBOL}-${new Date().toISOString()}`,
@@ -784,7 +486,7 @@ async function runScanMode() {
         closeTime: null, result: null
       };
       trades.push(adoptedRecord);
-      await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted unmanaged live contract \`${liveContract.contract_id}\` from Deriv into tracking (Entry: ${entryPrice.toFixed(4)}, SL: ${calculatedSl.toFixed(4)}).`);
+      await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted unmanaged live contract \`${liveContract.contract_id}\` into tracking.`);
     }
   }
 
@@ -793,42 +495,37 @@ async function runScanMode() {
     const t = trades[i];
     if (!t.result) {
       if (t.pending) {
-        console.log(`[${REPO_LABEL}] Pending trade attempt ${t.id} confirmed NOT on Deriv. Clearing.`); trades.splice(i, 1);
-      } else if (t.contractId && !liveContractIdSet.has(String(t.contractId))) {
-        console.warn(`[${REPO_LABEL}] Open trade ${t.contractId} no longer in portfolio. Attempting profit_table recovery...`);
+        trades.splice(i, 1);
+      } else if (t.contractId && !liveContractIdSet.has(String(t.contractId)) && allLiveContracts.length > 0) {
         let recovered = null;
         try {
           const openEpoch = t.openTime ? Math.floor(new Date(t.openTime).getTime() / 1000) : undefined;
-          recovered = await getContractProfitFromHistory(t.contractId, openEpoch, cachedAccountId);
-        } catch (histErr) { console.warn(`[${REPO_LABEL}] profit_table lookup failed: ${histErr.message}`); }
+          recovered = await getContractProfitFromHistory(t.contractId, openEpoch);
+        } catch {}
         if (recovered && typeof recovered.profit === 'number') {
           t.result = recovered.profit >= 0 ? "WIN" : "LOSS"; t.resultSource = "server_history_verified";
           t.closeTime = t.closeTime || (recovered.sellTime ? new Date(recovered.sellTime * 1000).toISOString().replace("T", " ").substring(0, 19) : new Date().toISOString().replace("T", " ").substring(0, 19));
-          console.log(`[${REPO_LABEL}] Recovered true realized PnL from profit_table: $${recovered.profit.toFixed(2)}.`);
-          
           const icon = t.result === "WIN" ? "✅" : "❌";
           const durationMs = new Date(t.closeTime) - new Date(t.openTime);
           const pnlStr = recovered.profit >= 0 ? `+$${recovered.profit.toFixed(2)}` : `-$${Math.abs(recovered.profit).toFixed(2)}`;
-          await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${t.result} (Recovered)*\n\nDirection: ${t.direction}\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${t.entry.toFixed(4)}\n\n💵 P&L: ${pnlStr} (Net of comm.)\nReason: Recovered from Server Profit Table (Native SL/TP)\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${t.openTime}\nClosed: ${t.closeTime}\nContract: \`${t.contractId}\``);
+          await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${t.result} (Recovered)*\n\nDirection: ${t.direction}\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${t.entry.toFixed(4)}\n\n💵 P&L: ${pnlStr} (Net of comm.)\nReason: Native SL/TP Hit\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${t.openTime}\nClosed: ${t.closeTime}\nContract: \`${t.contractId}\``);
         } else {
           t.orphanRetryCount = (t.orphanRetryCount || 0) + 1;
           if (t.orphanRetryCount >= 3) {
-            console.warn(`[${REPO_LABEL}] Contract ${t.contractId} unrecoverable after 3 attempts. Defaulting to LOSS.`);
             t.result = t.result || "LOSS"; t.resultSource = "estimated_fallback"; t.closeTime = t.closeTime || new Date().toISOString().replace("T", " ").substring(0, 19);
-            await sendTelegram(`❌ *${REPO_LABEL} — Trade ${t.result} (Assumed)*\n\nDirection: ${t.direction}\nSymbol: ${SYMBOL_NAME}\n\n💵 P&L: -$5.00 (Estimated)\nReason: Contract unrecoverable after 3 sync attempts. Defaulting to Loss.\nContract: \`${t.contractId}\``);
+            await sendTelegram(`❌ *${REPO_LABEL} — Trade ${t.result} (Assumed)*\n\nDirection: ${t.direction}\nSymbol: ${SYMBOL_NAME}\n\n💵 P&L: -$5.00 (Estimated)\nReason: Contract unrecoverable after 3 sync attempts.\nContract: \`${t.contractId}\``);
           }
         }
       }
     }
   }
   fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-  await checkTelegramCommands();
 
   // ── Open Position Management ──
   const openTradesList = trades.filter(t => !t.result && !t.pending);
   if (openTradesList.length > 0) {
     let tradeData;
-    try { tradeData = await fetchOpenTradeData(); } catch (err) { console.warn(`[${REPO_LABEL}] Failed to fetch open trade data: ${err.message}. Skipping management loop.`); return; }
+    try { tradeData = await fetchOpenTradeData(); } catch (err) { console.warn(`[${REPO_LABEL}] Failed to fetch open trade data: ${err.message}. Skipping.`); return; }
     
     const currentPrice = tradeData.price;
     const currentM5 = tradeData.candles[tradeData.candles.length - 1];
@@ -836,81 +533,22 @@ async function runScanMode() {
     const candleLow = parseFloat(currentM5.low);
     
     for (const openTrade of openTradesList) {
-      await sleep(1500);
-      
-      // Self-Healing Corrupted Entry Spot Guard
-      if (openTrade.entry && openTrade.entry <= 10 && currentPrice > 50) {
-        console.warn(`[${REPO_LABEL}] Auto-repairing corrupted entry spot ($${openTrade.entry}) for contract ${openTrade.contractId} to real price: ${currentPrice}`);
-        openTrade.entry = currentPrice;
-        openTrade.sl = deriveHardStopPrice(currentPrice, openTrade.direction);
-        fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-      }
-
       let pnl = calcUnrealizedPnL(openTrade, currentPrice);
-      let usingServerTruthPnl = false;
-      if (openTrade.contractId) {
-        try {
-          const serverStatus = await getServerContractStatus(openTrade.contractId, cachedAccountId);
-          if (serverStatus && serverStatus.error === "ContractNotFound") {
-            dbg(`ContractNotFound for ${openTrade.contractId}. Cross-checking active portfolio...`);
-            const activeContracts = await getOpenPortfolio(cachedAccountId);
-            const stillActive = activeContracts?.some(c => String(c.contract_id) === String(openTrade.contractId));
-            if (stillActive) { 
-              console.warn(`[${REPO_LABEL}] Contract ${openTrade.contractId} returned ContractNotFound but is present in active portfolio. Keeping open.`); 
-            }
-            else {
-              console.warn(`[${REPO_LABEL}] Contract ${openTrade.contractId} confirmed absent from portfolio. Retiring.`);
-              openTrade.result = openTrade.result || "LOSS"; openTrade.resultSource = "estimated_fallback";
-              openTrade.closeTime = openTrade.closeTime || new Date().toISOString().replace("T", " ").substring(0, 19);
-              fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2)); 
-
-              const icon = openTrade.result === "WIN" ? "✅" : "❌";
-              const durationMs = new Date(openTrade.closeTime) - new Date(openTrade.openTime);
-              await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${openTrade.result}*\n\nDirection: ${openTrade.direction}\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${openTrade.entry.toFixed(4)}\n🏁 Exit: N/A (Closed on Server)\n🛑 SL: ${openTrade.sl ? openTrade.sl.toFixed(4) : "N/A"}\n\n💵 P&L: -$5.00 (Estimated Hard Stop)\nReason: Contract absent from portfolio (Native Stop Loss hit)\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${openTrade.openTime}\nClosed: ${openTrade.closeTime}\nContract: \`${openTrade.contractId}\``);
-              continue;
-            }
-          } else if (serverStatus && serverStatus.is_sold === 1) {
-            console.log(`[${REPO_LABEL}] Contract ${openTrade.contractId} confirmed SOLD on Deriv (Realized PnL: $${serverStatus.profit}). Syncing.`);
-            openTrade.result = (typeof serverStatus.profit === 'number' && serverStatus.profit >= 0) ? "WIN" : "LOSS";
-            openTrade.resultSource = "server_sold"; openTrade.closeTime = openTrade.closeTime || new Date().toISOString().replace("T", " ").substring(0, 19);
-            fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2)); 
-            
-            const icon = openTrade.result === "WIN" ? "✅" : "❌";
-            const durationMs = new Date(openTrade.closeTime) - new Date(openTrade.openTime);
-            const pnlStr = serverStatus.profit >= 0 ? `+$${serverStatus.profit.toFixed(2)}` : `-$${Math.abs(serverStatus.profit).toFixed(2)}`;
-            await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${openTrade.result}*\n\nDirection: ${openTrade.direction}\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${openTrade.entry.toFixed(4)}\n🏁 Exit: N/A (Closed on Server)\n🛑 SL: ${openTrade.sl ? openTrade.sl.toFixed(4) : "N/A"} ($${STAKE_USD.toFixed(2)} hard)\n\n💵 P&L: ${pnlStr} (Net of comm.)\nReason: Native Broker Limit Order Hit (Hard SL / TP)\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${openTrade.openTime}\nClosed: ${openTrade.closeTime}\nContract: \`${openTrade.contractId}\``);
-            continue;
-          }
-          if (serverStatus && typeof serverStatus.profit === 'number') { pnl = serverStatus.profit; usingServerTruthPnl = true; dbg(`Server-truth PnL for contract ${openTrade.contractId}: $${pnl.toFixed(2)}`); }
-        } catch (err) { console.warn(`[${REPO_LABEL}] Warning: Exception fetching server-truth PnL (${err.message}). Falling back to local estimate: $${pnl.toFixed(4)}`); }
-      }
-
+      
       const closeWith = async (result, exitReason) => {
         let serverPnl = pnl;
         let resultSource = "estimated_fallback";
         if (openTrade.contractId) {
           try {
-            const closeRes = await closeContract(openTrade.contractId, cachedAccountId);
-            if (!closeRes || closeRes.error) {
-              const errCode = closeRes.error?.code;
-              const errDesc = closeRes.error?.message || JSON.stringify(closeRes.error);
-              if (errCode === "ContractNotFound" || errDesc.includes("not found among your open positions")) {
-                serverPnl = -5.00; resultSource = "estimated_fallback";
-              } else {
-                console.error(`⚠️ Failed to close contract on Deriv: ${errDesc}`);
-                await sendTelegram(`⚠️ *${REPO_LABEL}* — Close Warning\n\nFailed to close contract \`${openTrade.contractId}\` on Deriv: ${errDesc}. Retrying next scan.`);
-                return;
-              }
-            } else if (typeof closeRes.sell?.profit === 'number') {
-              serverPnl = closeRes.sell.profit; resultSource = "server_close_confirmed";
+            const closeRes = await closeContract(openTrade.contractId);
+            if (closeRes && !closeRes.error) {
+              serverPnl = closeRes.sell?.profit ?? pnl;
+              resultSource = "server_close_confirmed";
             }
           } catch (e) {
-            if (e.message.includes("ContractNotFound") || e.message.includes("not found among your open positions")) {
-              serverPnl = -5.00; resultSource = "estimated_fallback";
-            } else {
-              console.error("Close exception:", e.message);
-              await sendTelegram(`⚠️ *${REPO_LABEL}* — Close Error\n\nException closing contract \`${openTrade.contractId}\`: ${e.message}. Retrying next scan.`); return;
-            }
+            console.error("Close exception:", e.message);
+            await sendTelegram(`⚠️ *${REPO_LABEL}* — Close Error: ${e.message}. Retrying next scan.`);
+            return;
           }
         }
         const finalResult = (typeof serverPnl === 'number') ? (serverPnl >= 0 ? "WIN" : "LOSS") : result;
@@ -927,24 +565,21 @@ async function runScanMode() {
         await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${finalResult}*\n\nDirection: ${openTrade.direction} (${contractType})\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${openTrade.entry.toFixed(4)}\n🏁 Exit: ${currentPrice.toFixed(4)}\n🛑 SL: ${openTrade.sl ? openTrade.sl.toFixed(4) : "N/A"} ($${slDollars} hard)\n🎯 TP1: ${openTrade.tp1 ? openTrade.tp1.toFixed(4) : "N/A"} (BGA) ${tp1Status}\n\n💵 P&L: ${pnlStr} (Net of comm.)\nReason: ${exitReason}\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${openTrade.openTime}\nClosed: ${openTrade.closeTime}\n` + (openTrade.contractId ? `Contract: \`${openTrade.contractId}\`` : ""));
       };
 
-      // ── 0. Phase C Recovery Liquidation Hook ──
+      // 0. Phase C Recovery Liquidation Hook
       const hasPhaseC = openTradesList.some(t => t.entryType === 'PHASE_C' && t.direction === openTrade.direction && !t.result);
       if (openTrade.entryType?.startsWith('PHASE_B') && hasPhaseC) {
-        const phaseBTargetProfit = 0.20;
-        if (pnl >= phaseBTargetProfit) {
+        if (pnl >= 0.20) {
           await closeWith("WIN", `Phase C Recovery — Original Phase B liquidated safely at +$${pnl.toFixed(2)}`);
           continue;
         }
       }
 
-      // ── M30 Fractal SL Tracking (Upgrade from M15) ──
+      // M30 Fractal SL Tracking
       if (!openTrade.m30FractalUpgraded && tradeData.m30Candles && tradeData.m30Candles.length >= 5) {
         const c = tradeData.m30Candles;
         const tradeEntryEpoch = openTrade.entryEpoch || Math.floor(new Date(openTrade.openTime).getTime() / 1000);
-        
         const currentIndex = c.length - 2; 
         
-        // Loop chronologically to catch the first fractal that forms after the trade opened
         for (let k = 2; k <= currentIndex - 2; k++) {
           if (c[k].epoch > tradeEntryEpoch) {
             if (openTrade.direction === "BUY") {
@@ -953,10 +588,9 @@ async function runScanMode() {
                 parseFloat(c[k].low), parseFloat(c[k+1].low), parseFloat(c[k+2].low)
               );
               const fractalVal = parseFloat(c[k].low);
-              
               if (isBottom) {
-                openTrade.m30FractalUpgraded = true; // Mark that we found the first post-entry M30 fractal
-                if (fractalVal > openTrade.sl && fractalVal < openTrade.entry) { // Anti-widening check + sanity check
+                openTrade.m30FractalUpgraded = true;
+                if (fractalVal > openTrade.sl && fractalVal < openTrade.entry) {
                   openTrade.fractalSl = fractalVal;
                   openTrade.sl = fractalVal; 
                   openTrade.fractalEpoch = c[k].epoch;
@@ -972,10 +606,9 @@ async function runScanMode() {
                 parseFloat(c[k].high), parseFloat(c[k+1].high), parseFloat(c[k+2].high)
               );
               const fractalVal = parseFloat(c[k].high);
-              
               if (isTop) {
-                openTrade.m30FractalUpgraded = true; // Mark that we found the first post-entry M30 fractal
-                if (fractalVal < openTrade.sl && fractalVal > openTrade.entry) { // Anti-widening check + sanity check
+                openTrade.m30FractalUpgraded = true;
+                if (fractalVal < openTrade.sl && fractalVal > openTrade.entry) {
                   openTrade.fractalSl = fractalVal;
                   openTrade.sl = fractalVal;
                   openTrade.fractalEpoch = c[k].epoch;
@@ -990,7 +623,7 @@ async function runScanMode() {
         }
       }
 
-      // ── 1. Priority Exit Checks (Software SL & Hard SL) ──
+      // 1. Priority Exit Checks (Software SL & Hard SL)
       const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction);
       const hardSlBreached = openTrade.direction === "BUY" 
         ? (currentPrice <= hardStopPrice || candleLow <= hardStopPrice) 
@@ -1002,19 +635,14 @@ async function runScanMode() {
 
       if (openTrade.fractalSl && evalTimeframe) {
         if (evalTimeframe === 'M30' && tradeData.m30Candles && tradeData.m30Candles.length >= 2) {
-          const lastClosedM30 = tradeData.m30Candles[tradeData.m30Candles.length - 2];
-          closedCandlePrice = parseFloat(lastClosedM30.close);
+          closedCandlePrice = parseFloat(tradeData.m30Candles[tradeData.m30Candles.length - 2].close);
         } else if (evalTimeframe === 'M15' && tradeData.m15Candles && tradeData.m15Candles.length >= 2) {
-          const lastClosedM15 = tradeData.m15Candles[tradeData.m15Candles.length - 2];
-          closedCandlePrice = parseFloat(lastClosedM15.close);
+          closedCandlePrice = parseFloat(tradeData.m15Candles[tradeData.m15Candles.length - 2].close);
         }
 
         if (closedCandlePrice !== null) {
-          if (openTrade.direction === "BUY" && closedCandlePrice < openTrade.fractalSl) {
-            fractalBreached = true;
-          } else if (openTrade.direction === "SELL" && closedCandlePrice > openTrade.fractalSl) {
-            fractalBreached = true;
-          }
+          if (openTrade.direction === "BUY" && closedCandlePrice < openTrade.fractalSl) fractalBreached = true;
+          else if (openTrade.direction === "SELL" && closedCandlePrice > openTrade.fractalSl) fractalBreached = true;
         }
       }
 
@@ -1025,15 +653,11 @@ async function runScanMode() {
         await closeWith("LOSS", reason); continue;
       }
       
-      if (usingServerTruthPnl && pnl <= CATASTROPHIC_PNL_FLOOR) {
-        await closeWith("LOSS", `Server-truth catastrophic stop — realized pnl $${pnl.toFixed(2)} breached floor $${CATASTROPHIC_PNL_FLOOR.toFixed(2)}`); continue;
-      }
-
       if (pnl <= SOFTWARE_SL_USD) {
         await closeWith("LOSS", `Software Stop Loss hit — PnL dropped to $${pnl.toFixed(2)} (Limit: $${SOFTWARE_SL_USD.toFixed(2)})`); continue;
       }
       
-      // ── 1.5 M15 Stochastic Early Exit (Opposite 50 Cross in Loss) ──
+      // 1.5 M15 Stochastic Early Exit (Opposite 50 Cross in Loss)
       if (pnl < 0 && tradeData.m15Candles && tradeData.m15Candles.length > 5) {
         const m15StochData = calculateStochastic(tradeData.m15Candles, 5, 3, 3);
         const m15Idx = tradeData.m15Candles.length - 2;
@@ -1042,11 +666,8 @@ async function runScanMode() {
         
         if (m15K_prev !== null && m15K_curr !== null) {
           let stochEarlyExit = false;
-          if (openTrade.direction === "BUY" && m15K_prev >= 50 && m15K_curr < 50) {
-            stochEarlyExit = true;
-          } else if (openTrade.direction === "SELL" && m15K_prev <= 50 && m15K_curr > 50) {
-            stochEarlyExit = true;
-          }
+          if (openTrade.direction === "BUY" && m15K_prev >= 50 && m15K_curr < 50) stochEarlyExit = true;
+          else if (openTrade.direction === "SELL" && m15K_prev <= 50 && m15K_curr > 50) stochEarlyExit = true;
           
           if (stochEarlyExit) {
              await closeWith("LOSS", `Early Exit: M15 Stochastic %K crossed 50 against trend (PnL: $${pnl.toFixed(2)})`); 
@@ -1055,36 +676,31 @@ async function runScanMode() {
         }
       }
 
-      // ── 2. Decoupled Ultimate TP ($3.60 Software Target) ──
+      // 2. Decoupled Ultimate TP ($3.60 Software Target)
       const tp2Hit = openTrade.direction === "BUY" 
         ? (openTrade.tp2 > 0 && (currentPrice >= openTrade.tp2 || candleHigh >= openTrade.tp2)) 
         : (openTrade.tp2 > 0 && (currentPrice <= openTrade.tp2 || candleLow <= openTrade.tp2));
       const pnlHitTp2 = pnl >= SOFTWARE_TP_USD;
-      
       if (tp2Hit || pnlHitTp2) {
         await closeWith("WIN", `Ultimate Target hit — price reached BGA level ${openTrade.tp2.toFixed(4)} or PnL hit $${SOFTWARE_TP_USD.toFixed(2)}`); continue;
       }
       
-      // ── 3. Breakeven Engine ──
+      // 3. Breakeven Engine
       if (!openTrade.breakevenSet && pnl >= BREAKEVEN_ACTIVATE_USD) {
         openTrade.breakevenSet = true;
         fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
         await sendTelegram(`⚖️ *${REPO_LABEL} — Breakeven Armed*\nProfit reached $${pnl.toFixed(2)}. Lifetime profit floor locked at +$0.70 net.`);
       }
-      
       const targetNetProfit = 0.70;
       const breakevenHit = openTrade.breakevenSet && pnl > 0 && pnl <= targetNetProfit;
       if (breakevenHit) {
         await closeWith("WIN", `Commission-Covered Breakeven exit — locked +$${pnl.toFixed(2)} net profit (target $${targetNetProfit.toFixed(2)})`); continue;
       }
       
-      // ── 4. TP1 Trigger: Price Level Hit OR Target Profit Hit ($2.50) ──> Arms Fixed Distance Trail ──
+      // 4. TP1 Trigger ($2.50) & Trailing Stop
       const isBuy = openTrade.direction === "BUY";
-      const priceHitTp1 = openTrade.tp1 > 0 && (isBuy 
-        ? (currentPrice >= openTrade.tp1 || candleHigh >= openTrade.tp1) 
-        : (currentPrice <= openTrade.tp1 || candleLow <= openTrade.tp1));
+      const priceHitTp1 = openTrade.tp1 > 0 && (isBuy ? (currentPrice >= openTrade.tp1 || candleHigh >= openTrade.tp1) : (currentPrice <= openTrade.tp1 || candleLow <= openTrade.tp1));
       const pnlHitTp1 = pnl >= TARGET_TP1_USD;
-      
       if (!openTrade.tp1Reached && (priceHitTp1 || pnlHitTp1)) {
         openTrade.tp1Reached = true;
         fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
@@ -1092,20 +708,15 @@ async function runScanMode() {
       }
       
       if (openTrade.tp1Reached) {
-        // Intra-Candle Peak Tracker
         const bestPriceInCandle = isBuy ? candleHigh : candleLow;
         const maxPnlInCandle = calcUnrealizedPnL(openTrade, bestPriceInCandle);
-        
         const currentHighestPnl = Math.max(pnl, maxPnlInCandle);
         if (openTrade.peakProfit === null || currentHighestPnl > openTrade.peakProfit) {
           openTrade.peakProfit = currentHighestPnl; 
           fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
         }
-        
-        // Fixed Trailing Distance: Dynamic 50% of TP1 (e.g. $1.25)
         const trailingDistance = TARGET_TP1_USD * 0.50;
         const lockLevel = openTrade.peakProfit - trailingDistance;
-        
         if (openTrade.peakProfit > 0 && pnl <= lockLevel) {
           const result = pnl >= 0 ? "WIN" : "LOSS";
           await closeWith(result, `Profit trail exit — locked ~$${pnl.toFixed(2)} (peak $${openTrade.peakProfit.toFixed(2)}, trailed by $${trailingDistance.toFixed(2)})`); 
@@ -1135,10 +746,10 @@ async function runScanMode() {
     return;
   }
 
-  // ── Signal Scan (Reached ONLY when criteria allow) ──
+  // ── Signal Scan ──
   let scanData;
   try { scanData = await fetchAllData(); } catch (fetchErr) {
-    console.warn(`[${REPO_LABEL}] Failed to fetch market candles: ${fetchErr.message}. Skipping scan this cycle.`); return;
+    console.warn(`[${REPO_LABEL}] Failed to fetch market candles: ${fetchErr.message}. Skipping scan.`); return;
   }
   const candles = scanData.m5;
   const h1Candles = scanData.h1;
@@ -1146,9 +757,9 @@ async function runScanMode() {
   const m15Candles = scanData.m15;
   const m30Candles = scanData.m30;
 
-  if (!candles || candles.length < 60) { console.log("Not enough M5 candles."); return; }
-  if (!m15Candles || m15Candles.length < 100) { console.log("Not enough M15 candles for EMA."); return; }
-  if (!m30Candles || m30Candles.length < 50) { console.log("Not enough M30 candles for Fractals."); return; }
+  if (!candles || candles.length < 60) return;
+  if (!m15Candles || m15Candles.length < 100) return;
+  if (!m30Candles || m30Candles.length < 50) return;
 
   const i = candles.length - 2;
   const currentCandleEpoch = candles[i].epoch;
@@ -1180,64 +791,50 @@ async function runScanMode() {
     if (h1FreshBuy || h1FreshSell) { h1NewCycleEpoch = h1Candles[h1ci].epoch; }
   }
 
-  // ── STEP 1: New H1 cycle detected ──
   if (h1NewCycleEpoch && state.h1TrendCycleEpoch !== h1NewCycleEpoch) {
     state.h1TrendCycleEpoch = h1NewCycleEpoch;
     state.waitingFor = h1FreshBuy ? "BUY" : "SELL";
     state.phaseATaken = false; state.phaseAWindowExpired = false;
     state.phaseADeadlineEpoch = h1NewCycleEpoch + PHASE_A_WINDOW_SECONDS;
     state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
-    dbg(`STEP 1: New H1 trend cycle detected at epoch ${h1NewCycleEpoch} (${state.waitingFor}). Phase A window open until ${new Date(state.phaseADeadlineEpoch * 1000).toISOString()}.`);
   }
 
-  // ── STEP 2: Trend invalidation ──
   if (h1TrendDir && state.waitingFor && h1TrendDir !== state.waitingFor) {
-    dbg("STEP 2: H1 trend flipped against waitingFor. Resetting state.");
     state.waitingFor = null; state.phaseATaken = false; state.h1TrendCycleEpoch = null; state.phaseADeadlineEpoch = null; state.phaseAWindowExpired = false; state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
   }
 
-  // ── STEP 3: Cold-boot adoption ──
   if (!state.waitingFor && h1TrendDir) {
     state.waitingFor = h1TrendDir; state.h1TrendCycleEpoch = currentCandleEpoch; state.phaseATaken = false; state.phaseAWindowExpired = false; state.phaseADeadlineEpoch = currentCandleEpoch + PHASE_A_WINDOW_SECONDS;
-    dbg(`STEP 3: Cold-boot adoption — adopting ${h1TrendDir}. Phase A window open until ${new Date(state.phaseADeadlineEpoch * 1000).toISOString()}.`);
   }
 
-  // ── STEP 4: Legacy migration ──
   if (state.waitingFor && !state.phaseATaken && !state.phaseAWindowExpired && !state.phaseADeadlineEpoch) {
     const nowEpoch = Math.floor(Date.now() / 1000);
     if (state.h1TrendCycleEpoch) {
       const properDeadline = state.h1TrendCycleEpoch + PHASE_A_WINDOW_SECONDS;
-      if (nowEpoch > properDeadline) { state.phaseAWindowExpired = true; dbg(`STEP 4: Legacy migration — Phase A EXPIRED, falling back to Phase B.`); }
-      else { state.phaseADeadlineEpoch = properDeadline; dbg(`STEP 4: Legacy migration — restored Phase A deadline.`); }
+      if (nowEpoch > properDeadline) state.phaseAWindowExpired = true;
+      else state.phaseADeadlineEpoch = properDeadline;
     } else {
-      state.phaseAWindowExpired = true; dbg(`STEP 4: Legacy migration — marking Phase A EXPIRED.`);
+      state.phaseAWindowExpired = true;
     }
   }
 
-  // ── STEP 5: Early exit if no active trend ──
   if (!state.waitingFor && !phaseCTarget) {
     state.lastProcessedEpoch = currentCandleEpoch;
     fs.writeFileSync("state.json", JSON.stringify(state, null, 2)); return;
   }
 
-  // Indicator Calculations for Phase A & B & C (M5 & M15)
   const si = candles.length - 2;
   const stoch = calculateStochastic(candles, 5, 3, 3);
-  
-  // Phase B M5 MACD uses 12, 16, 9
   const macd_m5 = calculateMACD(closes, 12, 16, 9);
 
   const m15Closes = m15Candles.map(c => parseFloat(c.close));
   const m15Rsi = calculateRSI(m15Closes, 14);
   const m15Tdi = calculateBollingerBands(m15Rsi, 34, 1.619);
-  
   const m15i = m15Candles.length - 2;
   
-  // Phase B M15 Trend Filter uses 12, 26, 9
   const macd_m15_12_26_9 = calculateMACD(m15Closes, 12, 26, 9);
   const liveM15Macd_12_26_9 = macd_m15_12_26_9.macd[m15Closes.length - 1]; 
   
-  // Phase C M15 Guard uses 12, 16, 9
   const macd_m15_12_16_9 = calculateMACD(m15Closes, 12, 16, 9);
   const liveM15Macd_12_16_9 = macd_m15_12_16_9.macd[m15Closes.length - 1]; 
 
@@ -1250,30 +847,25 @@ async function runScanMode() {
       const currentPnl = calcUnrealizedPnL(phaseCTarget, closes[i]);
       if (currentPnl < 0) {
         if (phaseCTarget.direction === "BUY") {
-          const stochCrossBuyPhaseC = stoch.k[si-1] <= 20 && stoch.k[si] > 20;
+          const stochCrossBuyPhaseC = stoch.k[si-1] <= 20 && stoch.k[si] > 20 && stoch.d[si-1] <= 20 && stoch.d[si] > 20;
           const macdValid = liveM15Macd_12_16_9 !== null && liveM15Macd_12_16_9 >= 0;
           if (stochCrossBuyPhaseC && macdValid) {
             signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = 'PHASE_C';
-          } else if (stochCrossBuyPhaseC && !macdValid) {
-            dbg(`Phase C BUY blocked: M15 MACD (12,16,9) is against trend (${liveM15Macd_12_16_9})`);
           }
         } else if (phaseCTarget.direction === "SELL") {
-          const stochCrossSellPhaseC = stoch.k[si-1] >= 80 && stoch.k[si] < 80;
+          const stochCrossSellPhaseC = stoch.k[si-1] >= 80 && stoch.k[si] < 80 && stoch.d[si-1] >= 80 && stoch.d[si] < 80;
           const macdValid = liveM15Macd_12_16_9 !== null && liveM15Macd_12_16_9 <= 0;
           if (stochCrossSellPhaseC && macdValid) {
             signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = 'PHASE_C';
-          } else if (stochCrossSellPhaseC && !macdValid) {
-            dbg(`Phase C SELL blocked: M15 MACD (12,16,9) is against trend (${liveM15Macd_12_16_9})`);
           }
         }
       }
     } else {
       // ==== NORMAL PHASE A / B EVALUATION ====
-      // --- PHASE A ---
       if (!state.phaseATaken && !state.phaseAWindowExpired) {
         const deadlinePassed = state.phaseADeadlineEpoch && currentCandleEpoch > state.phaseADeadlineEpoch;
         if (deadlinePassed) {
-          state.phaseAWindowExpired = true; dbg(`Phase A window EXPIRED at ${new Date(currentCandleEpoch*1000).toISOString()} — falling back to Phase B.`);
+          state.phaseAWindowExpired = true;
         } else {
           const stochCrossBuyPhaseA = stoch.k[si-1] <= 20 && stoch.k[si] > 20;
           const stochCrossSellPhaseA = stoch.k[si-1] >= 80 && stoch.k[si] < 80;
@@ -1282,65 +874,44 @@ async function runScanMode() {
         }
       }
 
-      // --- PHASE B (Stoch 20/80 %K only + MACD 12,16,9 0 Cross) ---
+      // --- PHASE B (Stoch %K + MACD 12,16,9) ---
       if (!signalTriggered && (state.phaseATaken || state.phaseAWindowExpired)) {
         const stochCrossBuyB = stoch.k[si-1] <= 20 && stoch.k[si] > 20;
         const stochCrossSellB = stoch.k[si-1] >= 80 && stoch.k[si] < 80;
-
         const macdBuyB = macd_m5.macd[si] > 0;
         const macdSellB = macd_m5.macd[si] < 0;
-
         const m15MacdValidBuyB = liveM15Macd_12_26_9 !== null && liveM15Macd_12_26_9 >= 0;
         const m15MacdValidSellB = liveM15Macd_12_26_9 !== null && liveM15Macd_12_26_9 <= 0;
 
         if (state.waitingFor === "BUY") {
-          // Trigger memory on Stochastic Cross
           if (stochCrossBuyB) {
             state.phaseBStochCrossEpoch = currentCandleEpoch;
             state.phaseBStochDir = "BUY";
           }
-          
-          // Clear memory if 35-minute window expires (2100 seconds)
           if (state.phaseBStochCrossEpoch && (currentCandleEpoch - state.phaseBStochCrossEpoch > 2100)) {
             state.phaseBStochCrossEpoch = null;
             state.phaseBStochDir = null;
           }
-
-          // Evaluate MACD cross/alignment while memory is active
-          if (state.phaseBStochDir === "BUY" && macdBuyB) {
-            if (m15MacdValidBuyB) {
-              signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A';
-              state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null; // Reset memory after entry
-            } else {
-              dbg(`Phase B BUY blocked: M15 MACD (12,26,9) is against H1 trend (${liveM15Macd_12_26_9})`);
-            }
+          if (state.phaseBStochDir === "BUY" && macdBuyB && m15MacdValidBuyB) {
+            signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A';
+            state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
           }
         } else if (state.waitingFor === "SELL") {
-          // Trigger memory on Stochastic Cross
           if (stochCrossSellB) {
             state.phaseBStochCrossEpoch = currentCandleEpoch;
             state.phaseBStochDir = "SELL";
           }
-
-          // Clear memory if 35-minute window expires (2100 seconds)
           if (state.phaseBStochCrossEpoch && (currentCandleEpoch - state.phaseBStochCrossEpoch > 2100)) {
             state.phaseBStochCrossEpoch = null;
             state.phaseBStochDir = null;
           }
-
-          // Evaluate MACD cross/alignment while memory is active
-          if (state.phaseBStochDir === "SELL" && macdSellB) {
-            if (m15MacdValidSellB) {
-              signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A';
-              state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null; // Reset memory after entry
-            } else {
-              dbg(`Phase B SELL blocked: M15 MACD (12,26,9) is against H1 trend (${liveM15Macd_12_26_9})`);
-            }
+          if (state.phaseBStochDir === "SELL" && macdSellB && m15MacdValidSellB) {
+            signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A';
+            state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
           }
         }
       }
 
-      // Record M15 TDI State for Phase B Trades (Allows Future Phase C Rescues)
       if (signalTriggered && (entryType === 'PHASE_B' || entryType === 'PHASE_B_NO_PRIOR_A') && m15Rsi[m15i] != null && m15Tdi.middle[m15i] != null) {
         if (direction === "BUY") m15AgainstAtEntry = m15Rsi[m15i] < m15Tdi.middle[m15i];
         else m15AgainstAtEntry = m15Rsi[m15i] > m15Tdi.middle[m15i];
@@ -1349,49 +920,33 @@ async function runScanMode() {
   }
 
   if (signalTriggered) {
-    console.log(`[${REPO_LABEL}] Signal triggered for ${direction}. Performing immediate pre-execution portfolio check...`);
     try {
-      const preCheckPortfolio = await getOpenPortfolio(cachedAccountId);
-      if (!Array.isArray(preCheckPortfolio)) { throw new Error("getOpenPortfolio returned non-array response"); }
-      const preCheckContracts = preCheckPortfolio.filter(c => getContractSymbol(c) === TRADING_SYMBOL);
-      
-      // Strict Pre-Execution Idempotency Match
+      const preCheckContracts = (await getOpenPortfolio()).filter(c => getContractSymbol(c) === TRADING_SYMBOL);
       if (entryType === 'PHASE_C') {
-        if (preCheckContracts.length > 1) {
-          console.warn(`[${REPO_LABEL}] Phase C Aborted. Found ${preCheckContracts.length} live contracts.`); return;
-        }
+        if (preCheckContracts.length > 1) return;
       } else {
         if (preCheckContracts.length > 0) {
-          console.warn(`[${REPO_LABEL}] Signal fired but ${preCheckContracts.length} open contract(s) appeared on Deriv. Aborting.`);
-          await sendTelegram(`⚠️ *${REPO_LABEL} — Trade Aborted*\n\nSignal triggered for *${direction}*, but an active position (\`${preCheckContracts[0].contract_id}\`) was detected on Deriv immediately before order dispatch.`);
-          state.lastProcessedEpoch = currentCandleEpoch; fs.writeFileSync("state.json", JSON.stringify(state, null, 2)); return;
+          state.lastProcessedEpoch = currentCandleEpoch;
+          fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
+          return;
         }
       }
     } catch (preErr) {
-      console.warn(`[${REPO_LABEL}] Pre-execution portfolio verification failed: ${preErr.message}. Aborting trade.`);
-      state.lastProcessedEpoch = currentCandleEpoch; fs.writeFileSync("state.json", JSON.stringify(state, null, 2)); return;
+      state.lastProcessedEpoch = currentCandleEpoch;
+      fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
+      return;
     }
 
-    // Capture initial fractal on M15 for Software SL
     let initialFractal = findRecentFractal(m15Candles, m15Candles.length - 2, direction);
-    
     const slDollars = parseFloat(STAKE_USD.toFixed(2));
     const hardStopPrice = deriveHardStopPrice(entry, direction);
     
     if (direction === "BUY") {
-      if (initialFractal && initialFractal > hardStopPrice && initialFractal < entry) {
-        sl = initialFractal;
-      } else {
-        sl = hardStopPrice;
-        initialFractal = null;
-      }
+      if (initialFractal && initialFractal > hardStopPrice && initialFractal < entry) sl = initialFractal;
+      else { sl = hardStopPrice; initialFractal = null; }
     } else {
-      if (initialFractal && initialFractal < hardStopPrice && initialFractal > entry) {
-        sl = initialFractal;
-      } else {
-        sl = hardStopPrice;
-        initialFractal = null;
-      }
+      if (initialFractal && initialFractal < hardStopPrice && initialFractal > entry) sl = initialFractal;
+      else { sl = hardStopPrice; initialFractal = null; }
     }
     
     let fractalTimeframe = initialFractal ? 'M15' : null;
@@ -1419,21 +974,21 @@ async function runScanMode() {
     try {
       const contractId = await executeTrade(direction);
       if (!contractId) {
-        console.error("⚠️ Trade execution returned no contract ID. Removing pending trade record.");
         const idx = trades.findIndex(t => t.id === pendingTradeRecord.id);
         if (idx !== -1) trades.splice(idx, 1);
         fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-        await sendTelegram(`❌ *${REPO_LABEL}* — Signal triggered for ${direction}, but broker returned no contract ID. Trade aborted.`); return;
+        await sendTelegram(`❌ *${REPO_LABEL}* — Signal triggered for ${direction}, but broker returned no contract ID. Trade aborted.`);
+        return;
       }
       pendingTradeRecord.contractId = contractId; pendingTradeRecord.pending = false;
       fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
       await sendTelegram(message);
     } catch (execErr) {
-      console.error("⚠️ Live execution error:", execErr.message);
       const idx = trades.findIndex(t => t.id === pendingTradeRecord.id);
       if (idx !== -1) trades.splice(idx, 1);
       fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-      await sendTelegram(`❌ *${REPO_LABEL}* — Live execution failed: ${execErr.message}`); return;
+      await sendTelegram(`❌ *${REPO_LABEL}* — Live execution failed: ${execErr.message}`);
+      return;
     }
   }
   state.lastProcessedEpoch = currentCandleEpoch;
@@ -1441,9 +996,9 @@ async function runScanMode() {
   console.log(`[${REPO_LABEL}] Scan complete.`);
 }
 
-// ==================== EXECUTION MODES ====================
+// ==================== EXECUTION (SIMULTANEOUS AT :00) ====================
 (async () => {
-  // Ultra-safe 25-second spacing (Takes advantage of the new 5-minute cron window)
+  // Global 25-second spacing to prevent Proxy/Deriv collisions across all servers
   const REPO_INDEX = { 
     "R_75": 0,       // Lery
     "1HZ75V": 1,     // Coffee
@@ -1461,14 +1016,6 @@ async function runScanMode() {
   if (MODE === "daily") { await runSummary("Daily"); return; }
   if (MODE === "weekly") { await runSummary("Weekly"); return; }
   if (MODE === "monthly") { await runSummary("Monthly"); return; }
-  if (MODE === "close_win") { await executeManualClose("WIN", "manual command"); return; }
-  if (MODE === "close_loss") { await executeManualClose("LOSS", "manual command"); return; }
-  if (MODE === "test") {
-    await sendTelegram(`Test mode active — ${REPO_LABEL}\nFiring a direct BUY trade via proxy...\nCheck your Deriv account for a MULTUP contract.`);
-    try { const cid = await executeTrade("BUY"); await sendTelegram(`✅ Test trade placed. Contract ID: ${cid}`); } 
-    catch (e) { await sendTelegram(`❌ Test trade failed: ${e.message}`); } return;
-  }
-  if (TRIGGER_SOURCE !== "cronjob") { console.log("Not a cronjob trigger — exiting."); return; }
-  
+  if (TRIGGER_SOURCE !== "cronjob") return;
   await runScanMode();
 })();
