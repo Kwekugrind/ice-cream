@@ -97,7 +97,7 @@ async function runSummary(label) {
   await sendTelegram(msg);
 }
 
-// ==================== GATEWAY CLIENT CALLS ====================
+// ==================== GATEWAY CLIENT CALLS (0ms LOCAL IPC) ====================
 async function gatewayFetch(endpoint, method = "GET", body = null) {
   const res = await fetch(`${GATEWAY_URL}${endpoint}`, {
     method,
@@ -144,6 +144,25 @@ async function closeContract(contractId) {
   return data;
 }
 
+async function getServerContractStatus(contractId) {
+  const payload = { proposal_open_contract: 1, contract_id: contractId };
+  const data = await gatewayFetch("/proposal_open_contract", "POST", payload);
+  if (data.error?.code === "ContractNotFound") return { error: "ContractNotFound" };
+  const poc = data.proposal_open_contract;
+  if (poc) {
+    return {
+      profit: poc.profit,
+      bid_price: poc.bid_price,
+      current_spot: poc.current_spot,
+      entry_spot: poc.entry_spot || poc.barrier || poc.entry_tick,
+      is_sold: poc.is_sold,
+      is_expired: poc.is_expired,
+      status: poc.status
+    };
+  }
+  return null;
+}
+
 async function getContractProfitFromHistory(contractId, approxOpenEpoch) {
   const payload = { profit_table: 1, description: 1, limit: 25, sort: "DESC", date_from: approxOpenEpoch ? approxOpenEpoch - 300 : undefined };
   const data = await gatewayFetch("/profit_table", "POST", payload);
@@ -154,7 +173,7 @@ async function getContractProfitFromHistory(contractId, approxOpenEpoch) {
   return { profit, sellTime: match.sell_time };
 }
 
-// ==================== MARKET DATA FETCHERS ====================
+// ==================== MARKET DATA FETCHERS (PUBLIC UNLIMITED API) ====================
 async function fetchAllData() {
   return new Promise((resolve, reject) => {
     const wsPublic = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
@@ -419,7 +438,10 @@ function calculateBgaTakeProfits(entry, direction, slDistance, d1Candles) {
     let tp2 = futureLevels[0] || tp1 - halfStep;
     let tp3 = tp2 - halfStep;
 
-    if (fibMaxLimit && fibMaxLimit < tp1) { tp2 = Math.max(tp2, fibMaxLimit); tp3 = Math.max(tp3, fibMaxLimit); }
+    if (fibMaxLimit && fibMaxLimit < tp1) {
+      tp2 = Math.max(tp2, fibMaxLimit);
+      tp3 = Math.max(tp3, fibMaxLimit);
+    }
     if (tp2 >= tp1) tp2 = tp1 - halfStep;
     if (tp3 >= tp2) tp3 = tp2 - halfStep;
 
@@ -444,7 +466,7 @@ async function runScanMode() {
   let trades = [];
   try { trades = JSON.parse(fs.readFileSync("trades.json")); } catch {}
 
-  // ── STEP 0: 0ms RAM PORTFOLIO READ VIA LOCAL GATEWAY ──
+  // ── STEP 0: 0ms RAM PORTFOLIO READ VIA LOCAL GATEWAY (WITH STALENESS GUARD) ──
   let allLiveContracts = [];
   try {
     const allPortfolio = await getOpenPortfolio();
@@ -486,7 +508,7 @@ async function runScanMode() {
         closeTime: null, result: null
       };
       trades.push(adoptedRecord);
-      await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted unmanaged live contract \`${liveContract.contract_id}\` into tracking.`);
+      await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted unmanaged live contract \`${liveContract.contract_id}\` into tracking (Entry: ${entryPrice.toFixed(4)}, SL: ${calculatedSl.toFixed(4)}).`);
     }
   }
 
@@ -843,17 +865,17 @@ async function runScanMode() {
   if (si >= 1 && stoch.k[si] != null && stoch.k[si-1] != null && macd_m5.macd[si] != null && macd_m5.macd[si-1] != null) {
       
     if (phaseCTarget) {
-      // ==== PHASE C EVALUATION ENGINE ====
+      // ==== PHASE C EVALUATION ENGINE (Strictly %K only) ====
       const currentPnl = calcUnrealizedPnL(phaseCTarget, closes[i]);
       if (currentPnl < 0) {
         if (phaseCTarget.direction === "BUY") {
-          const stochCrossBuyPhaseC = stoch.k[si-1] <= 20 && stoch.k[si] > 20 && stoch.d[si-1] <= 20 && stoch.d[si] > 20;
+          const stochCrossBuyPhaseC = stoch.k[si-1] <= 20 && stoch.k[si] > 20;
           const macdValid = liveM15Macd_12_16_9 !== null && liveM15Macd_12_16_9 >= 0;
           if (stochCrossBuyPhaseC && macdValid) {
             signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = 'PHASE_C';
           }
         } else if (phaseCTarget.direction === "SELL") {
-          const stochCrossSellPhaseC = stoch.k[si-1] >= 80 && stoch.k[si] < 80 && stoch.d[si-1] >= 80 && stoch.d[si] < 80;
+          const stochCrossSellPhaseC = stoch.k[si-1] >= 80 && stoch.k[si] < 80;
           const macdValid = liveM15Macd_12_16_9 !== null && liveM15Macd_12_16_9 <= 0;
           if (stochCrossSellPhaseC && macdValid) {
             signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = 'PHASE_C';
@@ -874,7 +896,7 @@ async function runScanMode() {
         }
       }
 
-      // --- PHASE B (Stoch %K + MACD 12,16,9) ---
+      // --- PHASE B (Stoch %K only + MACD 12,16,9) ---
       if (!signalTriggered && (state.phaseATaken || state.phaseAWindowExpired)) {
         const stochCrossBuyB = stoch.k[si-1] <= 20 && stoch.k[si] > 20;
         const stochCrossSellB = stoch.k[si-1] >= 80 && stoch.k[si] < 80;
@@ -996,23 +1018,8 @@ async function runScanMode() {
   console.log(`[${REPO_LABEL}] Scan complete.`);
 }
 
-// ==================== EXECUTION (SIMULTANEOUS AT :00) ====================
+// ==================== EXECUTION (INSTANTANEOUS AT :00) ====================
 (async () => {
-  // Global 25-second spacing to prevent Proxy/Deriv collisions across all servers
-  const REPO_INDEX = { 
-    "R_75": 0,       // Lery
-    "1HZ75V": 1,     // Coffee
-    "R_100": 2,      // Milk
-    "R_25": 3,       // Tea
-    "1HZ100V": 4,    // Ice Cream
-    "R_50": 5,       // OmniSight
-    "R_10": 6        // Test Bot
-  }[SYMBOL] ?? 0;
-  
-  const jitterMs = (REPO_INDEX * 25000) + Math.floor(Math.random() * 1000);
-  dbg(`Staggering execution by ${jitterMs}ms (Repo Index: ${REPO_INDEX})...`);
-  await sleep(jitterMs);
-
   if (MODE === "daily") { await runSummary("Daily"); return; }
   if (MODE === "weekly") { await runSummary("Weekly"); return; }
   if (MODE === "monthly") { await runSummary("Monthly"); return; }
