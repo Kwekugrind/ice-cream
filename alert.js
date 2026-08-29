@@ -97,6 +97,80 @@ async function runSummary(label) {
   await sendTelegram(msg);
 }
 
+async function checkTelegramCommands() {
+  if (!TG_TOKEN || !TG_CHAT_ID) return;
+  try {
+    const offset = (state.lastTgUpdateId || 0) + 1;
+    const url = `https://api.telegram.org/bot${TG_TOKEN}/getUpdates?offset=${offset}&limit=10&timeout=0`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data.ok || !Array.isArray(data.result)) return;
+
+    for (const update of data.result) {
+      state.lastTgUpdateId = update.update_id;
+      const text = update.message?.text?.trim()?.toLowerCase();
+      if (!text) continue;
+
+      if (text === "/status") {
+        const trades = fs.existsSync("trades.json") ? JSON.parse(fs.readFileSync("trades.json")) : [];
+        const open = trades.filter(t => !t.result && !t.pending);
+        const reply = open.length 
+          ? `📍 *${REPO_LABEL} Active Trades:*\n` + open.map(t => `• ${t.direction} @ ${Number(t.entry).toFixed(4)} (SL: ${t.sl ? Number(t.sl).toFixed(4) : "N/A"})`).join("\n")
+          : `⚪ *${REPO_LABEL}*: No open trades.`;
+        await sendTelegram(reply);
+      }
+
+      if (text === "/close win" || text === "/closewin") {
+        await executeManualClose("WIN", "telegram command (/closewin)");
+      }
+
+      if (text === "/close loss" || text === "/closeloss") {
+        await executeManualClose("LOSS", "telegram command (/closeloss)");
+      }
+    }
+    fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
+  } catch (e) { dbg("Telegram command check error:", e.message); }
+}
+
+async function executeManualClose(result, reason) {
+  let trades = [];
+  try { trades = JSON.parse(fs.readFileSync("trades.json")); } catch {}
+  const open = trades.filter(t => !t.result && !t.pending);
+  if (!open.length) {
+    await sendTelegram(`⚠️ *${REPO_LABEL}*\n\nNo active open trade found to close.`);
+    return;
+  }
+
+  for (const trade of open) {
+    let serverPnl = null;
+    let resultSource = "manual_command";
+    if (trade.contractId) {
+      try {
+        const closeRes = await closeContract(trade.contractId);
+        if (closeRes && typeof closeRes.sell?.profit === "number") {
+          serverPnl = closeRes.sell.profit;
+          resultSource = "server_close_confirmed";
+        }
+      } catch (e) {
+        console.error("Manual close broker error:", e.message);
+      }
+    }
+
+    const finalResult = (typeof serverPnl === "number") ? (serverPnl >= 0 ? "WIN" : "LOSS") : result;
+    trade.result = finalResult;
+    trade.resultSource = resultSource;
+    trade.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+    fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
+
+    const icon = finalResult === "WIN" ? "✅" : "❌";
+    const pnlStr = (typeof serverPnl === "number") 
+      ? (serverPnl >= 0 ? `+$${serverPnl.toFixed(2)}` : `-$${Math.abs(serverPnl).toFixed(2)}`) 
+      : (finalResult === "WIN" ? "+$3.60" : "-$3.60");
+
+    await sendTelegram(`${icon} *${REPO_LABEL} — Trade Closed Manually*\n\nDirection: ${trade.direction}\n📍 Entry: ${Number(trade.entry).toFixed(4)}\n💵 P&L: *${pnlStr}*\nReason: ${reason}\nClosed: ${trade.closeTime}`);
+  }
+}
+
 // ==================== GATEWAY CLIENT CALLS (0ms LOCAL IPC) ====================
 async function gatewayFetch(endpoint, method = "GET", body = null) {
   const res = await fetch(`${GATEWAY_URL}${endpoint}`, {
@@ -496,7 +570,13 @@ async function runScanMode() {
       }
     } else {
       const dir = expectedType;
-      let entryPrice = await getCurrentPrice(TRADING_SYMBOL);
+      let entryPrice = 0;
+      try {
+        const poc = await getServerContractStatus(liveContract.contract_id);
+        if (poc && (poc.entry_spot || poc.barrier)) entryPrice = parseFloat(poc.entry_spot || poc.barrier);
+      } catch {}
+      if (!entryPrice || entryPrice <= 10) entryPrice = await getCurrentPrice(TRADING_SYMBOL);
+
       const calculatedSl = deriveHardStopPrice(entryPrice, dir);
       const adoptedRecord = {
         id: `${SYMBOL}-${new Date().toISOString()}`,
@@ -518,7 +598,7 @@ async function runScanMode() {
     if (!t.result) {
       if (t.pending) {
         trades.splice(i, 1);
-      } else if (t.contractId && !liveContractIdSet.has(String(t.contractId)) && allLiveContracts.length > 0) {
+      } else if (t.contractId && !liveContractIdSet.has(String(t.contractId)) && allLiveContracts.length === 0) {
         let recovered = null;
         try {
           const openEpoch = t.openTime ? Math.floor(new Date(t.openTime).getTime() / 1000) : undefined;
@@ -542,6 +622,9 @@ async function runScanMode() {
     }
   }
   fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
+
+  // ── STEP 0.5: PROCESS INCOMING TELEGRAM COMMANDS ──
+  await checkTelegramCommands();
 
   // ── Open Position Management ──
   const openTradesList = trades.filter(t => !t.result && !t.pending);
@@ -632,7 +715,7 @@ async function runScanMode() {
                 openTrade.m30FractalUpgraded = true;
                 if (fractalVal < openTrade.sl && fractalVal > openTrade.entry) {
                   openTrade.fractalSl = fractalVal;
-                  openTrade.sl = fractalVal;
+                  openTrade.sl = fractalVal; 
                   openTrade.fractalEpoch = c[k].epoch;
                   openTrade.fractalTimeframe = 'M30';
                   fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
@@ -679,22 +762,33 @@ async function runScanMode() {
         await closeWith("LOSS", `Software Stop Loss hit — PnL dropped to $${pnl.toFixed(2)} (Limit: $${SOFTWARE_SL_USD.toFixed(2)})`); continue;
       }
       
-      // 1.5 M15 Stochastic Early Exit (Opposite 50 Cross in Loss)
+      // 1.5 M15 Stochastic Early Exit (Opposite 50 Cross in Loss - Post-Entry Checked)
       if (pnl < 0 && tradeData.m15Candles && tradeData.m15Candles.length > 5) {
         const m15StochData = calculateStochastic(tradeData.m15Candles, 5, 3, 3);
-        const m15Idx = tradeData.m15Candles.length - 2;
-        const m15K_prev = m15StochData.k[m15Idx - 1];
-        const m15K_curr = m15StochData.k[m15Idx];
+        const tradeEntryEpoch = openTrade.entryEpoch || Math.floor(new Date(openTrade.openTime).getTime() / 1000);
+        const totalM15 = tradeData.m15Candles.length;
         
-        if (m15K_prev !== null && m15K_curr !== null) {
-          let stochEarlyExit = false;
-          if (openTrade.direction === "BUY" && m15K_prev >= 50 && m15K_curr < 50) stochEarlyExit = true;
-          else if (openTrade.direction === "SELL" && m15K_prev <= 50 && m15K_curr > 50) stochEarlyExit = true;
-          
-          if (stochEarlyExit) {
-             await closeWith("LOSS", `Early Exit: M15 Stochastic %K crossed 50 against trend (PnL: $${pnl.toFixed(2)})`); 
-             continue;
+        let stochEarlyExit = false;
+        for (let k = 2; k <= totalM15 - 2; k++) {
+          const candleEpoch = tradeData.m15Candles[k].epoch;
+          if (candleEpoch >= tradeEntryEpoch) {
+            const k_prev = m15StochData.k[k - 1];
+            const k_curr = m15StochData.k[k];
+            if (k_prev !== null && k_curr !== null) {
+              if (openTrade.direction === "BUY" && k_prev >= 50 && k_curr < 50) {
+                stochEarlyExit = true;
+                break;
+              } else if (openTrade.direction === "SELL" && k_prev <= 50 && k_curr > 50) {
+                stochEarlyExit = true;
+                break;
+              }
+            }
           }
+        }
+        
+        if (stochEarlyExit) {
+           await closeWith("LOSS", `Early Exit: Fresh M15 Stochastic %K crossed 50 against trend (PnL: $${pnl.toFixed(2)})`); 
+           continue;
         }
       }
 
@@ -1023,6 +1117,8 @@ async function runScanMode() {
   if (MODE === "daily") { await runSummary("Daily"); return; }
   if (MODE === "weekly") { await runSummary("Weekly"); return; }
   if (MODE === "monthly") { await runSummary("Monthly"); return; }
+  if (MODE === "close_win" || MODE === "closewin") { await executeManualClose("WIN", "manual command"); return; }
+  if (MODE === "close_loss" || MODE === "closeloss") { await executeManualClose("LOSS", "manual command"); return; }
   if (TRIGGER_SOURCE !== "cronjob") return;
   await runScanMode();
 })();
