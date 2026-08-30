@@ -1046,7 +1046,7 @@ async function runScanMode() {
             state.phaseBStochCrossEpoch = currentCandleEpoch;
             state.phaseBStochDir = "BUY";
           }
-          if (state.phaseBStochCrossEpoch && (currentCandleEpoch - state.phaseBStochCrossEpoch > 2100)) {
+          if (state.phaseBStochCrossEpoch && (currentCandleEpoch - state.phaseBStochCrossEpoch > 2820)) {
             state.phaseBStochCrossEpoch = null;
             state.phaseBStochDir = null;
           }
@@ -1059,7 +1059,7 @@ async function runScanMode() {
             state.phaseBStochCrossEpoch = currentCandleEpoch;
             state.phaseBStochDir = "SELL";
           }
-          if (state.phaseBStochCrossEpoch && (currentCandleEpoch - state.phaseBStochCrossEpoch > 2100)) {
+          if (state.phaseBStochCrossEpoch && (currentCandleEpoch - state.phaseBStochCrossEpoch > 2820)) {
             state.phaseBStochCrossEpoch = null;
             state.phaseBStochDir = null;
           }
