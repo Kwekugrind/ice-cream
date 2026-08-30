@@ -52,6 +52,11 @@ function getContractSymbol(c) {
   return c.underlying_symbol || c.symbol || (c.shortcode ? c.shortcode.split("_")[1] : "");
 }
 
+function escapeMarkdown(text) {
+  if (!text) return "";
+  return String(text).replace(/([_*\[\]()~`>#+\-=|{}.!])/g, "\\$1");
+}
+
 // ==================== TELEGRAM & UTILS ====================
 async function sendTelegram(msg) {
   if (!TG_TOKEN || !TG_CHAT_ID) return { ok: false, error: "missing_credentials" };
@@ -609,13 +614,13 @@ async function runScanMode() {
           t.closeTime = t.closeTime || (recovered.sellTime ? new Date(recovered.sellTime * 1000).toISOString().replace("T", " ").substring(0, 19) : new Date().toISOString().replace("T", " ").substring(0, 19));
           const icon = t.result === "WIN" ? "✅" : "❌";
           const durationMs = new Date(t.closeTime) - new Date(t.openTime);
-          const pnlStr = recovered.profit >= 0 ? `+$${recovered.profit.toFixed(2)}` : `-$${Math.abs(recovered.profit).toFixed(2)}`;
-          await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${t.result} (Recovered)*\n\nDirection: ${t.direction}\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${t.entry.toFixed(4)}\n\n💵 P&L: ${pnlStr} (Net of comm.)\nReason: Native SL/TP Hit\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${t.openTime}\nClosed: ${t.closeTime}\nContract: \`${t.contractId}\``);
+          const pnlStr = recovered.profit >= 0 ? `+$${Number(t.serverPnl).toFixed(2)}` : `-$${Math.abs(Number(t.serverPnl)).toFixed(2)}`;
+          await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${t.result} (Broker Native Exit)*\n\nDirection: ${t.direction}\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${Number(t.entry).toFixed(4)}\n💵 P&L: *${pnlStr}*\nClosed: ${t.closeTime}`);
         } else {
           t.orphanRetryCount = (t.orphanRetryCount || 0) + 1;
           if (t.orphanRetryCount >= 3) {
             t.result = t.result || "LOSS"; t.resultSource = "estimated_fallback"; t.closeTime = t.closeTime || new Date().toISOString().replace("T", " ").substring(0, 19);
-            await sendTelegram(`❌ *${REPO_LABEL} — Trade ${t.result} (Assumed)*\n\nDirection: ${t.direction}\nSymbol: ${SYMBOL_NAME}\n\n💵 P&L: -$5.00 (Estimated)\nReason: Contract unrecoverable after 3 sync attempts.\nContract: \`${t.contractId}\``);
+            await sendTelegram(`❌ *${REPO_LABEL} — Trade ${t.result} (Assumed)*\n\nDirection: ${t.direction}\nSymbol: ${SYMBOL_NAME}\n\n💵 P&L: -$3.60 (Estimated)\nReason: Contract unrecoverable after 3 sync attempts.\nContract: \`${t.contractId}\``);
           }
         }
       }
@@ -667,7 +672,7 @@ async function runScanMode() {
         const slDollars = parseFloat((openTrade.brokerSlAmount || STAKE_USD).toFixed(2));
         const tp1Status = openTrade.tp1Reached ? "✅ TP1 hit" : "❌ TP1 not reached";
         const pnlStr = serverPnl >= 0 ? `+$${serverPnl.toFixed(2)}` : `-$${Math.abs(serverPnl).toFixed(2)}`;
-        await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${finalResult}*\n\nDirection: ${openTrade.direction} (${contractType})\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${openTrade.entry.toFixed(4)}\n🏁 Exit: ${currentPrice.toFixed(4)}\n🛑 SL: ${openTrade.sl ? openTrade.sl.toFixed(4) : "N/A"} ($${slDollars} hard)\n🎯 TP1: ${openTrade.tp1 ? openTrade.tp1.toFixed(4) : "N/A"} (BGA) ${tp1Status}\n\n💵 P&L: ${pnlStr} (Net of comm.)\nReason: ${exitReason}\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${openTrade.openTime}\nClosed: ${openTrade.closeTime}\n` + (openTrade.contractId ? `Contract: \`${openTrade.contractId}\`` : ""));
+        await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${finalResult}*\n\nDirection: ${openTrade.direction} (${contractType})\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${Number(openTrade.entry).toFixed(4)}\n🏁 Exit: ${currentPrice.toFixed(4)}\n🛑 SL: ${openTrade.sl ? openTrade.sl.toFixed(4) : "N/A"} ($${slDollars} hard)\n🎯 TP1: ${openTrade.tp1 ? openTrade.tp1.toFixed(4) : "N/A"} (BGA) ${tp1Status}\n\n💵 P&L: *${pnlStr}* (Net of comm.)\nReason: ${exitReason}\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${openTrade.openTime}\nClosed: ${openTrade.closeTime}\n` + (openTrade.contractId ? `Contract: \`${openTrade.contractId}\`` : ""));
       };
 
       // 0. Phase C Recovery Liquidation Hook
@@ -769,6 +774,8 @@ async function runScanMode() {
         const totalM15 = tradeData.m15Candles.length;
         
         let stochEarlyExit = false;
+        let triggeredValue = 0;
+        
         for (let k = 2; k <= totalM15 - 2; k++) {
           const candleEpoch = tradeData.m15Candles[k].epoch;
           if (candleEpoch >= tradeEntryEpoch) {
@@ -776,18 +783,16 @@ async function runScanMode() {
             const k_curr = m15StochData.k[k];
             if (k_prev !== null && k_curr !== null) {
               if (openTrade.direction === "BUY" && k_prev >= 50 && k_curr < 50) {
-                stochEarlyExit = true;
-                break;
+                stochEarlyExit = true; triggeredValue = k_curr; break;
               } else if (openTrade.direction === "SELL" && k_prev <= 50 && k_curr > 50) {
-                stochEarlyExit = true;
-                break;
+                stochEarlyExit = true; triggeredValue = k_curr; break;
               }
             }
           }
         }
         
         if (stochEarlyExit) {
-           await closeWith("LOSS", `Early Exit: Fresh M15 Stochastic %K crossed 50 against trend (PnL: $${pnl.toFixed(2)})`); 
+           await closeWith("LOSS", `Early Exit: Fresh M15 Stochastic %K (${triggeredValue.toFixed(1)}) crossed 50 against trend (PnL: $${pnl.toFixed(2)})`); 
            continue;
         }
       }
@@ -886,13 +891,16 @@ async function runScanMode() {
   }
   const isoTime = new Date(currentCandleEpoch * 1000).toISOString();
 
-  // 1. Evaluate Fresh H1 Crossover
+  // 1. Evaluate Current H1 Trend Direction and Fresh Crossovers
   let h1FreshBuy = false; let h1FreshSell = false; let h1TrendDir = null;
+  let ema50_1h = null;
+  let h1Closes = null;
+  
   if (h1Candles && h1Candles.length >= 250) {
-    const h1Closes = h1Candles.map(c => parseFloat(c.close));
+    h1Closes = h1Candles.map(c => parseFloat(c.close));
     const h1ci = h1Candles.length - 2;
     const h1PrevCi = h1ci - 1;
-    const ema50_1h = ema(h1Closes, 50);
+    ema50_1h = ema(h1Closes, 50);
     if (ema50_1h[h1ci] != null && ema50_1h[h1PrevCi] != null) {
       h1FreshBuy = (h1Closes[h1PrevCi] <= ema50_1h[h1PrevCi]) && (h1Closes[h1ci] > ema50_1h[h1ci]);
       h1FreshSell = (h1Closes[h1PrevCi] >= ema50_1h[h1PrevCi]) && (h1Closes[h1ci] < ema50_1h[h1ci]);
@@ -902,34 +910,66 @@ async function runScanMode() {
   }
 
   let h1NewCycleEpoch = null;
-  if (h1Candles && h1Candles.length >= 250) {
-    const h1ci = h1Candles.length - 2;
-    if (h1FreshBuy || h1FreshSell) { h1NewCycleEpoch = h1Candles[h1ci].epoch; }
+  if (h1FreshBuy || h1FreshSell) { 
+    h1NewCycleEpoch = h1Candles[h1Candles.length - 2].epoch; 
   }
 
+  // ── TREND STATE MANAGEMENT ──
+  // A. Fresh Trend Detected
   if (h1NewCycleEpoch && state.h1TrendCycleEpoch !== h1NewCycleEpoch) {
     state.h1TrendCycleEpoch = h1NewCycleEpoch;
     state.waitingFor = h1FreshBuy ? "BUY" : "SELL";
-    state.phaseATaken = false; state.phaseAWindowExpired = false;
+    state.phaseATaken = false; 
+    state.phaseAWindowExpired = false;
     state.phaseADeadlineEpoch = h1NewCycleEpoch + PHASE_A_WINDOW_SECONDS;
+    state.phaseBStochCrossEpoch = null; 
+    state.phaseBStochDir = null;
+  }
+
+  // B. Trend Invalidation Guard (Current trend contradicts waiting state)
+  if (h1TrendDir && state.waitingFor && h1TrendDir !== state.waitingFor) {
+    state.waitingFor = null; state.phaseATaken = false; state.h1TrendCycleEpoch = null; 
+    state.phaseADeadlineEpoch = null; state.phaseAWindowExpired = false; 
     state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
   }
 
-  if (h1TrendDir && state.waitingFor && h1TrendDir !== state.waitingFor) {
-    state.waitingFor = null; state.phaseATaken = false; state.h1TrendCycleEpoch = null; state.phaseADeadlineEpoch = null; state.phaseAWindowExpired = false; state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
-  }
-
-  if (!state.waitingFor && h1TrendDir) {
-    state.waitingFor = h1TrendDir; state.h1TrendCycleEpoch = currentCandleEpoch; state.phaseATaken = false; state.phaseAWindowExpired = false; state.phaseADeadlineEpoch = currentCandleEpoch + PHASE_A_WINDOW_SECONDS;
-  }
-
-  if (state.waitingFor && !state.phaseATaken && !state.phaseAWindowExpired && !state.phaseADeadlineEpoch) {
+  // C. Cold Boot Reverse Lookup (No current state, but active trend exists)
+  if (!state.waitingFor && h1TrendDir && ema50_1h && h1Closes) {
+    let historicalCrossEpoch = currentCandleEpoch; // Fallback
+    for (let j = h1Candles.length - 2; j >= 1; j--) {
+      const prevC = h1Closes[j-1];
+      const currC = h1Closes[j];
+      const prevEma = ema50_1h[j-1];
+      const currEma = ema50_1h[j];
+      
+      if (prevEma == null || currEma == null) break;
+      
+      if (h1TrendDir === "BUY" && prevC <= prevEma && currC > currEma) {
+        historicalCrossEpoch = h1Candles[j].epoch; break;
+      } else if (h1TrendDir === "SELL" && prevC >= prevEma && currC < currEma) {
+        historicalCrossEpoch = h1Candles[j].epoch; break;
+      }
+    }
+    
+    state.waitingFor = h1TrendDir; 
+    state.h1TrendCycleEpoch = historicalCrossEpoch; 
+    state.phaseATaken = false; 
+    state.phaseADeadlineEpoch = historicalCrossEpoch + PHASE_A_WINDOW_SECONDS;
+    
     const nowEpoch = Math.floor(Date.now() / 1000);
-    if (state.h1TrendCycleEpoch) {
-      const properDeadline = state.h1TrendCycleEpoch + PHASE_A_WINDOW_SECONDS;
-      if (nowEpoch > properDeadline) state.phaseAWindowExpired = true;
-      else state.phaseADeadlineEpoch = properDeadline;
+    if (nowEpoch > state.phaseADeadlineEpoch) {
+      state.phaseAWindowExpired = true;
+      dbg(`[Cold Boot] Adopted historical ${h1TrendDir} trend from epoch ${historicalCrossEpoch}. Phase A EXPIRED -> Moved to Phase B.`);
     } else {
+      state.phaseAWindowExpired = false;
+      dbg(`[Cold Boot] Adopted historical ${h1TrendDir} trend from epoch ${historicalCrossEpoch}. Phase A ACTIVE.`);
+    }
+  }
+
+  // D. Normal Expiration Check (Evaluated every scan)
+  if (state.waitingFor && !state.phaseATaken && !state.phaseAWindowExpired && state.phaseADeadlineEpoch) {
+    const nowEpoch = Math.floor(Date.now() / 1000);
+    if (nowEpoch > state.phaseADeadlineEpoch) {
       state.phaseAWindowExpired = true;
     }
   }
@@ -979,14 +1019,16 @@ async function runScanMode() {
     } else {
       // ==== NORMAL PHASE A / B EVALUATION ====
       if (!state.phaseATaken && !state.phaseAWindowExpired) {
-        const deadlinePassed = state.phaseADeadlineEpoch && currentCandleEpoch > state.phaseADeadlineEpoch;
-        if (deadlinePassed) {
-          state.phaseAWindowExpired = true;
-        } else {
-          const stochCrossBuyPhaseA = stoch.k[si-1] <= 20 && stoch.k[si] > 20;
-          const stochCrossSellPhaseA = stoch.k[si-1] >= 80 && stoch.k[si] < 80;
-          if (state.waitingFor === "BUY" && stochCrossBuyPhaseA) { signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = 'PHASE_A'; state.phaseATaken = true; }
-          else if (state.waitingFor === "SELL" && stochCrossSellPhaseA) { signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = 'PHASE_A'; state.phaseATaken = true; }
+        // 🛡️ Phase A with M15 MACD Confluence Check
+        const stochCrossBuyPhaseA = stoch.k[si-1] <= 20 && stoch.k[si] > 20;
+        const stochCrossSellPhaseA = stoch.k[si-1] >= 80 && stoch.k[si] < 80;
+        const m15MacdBuyOk = liveM15Macd_12_26_9 !== null && liveM15Macd_12_26_9 >= 0;
+        const m15MacdSellOk = liveM15Macd_12_26_9 !== null && liveM15Macd_12_26_9 <= 0;
+
+        if (state.waitingFor === "BUY" && stochCrossBuyPhaseA && m15MacdBuyOk) {
+          signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = 'PHASE_A'; state.phaseATaken = true;
+        } else if (state.waitingFor === "SELL" && stochCrossSellPhaseA && m15MacdSellOk) {
+          signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = 'PHASE_A'; state.phaseATaken = true;
         }
       }
 
@@ -1073,15 +1115,15 @@ async function runScanMode() {
     const timeFormatted = new Date(currentCandleEpoch * 1000).toISOString().replace("T"," ").substring(0,19);
     const bgaTag = getBGAInfo(entry);
     
-    let setupLabel = entryType === 'PHASE_C' ? 'PHASE C (M15 Rescue Add-On)' 
-      : (entryType === 'PHASE_B_NO_PRIOR_A' ? 'PHASE B (Phase A window expired unfilled — fallback re-entry)' : `${entryType} (H1 EMA 50, ${PHASE_A_WINDOW_SECONDS/3600}h Phase A window)`);
+    let setupLabel = escapeMarkdown(entryType === 'PHASE_C' ? 'PHASE C (M15 Rescue Add-On)' 
+      : (entryType === 'PHASE_B_NO_PRIOR_A' ? 'PHASE B (Phase A window expired unfilled — fallback re-entry)' : `${entryType} (H1 EMA 50, ${PHASE_A_WINDOW_SECONDS/3600}h Phase A window)`));
     
-    let message = `🚨 *${SYMBOL_NAME.toUpperCase()} CONFIRMED SIGNAL* 🚨\n\nDirection: ${direction}\nRepo: ${REPO_LABEL}\nTimeframe: M5\n\n📍 Entry: ${entry.toFixed(4)}\n🛑 Initial SL: ${sl.toFixed(4)} (${initialFractal ? "M15 Fractal" : "Hard Stop"})\n🎯 TP1: ${tp1.toFixed(4)} (BGA Whole)\n🎯 TP2 (Ultimate TP): ${tp2.toFixed(4)} (BGA)\n🎯 TP3: ${tp3.toFixed(4)} (reference)\n\n💰 Stake: $${STAKE_USD}\n⚡ Setup: ${setupLabel}\n️ Confluence: ${bgaTag}\n━━━━━━━━━━━━━━━━━━━━\n⏰ Time (UTC): ${timeFormatted}\n\n💡 To close manually: send \`/close win\` or \`/close loss\` in this chat`;
+    let message = `🚨 *${SYMBOL_NAME.toUpperCase()} CONFIRMED SIGNAL* 🚨\n\nDirection: ${direction}\nRepo: ${REPO_LABEL}\nTimeframe: M5\n\n📍 Entry: ${Number(entry).toFixed(4)}\n🛑 Initial SL: ${Number(sl).toFixed(4)} (${initialFractal ? "M15 Fractal" : "Hard Stop"})\n🎯 TP1: ${Number(tp1).toFixed(4)} (BGA Whole)\n🎯 TP2 (Ultimate TP): ${Number(tp2).toFixed(4)} (BGA)\n🎯 TP3: ${Number(tp3).toFixed(4)} (reference)\n\n💰 Stake: $${STAKE_USD}\n⚡ Setup: ${setupLabel}\n️ Confluence: ${bgaTag}\n━━━━━━━━━━━━━━━━━━━━\n⏰ Time (UTC): ${timeFormatted}\n\n💡 To close manually: send \`/close win\` or \`/close loss\` in this chat`;
     state.lastProcessedEpoch = currentCandleEpoch;
     fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
     
     const pendingTradeRecord = {
-      id: `${SYMBOL}-${isoTime}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, tp1, tp2, tp3, h1OpenAtEntry: null, tp1Reached: false, breakevenSet: false, peakProfit: null, rr: RISK_REWARD, entryType, m15AgainstAtEntry, brokerSlAmount: STAKE_USD, 
+      id: `${SYMBOL}-${isoTime.replace(/[: ]/g, "-")}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, tp1, tp2, tp3, h1OpenAtEntry: null, tp1Reached: false, breakevenSet: false, peakProfit: null, rr: RISK_REWARD, entryType, m15AgainstAtEntry, brokerSlAmount: STAKE_USD, 
       entryEpoch: currentCandleEpoch, fractalSl: initialFractal, fractalEpoch: null, fractalTimeframe, m30FractalUpgraded: false, openTime: timeFormatted, closeTime: null, result: null
     };
     trades.push(pendingTradeRecord);
@@ -1117,8 +1159,8 @@ async function runScanMode() {
   if (MODE === "daily") { await runSummary("Daily"); return; }
   if (MODE === "weekly") { await runSummary("Weekly"); return; }
   if (MODE === "monthly") { await runSummary("Monthly"); return; }
-  if (MODE === "close_win" || MODE === "closewin") { await executeManualClose("WIN", "manual command"); return; }
-  if (MODE === "close_loss" || MODE === "closeloss") { await executeManualClose("LOSS", "manual command"); return; }
+  if (MODE === "close_win" || MODE === "closewin") { await executeManualClose("WIN", "manual trigger"); return; }
+  if (MODE === "close_loss" || MODE === "closeloss") { await executeManualClose("LOSS", "manual trigger"); return; }
   if (TRIGGER_SOURCE !== "cronjob") return;
   await runScanMode();
 })();
