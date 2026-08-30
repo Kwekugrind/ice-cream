@@ -590,7 +590,7 @@ async function runScanMode() {
         tp1: 0, tp2: 0, tp3: 0, h1OpenAtEntry: null, tp1Reached: false, breakevenSet: false, peakProfit: null, rr: RISK_REWARD, entryType: 'RECOVERED_LIVE', m15AgainstAtEntry: false, brokerSlAmount: STAKE_USD,
         entryEpoch: liveStartTime ? Math.floor(liveStartTime / 1000) : Math.floor(Date.now() / 1000), fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false,
         openTime: liveStartTime ? new Date(liveStartTime).toISOString().replace("T", " ").substring(0, 19) : new Date().toISOString().replace("T", " ").substring(0, 19),
-        closeTime: null, result: null
+        closeTime: null, result: null, runnerUnlocked: false
       };
       trades.push(adoptedRecord);
       await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted unmanaged live contract \`${liveContract.contract_id}\` into tracking (Entry: ${entryPrice.toFixed(4)}, SL: ${calculatedSl.toFixed(4)}).`);
@@ -671,8 +671,10 @@ async function runScanMode() {
         const durationMs = new Date(openTrade.closeTime) - new Date(openTrade.openTime);
         const slDollars = parseFloat((openTrade.brokerSlAmount || STAKE_USD).toFixed(2));
         const tp1Status = openTrade.tp1Reached ? "✅ TP1 hit" : "❌ TP1 not reached";
+        const runnerStatus = openTrade.runnerUnlocked ? "🚀 Runner Active" : "🔒 Standard";
         const pnlStr = serverPnl >= 0 ? `+$${serverPnl.toFixed(2)}` : `-$${Math.abs(serverPnl).toFixed(2)}`;
-        await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${finalResult}*\n\nDirection: ${openTrade.direction} (${contractType})\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${Number(openTrade.entry).toFixed(4)}\n🏁 Exit: ${currentPrice.toFixed(4)}\n🛑 SL: ${openTrade.sl ? openTrade.sl.toFixed(4) : "N/A"} ($${slDollars} hard)\n🎯 TP1: ${openTrade.tp1 ? openTrade.tp1.toFixed(4) : "N/A"} (BGA) ${tp1Status}\n\n💵 P&L: *${pnlStr}* (Net of comm.)\nReason: ${exitReason}\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${openTrade.openTime}\nClosed: ${openTrade.closeTime}\n` + (openTrade.contractId ? `Contract: \`${openTrade.contractId}\`` : ""));
+        
+        await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${finalResult}*\n\nDirection: ${openTrade.direction} (${contractType})\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${Number(openTrade.entry).toFixed(4)}\n🏁 Exit: ${currentPrice.toFixed(4)}\n🛑 SL: ${openTrade.sl ? openTrade.sl.toFixed(4) : "N/A"} ($${slDollars} hard)\n🎯 TP1: ${openTrade.tp1 ? openTrade.tp1.toFixed(4) : "N/A"} (BGA) ${tp1Status}\n🏃 Mode: ${runnerStatus}\n\n💵 P&L: *${pnlStr}* (Net of comm.)\nReason: ${exitReason}\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${openTrade.openTime}\nClosed: ${openTrade.closeTime}\n` + (openTrade.contractId ? `Contract: \`${openTrade.contractId}\`` : ""));
       };
 
       // 0. Phase C Recovery Liquidation Hook
@@ -797,13 +799,59 @@ async function runScanMode() {
         }
       }
 
-      // 2. Decoupled Ultimate TP ($3.60 Software Target)
+      // 2. M15 Market Structure Profit Runner (Unlocks at $3.60, Replaces Hard TP)
+      if (pnl >= SOFTWARE_TP_USD && !openTrade.runnerUnlocked) {
+        openTrade.runnerUnlocked = true;
+        fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
+        await sendTelegram(`🚀 *${REPO_LABEL} — Profit Runner Unlocked!*\n\nTrade exceeded +$${SOFTWARE_TP_USD.toFixed(2)} (PnL: +$${pnl.toFixed(2)}). Hard TP removed.\n\nM15 Market Structure trailing is now active.`);
+      }
+
+      if (openTrade.runnerUnlocked && tradeData.m15Candles && tradeData.m15Candles.length >= 4) {
+        const m15 = tradeData.m15Candles;
+        const latestClosedM15 = m15[m15.length - 2]; 
+        const tradeEntryEpoch = openTrade.entryEpoch || Math.floor(new Date(openTrade.openTime).getTime() / 1000);
+        
+        let structOpenPrice = null;
+        for (let k = m15.length - 3; k >= 0; k--) {
+          const c = m15[k];
+          if (c.epoch < tradeEntryEpoch) break; 
+          
+          const cOpen = parseFloat(c.open);
+          const cClose = parseFloat(c.close);
+          
+          if (openTrade.direction === "BUY" && cClose > cOpen) {
+            structOpenPrice = cOpen;
+            break;
+          } else if (openTrade.direction === "SELL" && cClose < cOpen) {
+            structOpenPrice = cOpen;
+            break;
+          }
+        }
+
+        if (structOpenPrice !== null) {
+          const latestClose = parseFloat(latestClosedM15.close);
+          let structureBroken = false;
+
+          if (openTrade.direction === "BUY" && latestClose < structOpenPrice) {
+            structureBroken = true;
+          } else if (openTrade.direction === "SELL" && latestClose > structOpenPrice) {
+            structureBroken = true;
+          }
+
+          if (structureBroken) {
+            await closeWith("WIN", `M15 Market Structure Broken (Runner Exit) — Latest M15 closed at ${latestClose.toFixed(4)}, breaking structure level ${structOpenPrice.toFixed(4)}. Peak was $${(openTrade.peakProfit || pnl).toFixed(2)}`);
+            continue;
+          }
+        }
+      }
+
+      // Ensure BGA TP2 still functions as an ultimate structural mathematical ceiling
       const tp2Hit = openTrade.direction === "BUY" 
         ? (openTrade.tp2 > 0 && (currentPrice >= openTrade.tp2 || candleHigh >= openTrade.tp2)) 
         : (openTrade.tp2 > 0 && (currentPrice <= openTrade.tp2 || candleLow <= openTrade.tp2));
-      const pnlHitTp2 = pnl >= SOFTWARE_TP_USD;
-      if (tp2Hit || pnlHitTp2) {
-        await closeWith("WIN", `Ultimate Target hit — price reached BGA level ${openTrade.tp2.toFixed(4)} or PnL hit $${SOFTWARE_TP_USD.toFixed(2)}`); continue;
+      
+      if (tp2Hit) {
+        await closeWith("WIN", `BGA Ultimate Mathematical Ceiling hit — price reached level ${openTrade.tp2.toFixed(4)}`); continue;
       }
       
       // 3. Breakeven Engine
@@ -836,7 +884,7 @@ async function runScanMode() {
           openTrade.peakProfit = currentHighestPnl; 
           fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
         }
-        const trailingDistance = TARGET_TP1_USD * 0.50;
+        const trailingDistance = TARGET_TP1_USD * 0.50; // $1.25 High Water Mark
         const lockLevel = openTrade.peakProfit - trailingDistance;
         if (openTrade.peakProfit > 0 && pnl <= lockLevel) {
           const result = pnl >= 0 ? "WIN" : "LOSS";
