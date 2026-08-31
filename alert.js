@@ -1,6 +1,7 @@
 import WebSocket from "ws";
 import fetch from "node-fetch";
 import fs from "fs";
+import "dotenv/config"; // <--- ADD THIS LINE
 
 // ==================== REPOSITORY CONFIGURATION ====================
 // UNCOMMENT THE CONFIGURATION MATCHING YOUR REPOSITORY:
