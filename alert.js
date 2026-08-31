@@ -687,7 +687,56 @@ async function runScanMode() {
         }
       }
 
-      // 1. M30 Market Structure Early Exit (Loss Prevention & Structural Stop)
+      // 1. M30 Fractal SL Tracking (Upgrades SL when new Fractal forms)
+      if (!openTrade.m30FractalUpgraded && tradeData.m30Candles && tradeData.m30Candles.length >= 5) {
+        const c = tradeData.m30Candles;
+        const tradeEntryEpoch = openTrade.entryEpoch || Math.floor(new Date(openTrade.openTime).getTime() / 1000);
+        const currentIndex = c.length - 2; 
+        
+        for (let k = 2; k <= currentIndex - 2; k++) {
+          if (c[k].epoch > tradeEntryEpoch) {
+            if (openTrade.direction === "BUY") {
+              const isBottom = parseFloat(c[k].low) === Math.min(
+                parseFloat(c[k-2].low), parseFloat(c[k-1].low), 
+                parseFloat(c[k].low), parseFloat(c[k+1].low), parseFloat(c[k+2].low)
+              );
+              const fractalVal = parseFloat(c[k].low);
+              if (isBottom) {
+                openTrade.m30FractalUpgraded = true;
+                if (fractalVal > openTrade.sl && fractalVal < openTrade.entry) {
+                  openTrade.fractalSl = fractalVal;
+                  openTrade.sl = fractalVal; 
+                  openTrade.fractalEpoch = c[k].epoch;
+                  openTrade.fractalTimeframe = 'M30';
+                  fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
+                  await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M30 Structure\n\nTrade: ${openTrade.direction}\nNew M30 Bottom Fractal SL: ${openTrade.sl.toFixed(4)}`);
+                }
+                break; 
+              }
+            } else if (openTrade.direction === "SELL") {
+              const isTop = parseFloat(c[k].high) === Math.max(
+                parseFloat(c[k-2].high), parseFloat(c[k-1].high), 
+                parseFloat(c[k].high), parseFloat(c[k+1].high), parseFloat(c[k+2].high)
+              );
+              const fractalVal = parseFloat(c[k].high);
+              if (isTop) {
+                openTrade.m30FractalUpgraded = true;
+                if (fractalVal < openTrade.sl && fractalVal > openTrade.entry) {
+                  openTrade.fractalSl = fractalVal;
+                  openTrade.sl = fractalVal; 
+                  openTrade.fractalEpoch = c[k].epoch;
+                  openTrade.fractalTimeframe = 'M30';
+                  fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
+                  await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M30 Structure\n\nTrade: ${openTrade.direction}\nNew M30 Top Fractal SL: ${openTrade.sl.toFixed(4)}`);
+                }
+                break; 
+              }
+            }
+          }
+        }
+      }
+
+      // 2. M30 Market Structure Early Exit (Loss Prevention)
       if (tradeData.m30Candles && tradeData.m30Candles.length >= 4) {
         const m30 = tradeData.m30Candles;
         const latestClosedM30 = m30[m30.length - 2]; 
@@ -725,7 +774,41 @@ async function runScanMode() {
         }
       }
 
-      // 2. M15 Market Structure Profit Runner (Unlocks at $3.60)
+      // 3. Priority Exit Checks (Software SL, Hard SL, & Fractal SL)
+      const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction);
+      const hardSlBreached = openTrade.direction === "BUY" 
+        ? (currentPrice <= hardStopPrice || candleLow <= hardStopPrice) 
+        : (currentPrice >= hardStopPrice || candleHigh >= hardStopPrice);
+        
+      let fractalBreached = false;
+      let closedCandlePrice = null;
+      let evalTimeframe = openTrade.fractalTimeframe;
+
+      if (openTrade.fractalSl && evalTimeframe) {
+        if (evalTimeframe === 'M30' && tradeData.m30Candles && tradeData.m30Candles.length >= 2) {
+          closedCandlePrice = parseFloat(tradeData.m30Candles[tradeData.m30Candles.length - 2].close);
+        } else if (evalTimeframe === 'M15' && tradeData.m15Candles && tradeData.m15Candles.length >= 2) {
+          closedCandlePrice = parseFloat(tradeData.m15Candles[tradeData.m15Candles.length - 2].close);
+        }
+
+        if (closedCandlePrice !== null) {
+          if (openTrade.direction === "BUY" && closedCandlePrice < openTrade.fractalSl) fractalBreached = true;
+          else if (openTrade.direction === "SELL" && closedCandlePrice > openTrade.fractalSl) fractalBreached = true;
+        }
+      }
+
+      if (hardSlBreached || fractalBreached) {
+        const reason = fractalBreached 
+          ? `${evalTimeframe} Fractal Early Exit Hit (${evalTimeframe} Closed ${openTrade.direction === "BUY" ? "below" : "above"} ${openTrade.fractalSl.toFixed(4)})` 
+          : `Hard SL hit — price breached SL ${hardStopPrice.toFixed(4)}`;
+        await closeWith("LOSS", reason); continue;
+      }
+      
+      if (pnl <= SOFTWARE_SL_USD) {
+        await closeWith("LOSS", `Software Stop Loss hit — PnL dropped to $${pnl.toFixed(2)} (Limit: $${SOFTWARE_SL_USD.toFixed(2)})`); continue;
+      }
+
+      // 4. M15 Market Structure Profit Runner (Unlocks at $3.60)
       if (pnl >= SOFTWARE_TP_USD && !openTrade.runnerUnlocked) {
         openTrade.runnerUnlocked = true;
         fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
@@ -739,6 +822,7 @@ async function runScanMode() {
         let structOpenPrice = null;
         for (let k = m15.length - 3; k >= 0; k--) {
           const c = m15[k];
+          
           const cOpen = parseFloat(c.open);
           const cClose = parseFloat(c.close);
           
@@ -768,21 +852,7 @@ async function runScanMode() {
         }
       }
 
-      // 3. Priority Exit Checks (Software SL & Hard SL)
-      const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction);
-      const hardSlBreached = openTrade.direction === "BUY" 
-        ? (currentPrice <= hardStopPrice || candleLow <= hardStopPrice) 
-        : (currentPrice >= hardStopPrice || candleHigh >= hardStopPrice);
-        
-      if (hardSlBreached) {
-        await closeWith("LOSS", `Hard SL hit — price breached SL ${hardStopPrice.toFixed(4)}`); continue;
-      }
-      
-      if (pnl <= SOFTWARE_SL_USD) {
-        await closeWith("LOSS", `Software Stop Loss hit — PnL dropped to $${pnl.toFixed(2)} (Limit: $${SOFTWARE_SL_USD.toFixed(2)})`); continue;
-      }
-      
-      // 4. Breakeven Engine
+      // 5. Breakeven Engine
       if (!openTrade.breakevenSet && pnl >= BREAKEVEN_ACTIVATE_USD) {
         openTrade.breakevenSet = true;
         fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
@@ -794,7 +864,7 @@ async function runScanMode() {
         await closeWith("WIN", `Commission-Covered Breakeven exit — locked +$${pnl.toFixed(2)} net profit (target $${targetNetProfit.toFixed(2)})`); continue;
       }
       
-      // 5. TP1 Trigger ($2.50) & Trailing Stop
+      // 6. TP1 Trigger ($2.50) & Trailing Stop ($1.25 Distance)
       const isBuy = openTrade.direction === "BUY";
       const priceHitTp1 = openTrade.tp1 > 0 && (isBuy ? (currentPrice >= openTrade.tp1 || candleHigh >= openTrade.tp1) : (currentPrice <= openTrade.tp1 || candleLow <= openTrade.tp1));
       const pnlHitTp1 = pnl >= TARGET_TP1_USD;
