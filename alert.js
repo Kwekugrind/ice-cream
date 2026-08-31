@@ -769,33 +769,41 @@ async function runScanMode() {
         await closeWith("LOSS", `Software Stop Loss hit — PnL dropped to $${pnl.toFixed(2)} (Limit: $${SOFTWARE_SL_USD.toFixed(2)})`); continue;
       }
       
-      // 1.5 M15 Stochastic Early Exit (Opposite 50 Cross in Loss - Post-Entry Checked)
-      if (pnl < 0 && tradeData.m15Candles && tradeData.m15Candles.length > 5) {
-        const m15StochData = calculateStochastic(tradeData.m15Candles, 5, 3, 3);
-        const tradeEntryEpoch = openTrade.entryEpoch || Math.floor(new Date(openTrade.openTime).getTime() / 1000);
-        const totalM15 = tradeData.m15Candles.length;
+      // 1.5 M30 Market Structure Early Exit (Loss Prevention & Structural Stop)
+      if (tradeData.m30Candles && tradeData.m30Candles.length >= 4) {
+        const m30 = tradeData.m30Candles;
+        const latestClosedM30 = m30[m30.length - 2]; 
         
-        let stochEarlyExit = false;
-        let triggeredValue = 0;
-        
-        for (let k = 2; k <= totalM15 - 2; k++) {
-          const candleEpoch = tradeData.m15Candles[k].epoch;
-          if (candleEpoch >= tradeEntryEpoch) {
-            const k_prev = m15StochData.k[k - 1];
-            const k_curr = m15StochData.k[k];
-            if (k_prev !== null && k_curr !== null) {
-              if (openTrade.direction === "BUY" && k_prev >= 50 && k_curr < 50) {
-                stochEarlyExit = true; triggeredValue = k_curr; break;
-              } else if (openTrade.direction === "SELL" && k_prev <= 50 && k_curr > 50) {
-                stochEarlyExit = true; triggeredValue = k_curr; break;
-              }
-            }
+        let structOpenPrice = null;
+        for (let k = m30.length - 3; k >= 0; k--) {
+          const c = m30[k];
+          const cOpen = parseFloat(c.open);
+          const cClose = parseFloat(c.close);
+          
+          if (openTrade.direction === "BUY" && cClose > cOpen) {
+            structOpenPrice = cOpen;
+            break;
+          } else if (openTrade.direction === "SELL" && cClose < cOpen) {
+            structOpenPrice = cOpen;
+            break;
           }
         }
-        
-        if (stochEarlyExit) {
-           await closeWith("LOSS", `Early Exit: Fresh M15 Stochastic %K (${triggeredValue.toFixed(1)}) crossed 50 against trend (PnL: $${pnl.toFixed(2)})`); 
-           continue;
+
+        if (structOpenPrice !== null) {
+          const latestClose = parseFloat(latestClosedM30.close);
+          let structureBroken = false;
+
+          if (openTrade.direction === "BUY" && latestClose < structOpenPrice) {
+            structureBroken = true;
+          } else if (openTrade.direction === "SELL" && latestClose > structOpenPrice) {
+            structureBroken = true;
+          }
+
+          if (structureBroken) {
+            const result = pnl >= 0 ? "WIN" : "LOSS";
+            await closeWith(result, `M30 Market Structure Broken (Early Exit) — Latest M30 closed at ${latestClose.toFixed(4)}, breaking structural level ${structOpenPrice.toFixed(4)}.`);
+            continue;
+          }
         }
       }
 
@@ -1202,7 +1210,7 @@ async function runScanMode() {
   console.log(`[${REPO_LABEL}] Scan complete.`);
 }
 
-// ==================== EXECUTION (INSTANTANEOUS AT :00) ====================
+// ==================== EXECUTION HOOK ====================
 (async () => {
   if (MODE === "daily") { await runSummary("Daily"); return; }
   if (MODE === "weekly") { await runSummary("Weekly"); return; }
