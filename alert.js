@@ -736,7 +736,16 @@ async function runScanMode() {
         }
       }
 
-      // 2. M30 Market Structure Early Exit (Loss Prevention)
+      // 2. Track Peak Profit
+      const bestPriceInCandle = isBuy ? candleHigh : candleLow;
+      const maxPnlInCandle = calcUnrealizedPnL(openTrade, bestPriceInCandle);
+      const currentHighestPnl = Math.max(pnl, maxPnlInCandle);
+      if (openTrade.peakProfit === null || currentHighestPnl > openTrade.peakProfit) {
+        openTrade.peakProfit = currentHighestPnl; 
+        fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
+      }
+
+      // 3. M30 Market Structure Early Exit (Loss Prevention & Runner Exit)
       if (tradeData.m30Candles && tradeData.m30Candles.length >= 4) {
         const m30 = tradeData.m30Candles;
         const latestClosedM30 = m30[m30.length - 2]; 
@@ -768,13 +777,14 @@ async function runScanMode() {
 
           if (structureBroken) {
             const result = pnl >= 0 ? "WIN" : "LOSS";
-            await closeWith(result, `M30 Market Structure Broken (Early Exit) — Latest M30 closed at ${latestClose.toFixed(4)}, breaking structural level ${structOpenPrice.toFixed(4)}.`);
+            const exitType = openTrade.runnerUnlocked ? "Runner Exit" : "Early Exit";
+            await closeWith(result, `M30 Market Structure Broken (${exitType}) — Latest M30 closed at ${latestClose.toFixed(4)}, breaking structural level ${structOpenPrice.toFixed(4)}.`);
             continue;
           }
         }
       }
 
-      // 3. Priority Exit Checks (Software SL, Hard SL, & Fractal SL)
+      // 4. Priority Exit Checks (Software SL, Hard SL, & Fractal SL)
       const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction);
       const hardSlBreached = openTrade.direction === "BUY" 
         ? (currentPrice <= hardStopPrice || candleLow <= hardStopPrice) 
@@ -804,89 +814,52 @@ async function runScanMode() {
         await closeWith("LOSS", reason); continue;
       }
       
+      // 5. Software Stop Loss (-$3.60)
       if (pnl <= SOFTWARE_SL_USD) {
         await closeWith("LOSS", `Software Stop Loss hit — PnL dropped to $${pnl.toFixed(2)} (Limit: $${SOFTWARE_SL_USD.toFixed(2)})`); continue;
       }
 
-      // 4. M15 Market Structure Profit Runner (Unlocks at $3.60)
-      if (pnl >= SOFTWARE_TP_USD && !openTrade.runnerUnlocked) {
-        openTrade.runnerUnlocked = true;
-        fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-        await sendTelegram(`🚀 *${REPO_LABEL} — Profit Runner Unlocked!*\n\nTrade exceeded +$${SOFTWARE_TP_USD.toFixed(2)} (PnL: +$${pnl.toFixed(2)}). Hard TP removed.\n\nM15 Market Structure trailing is now active.`);
-      }
-
-      if (openTrade.runnerUnlocked && tradeData.m15Candles && tradeData.m15Candles.length >= 4) {
-        const m15 = tradeData.m15Candles;
-        const latestClosedM15 = m15[m15.length - 2]; 
-        
-        let structOpenPrice = null;
-        for (let k = m15.length - 3; k >= 0; k--) {
-          const c = m15[k];
-          
-          const cOpen = parseFloat(c.open);
-          const cClose = parseFloat(c.close);
-          
-          if (openTrade.direction === "BUY" && cClose > cOpen) {
-            structOpenPrice = cOpen;
-            break;
-          } else if (openTrade.direction === "SELL" && cClose < cOpen) {
-            structOpenPrice = cOpen;
-            break;
-          }
-        }
-
-        if (structOpenPrice !== null) {
-          const latestClose = parseFloat(latestClosedM15.close);
-          let structureBroken = false;
-
-          if (openTrade.direction === "BUY" && latestClose < structOpenPrice) {
-            structureBroken = true;
-          } else if (openTrade.direction === "SELL" && latestClose > structOpenPrice) {
-            structureBroken = true;
-          }
-
-          if (structureBroken) {
-            await closeWith("WIN", `M15 Market Structure Broken (Runner Exit) — Latest M15 closed at ${latestClose.toFixed(4)}, breaking structure level ${structOpenPrice.toFixed(4)}. Peak was $${(openTrade.peakProfit || pnl).toFixed(2)}`);
-            continue;
-          }
-        }
-      }
-
-      // 5. Breakeven Engine
+      // 6. State Milestones: Breakeven, TP1, and Runner
       if (!openTrade.breakevenSet && pnl >= BREAKEVEN_ACTIVATE_USD) {
         openTrade.breakevenSet = true;
         fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
         await sendTelegram(`⚖️ *${REPO_LABEL} — Breakeven Armed*\nProfit reached $${pnl.toFixed(2)}. Lifetime profit floor locked at +$0.70 net.`);
       }
-      const targetNetProfit = 0.70;
-      const breakevenHit = openTrade.breakevenSet && pnl > 0 && pnl <= targetNetProfit;
-      if (breakevenHit) {
-        await closeWith("WIN", `Commission-Covered Breakeven exit — locked +$${pnl.toFixed(2)} net profit (target $${targetNetProfit.toFixed(2)})`); continue;
-      }
-      
-      // 6. TP1 Trigger ($2.50) & Trailing Stop ($1.25 Distance)
-      const isBuy = openTrade.direction === "BUY";
+
       const priceHitTp1 = openTrade.tp1 > 0 && (isBuy ? (currentPrice >= openTrade.tp1 || candleHigh >= openTrade.tp1) : (currentPrice <= openTrade.tp1 || candleLow <= openTrade.tp1));
-      const pnlHitTp1 = pnl >= TARGET_TP1_USD;
-      if (!openTrade.tp1Reached && (priceHitTp1 || pnlHitTp1)) {
+      if (!openTrade.tp1Reached && (priceHitTp1 || pnl >= TARGET_TP1_USD)) {
         openTrade.tp1Reached = true;
         fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-        await sendTelegram(`🎯 *${REPO_LABEL} — TP1 Reached*\n\nProfit reached *$${pnl.toFixed(2)}* (Target: ~$${TARGET_TP1_USD.toFixed(2)})\nFixed High-Water Mark trailing is now armed!`);
+        await sendTelegram(`🎯 *${REPO_LABEL} — TP1 Reached*\n\nProfit reached *$${pnl.toFixed(2)}* (Target: ~$${TARGET_TP1_USD.toFixed(2)})\nStatic floor is now locked at +$1.25.`);
       }
-      
-      if (openTrade.tp1Reached) {
-        const bestPriceInCandle = isBuy ? candleHigh : candleLow;
-        const maxPnlInCandle = calcUnrealizedPnL(openTrade, bestPriceInCandle);
-        const currentHighestPnl = Math.max(pnl, maxPnlInCandle);
-        if (openTrade.peakProfit === null || currentHighestPnl > openTrade.peakProfit) {
-          openTrade.peakProfit = currentHighestPnl; 
-          fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
+
+      if (pnl >= SOFTWARE_TP_USD && !openTrade.runnerUnlocked) {
+        openTrade.runnerUnlocked = true;
+        fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
+        await sendTelegram(`🚀 *${REPO_LABEL} — Profit Runner Unlocked!*\n\nTrade exceeded +$${SOFTWARE_TP_USD.toFixed(2)} (PnL: +$${pnl.toFixed(2)}). Hard TP removed.\n\nM30 Market Structure & Wide Disaster Trail ($2.50) are now active.`);
+      }
+
+      // 7. Tiered Floor & Trailing Enforcement
+      if (openTrade.runnerUnlocked) {
+        // Wide Disaster Trail ($2.50)
+        const WIDE_TRAILING_DISTANCE = 2.50;
+        let disasterLockLevel = openTrade.peakProfit - WIDE_TRAILING_DISTANCE;
+        disasterLockLevel = Math.max(disasterLockLevel, 1.25); // Never drop below TP1 static floor
+
+        if (pnl <= disasterLockLevel) {
+          await closeWith("WIN", `Wide Disaster Trail exit — locked +$${pnl.toFixed(2)} (peak $${openTrade.peakProfit.toFixed(2)}, trailed by $${WIDE_TRAILING_DISTANCE.toFixed(2)})`); 
+          continue;
         }
-        const trailingDistance = TARGET_TP1_USD * 0.50; // $1.25 High Water Mark
-        const lockLevel = openTrade.peakProfit - trailingDistance;
-        if (openTrade.peakProfit > 0 && pnl <= lockLevel) {
-          const result = pnl >= 0 ? "WIN" : "LOSS";
-          await closeWith(result, `Profit trail exit — locked ~$${pnl.toFixed(2)} (peak $${openTrade.peakProfit.toFixed(2)}, trailed by $${trailingDistance.toFixed(2)})`); 
+      } else if (openTrade.tp1Reached) {
+        // TP1 Static Floor (+$1.25)
+        if (pnl <= 1.25) {
+          await closeWith("WIN", `TP1 Static Floor exit — locked +$1.25`); 
+          continue;
+        }
+      } else if (openTrade.breakevenSet) {
+        // Breakeven Floor (+$0.70)
+        if (pnl <= 0.70) {
+          await closeWith("WIN", `Commission-Covered Breakeven exit — locked +$0.70`); 
           continue;
         }
       }
@@ -1128,78 +1101,78 @@ async function runScanMode() {
         else m15AgainstAtEntry = m15Rsi[m15i] > m15Tdi.middle[m15i];
       }
     }
+  }
 
-    if (signalTriggered) {
-      try {
-        const preCheckContracts = (await getOpenPortfolio()).filter(c => getContractSymbol(c) === TRADING_SYMBOL);
-        if (entryType === 'PHASE_C') {
-          if (preCheckContracts.length > 1) return;
-        } else {
-          if (preCheckContracts.length > 0) {
-            state.lastProcessedEpoch = currentCandleEpoch;
-            fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
-            return;
-          }
-        }
-      } catch (preErr) {
-        state.lastProcessedEpoch = currentCandleEpoch;
-        fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
-        return;
-      }
-
-      let initialFractal = findRecentFractal(m15Candles, m15Candles.length - 2, direction);
-      const slDollars = parseFloat(STAKE_USD.toFixed(2));
-      const hardStopPrice = deriveHardStopPrice(entry, direction);
-      
-      if (direction === "BUY") {
-        if (initialFractal && initialFractal > hardStopPrice && initialFractal < entry) sl = initialFractal;
-        else { sl = hardStopPrice; initialFractal = null; }
+  if (signalTriggered) {
+    try {
+      const preCheckContracts = (await getOpenPortfolio()).filter(c => getContractSymbol(c) === TRADING_SYMBOL);
+      if (entryType === 'PHASE_C') {
+        if (preCheckContracts.length > 1) return;
       } else {
-        if (initialFractal && initialFractal < hardStopPrice && initialFractal > entry) sl = initialFractal;
-        else { sl = hardStopPrice; initialFractal = null; }
-      }
-      
-      let fractalTimeframe = initialFractal ? 'M15' : null;
-      risk = Math.abs(entry - sl);
-      const slDistance = risk;
-      const bgaTps = await calculateBgaTakeProfits(entry, direction, slDistance, d1Candles);
-      tp1 = bgaTps.tp1; tp2 = bgaTps.tp2; tp3 = bgaTps.tp3;
-      const timeFormatted = new Date(currentCandleEpoch * 1000).toISOString().replace("T"," ").substring(0,19);
-      const bgaTag = getBGAInfo(entry);
-      
-      let setupLabel = escapeMarkdown(entryType === 'PHASE_C' ? 'PHASE C (M15 Rescue Add-On)' 
-        : (entryType === 'PHASE_B_NO_PRIOR_A' ? 'PHASE B (Phase A window expired unfilled — fallback re-entry)' : `${entryType} (H1 EMA 50, ${PHASE_A_WINDOW_SECONDS/3600}h Phase A window)`));
-      
-      let message = `🚨 *${SYMBOL_NAME.toUpperCase()} CONFIRMED SIGNAL* 🚨\n\nDirection: ${direction}\nRepo: ${REPO_LABEL}\nTimeframe: M5\n\n📍 Entry: ${Number(entry).toFixed(4)}\n🛑 Initial SL: ${Number(sl).toFixed(4)} (${initialFractal ? "M15 Fractal" : "Hard Stop"})\n🎯 TP1: ${Number(tp1).toFixed(4)} (BGA Whole)\n🎯 TP2 (Ultimate TP): ${Number(tp2).toFixed(4)} (BGA)\n🎯 TP3: ${Number(tp3).toFixed(4)} (reference)\n\n💰 Stake: $${STAKE_USD}\n⚡ Setup: ${setupLabel}\n️ Confluence: ${bgaTag}\n━━━━━━━━━━━━━━━━━━━━\n⏰ Time (UTC): ${timeFormatted}\n\n💡 To close manually: send \`/close win\` or \`/close loss\` in this chat`;
-      state.lastProcessedEpoch = currentCandleEpoch;
-      fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
-      
-      const pendingTradeRecord = {
-        id: `${SYMBOL}-${isoTime.replace(/[: ]/g, "-")}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, tp1, tp2, tp3, h1OpenAtEntry: null, tp1Reached: false, breakevenSet: false, peakProfit: null, rr: RISK_REWARD, entryType, m15AgainstAtEntry, brokerSlAmount: STAKE_USD, 
-        entryEpoch: currentCandleEpoch, fractalSl: initialFractal, fractalEpoch: null, fractalTimeframe, m30FractalUpgraded: false, openTime: timeFormatted, closeTime: null, result: null, runnerUnlocked: false
-      };
-      trades.push(pendingTradeRecord);
-      fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-      
-      try {
-        const contractId = await executeTrade(direction);
-        if (!contractId) {
-          const idx = trades.findIndex(t => t.id === pendingTradeRecord.id);
-          if (idx !== -1) trades.splice(idx, 1);
-          fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-          await sendTelegram(`❌ *${REPO_LABEL}* — Signal triggered for ${direction}, but broker returned no contract ID. Trade aborted.`);
+        if (preCheckContracts.length > 0) {
+          state.lastProcessedEpoch = currentCandleEpoch;
+          fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
           return;
         }
-        pendingTradeRecord.contractId = contractId; pendingTradeRecord.pending = false;
-        fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-        await sendTelegram(message);
-      } catch (execErr) {
+      }
+    } catch (preErr) {
+      state.lastProcessedEpoch = currentCandleEpoch;
+      fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
+      return;
+    }
+
+    let initialFractal = findRecentFractal(m15Candles, m15Candles.length - 2, direction);
+    const slDollars = parseFloat(STAKE_USD.toFixed(2));
+    const hardStopPrice = deriveHardStopPrice(entry, direction);
+    
+    if (direction === "BUY") {
+      if (initialFractal && initialFractal > hardStopPrice && initialFractal < entry) sl = initialFractal;
+      else { sl = hardStopPrice; initialFractal = null; }
+    } else {
+      if (initialFractal && initialFractal < hardStopPrice && initialFractal > entry) sl = initialFractal;
+      else { sl = hardStopPrice; initialFractal = null; }
+    }
+    
+    let fractalTimeframe = initialFractal ? 'M15' : null;
+    risk = Math.abs(entry - sl);
+    const slDistance = risk;
+    const bgaTps = await calculateBgaTakeProfits(entry, direction, slDistance, d1Candles);
+    tp1 = bgaTps.tp1; tp2 = bgaTps.tp2; tp3 = bgaTps.tp3;
+    const timeFormatted = new Date(currentCandleEpoch * 1000).toISOString().replace("T"," ").substring(0,19);
+    const bgaTag = getBGAInfo(entry);
+    
+    let setupLabel = escapeMarkdown(entryType === 'PHASE_C' ? 'PHASE C (M15 Rescue Add-On)' 
+      : (entryType === 'PHASE_B_NO_PRIOR_A' ? 'PHASE B (Phase A window expired unfilled — fallback re-entry)' : `${entryType} (H1 EMA 50, ${PHASE_A_WINDOW_SECONDS/3600}h Phase A window)`));
+    
+    let message = `🚨 *${SYMBOL_NAME.toUpperCase()} CONFIRMED SIGNAL* 🚨\n\nDirection: ${direction}\nRepo: ${REPO_LABEL}\nTimeframe: M5\n\n📍 Entry: ${Number(entry).toFixed(4)}\n🛑 Initial SL: ${Number(sl).toFixed(4)} (${initialFractal ? "M15 Fractal" : "Hard Stop"})\n🎯 TP1: ${Number(tp1).toFixed(4)} (BGA Whole)\n🎯 TP2 (Ultimate TP): ${Number(tp2).toFixed(4)} (BGA)\n🎯 TP3: ${Number(tp3).toFixed(4)} (reference)\n\n💰 Stake: $${STAKE_USD}\n⚡ Setup: ${setupLabel}\n️ Confluence: ${bgaTag}\n━━━━━━━━━━━━━━━━━━━━\n⏰ Time (UTC): ${timeFormatted}\n\n💡 To close manually: send \`/close win\` or \`/close loss\` in this chat`;
+    state.lastProcessedEpoch = currentCandleEpoch;
+    fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
+    
+    const pendingTradeRecord = {
+      id: `${SYMBOL}-${isoTime.replace(/[: ]/g, "-")}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, tp1, tp2, tp3, h1OpenAtEntry: null, tp1Reached: false, breakevenSet: false, peakProfit: null, rr: RISK_REWARD, entryType, m15AgainstAtEntry, brokerSlAmount: STAKE_USD, 
+      entryEpoch: currentCandleEpoch, fractalSl: initialFractal, fractalEpoch: null, fractalTimeframe, m30FractalUpgraded: false, openTime: timeFormatted, closeTime: null, result: null, runnerUnlocked: false
+    };
+    trades.push(pendingTradeRecord);
+    fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
+    
+    try {
+      const contractId = await executeTrade(direction);
+      if (!contractId) {
         const idx = trades.findIndex(t => t.id === pendingTradeRecord.id);
         if (idx !== -1) trades.splice(idx, 1);
         fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-        await sendTelegram(`❌ *${REPO_LABEL}* — Live execution failed: ${execErr.message}`);
+        await sendTelegram(`❌ *${REPO_LABEL}* — Signal triggered for ${direction}, but broker returned no contract ID. Trade aborted.`);
         return;
       }
+      pendingTradeRecord.contractId = contractId; pendingTradeRecord.pending = false;
+      fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
+      await sendTelegram(message);
+    } catch (execErr) {
+      const idx = trades.findIndex(t => t.id === pendingTradeRecord.id);
+      if (idx !== -1) trades.splice(idx, 1);
+      fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
+      await sendTelegram(`❌ *${REPO_LABEL}* — Live execution failed: ${execErr.message}`);
+      return;
     }
   }
   state.lastProcessedEpoch = currentCandleEpoch;
