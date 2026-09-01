@@ -619,7 +619,6 @@ async function runScanMode() {
           t.serverPnl = recovered.profit;
           const icon = t.result === "WIN" ? "✅" : "❌";
           const durationMs = new Date(t.closeTime) - new Date(t.openTime);
-          // ✅ FIX 3: Use recovered.profit (not t.serverPnl which was never set)
           const pnlStr = recovered.profit >= 0 ? `+$${recovered.profit.toFixed(2)}` : `-$${Math.abs(recovered.profit).toFixed(2)}`;
           await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${t.result} (Broker Native Exit)*\n\nDirection: ${t.direction}\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${Number(t.entry).toFixed(4)}\n💵 P&L: *${pnlStr}*\nClosed: ${t.closeTime}`);
         } else {
@@ -649,7 +648,6 @@ async function runScanMode() {
     const candleLow = parseFloat(currentM5.low);
 
     for (const openTrade of openTradesList) {
-      // ✅ FIX 1: isBuy declared at the top of the loop — used by peak profit tracking and TP1 price check
       const isBuy = openTrade.direction === "BUY";
       let pnl = calcUnrealizedPnL(openTrade, currentPrice);
 
@@ -754,13 +752,20 @@ async function runScanMode() {
       }
 
       // 3. M30 Market Structure Early Exit (Loss Prevention & Runner Exit)
+      // Only references M30 candles that CLOSED after the trade was opened.
+      // This prevents pre-trade structural levels from triggering a premature exit.
       if (tradeData.m30Candles && tradeData.m30Candles.length >= 4) {
         const m30 = tradeData.m30Candles;
         const latestClosedM30 = m30[m30.length - 2];
+        const tradeEntryEpoch = openTrade.entryEpoch || Math.floor(new Date(openTrade.openTime).getTime() / 1000);
 
         let structOpenPrice = null;
         for (let k = m30.length - 3; k >= 0; k--) {
           const c = m30[k];
+          // c.epoch is the candle open time; c.epoch + M30 is when it closed.
+          // Stop looking once we reach candles that closed before the trade opened.
+          if (c.epoch + M30 <= tradeEntryEpoch) break;
+
           const cOpen = parseFloat(c.open);
           const cClose = parseFloat(c.close);
 
@@ -1012,8 +1017,6 @@ async function runScanMode() {
   // MACD M5 (12,16,9) with Main & Signal Lines
   const macd_m5 = calculateMACD(closes, 12, 16, 9);
 
-  // ✅ FIX 2: Signal variables declared OUTSIDE the guard block so they are
-  // accessible at the if (signalTriggered) check below
   let signalTriggered = false, direction = "", entry, sl, risk, tp1, tp2, tp3;
   let entryType = null;
   let m15AgainstAtEntry = false;
