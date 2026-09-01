@@ -607,7 +607,7 @@ async function runScanMode() {
     if (!t.result) {
       if (t.pending) {
         trades.splice(i, 1);
-      } else if (t.contractId && !liveContractIdSet.has(String(t.contractId)) && allLiveContracts.length === 0) {
+      } else if (t.contractId && !liveContractIdSet.has(String(t.contractId))) {
         let recovered = null;
         try {
           const openEpoch = t.openTime ? Math.floor(new Date(t.openTime).getTime() / 1000) : undefined;
@@ -694,13 +694,19 @@ async function runScanMode() {
       }
 
       // 1. M30 Fractal SL Tracking (Upgrades SL when new Fractal forms)
+      // Scans post-entry M30 fractals oldest-to-newest. Skips non-qualifying fractals
+      // (below current SL for BUY, above for SELL) and keeps looking until a valid one
+      // is found. Locks in once upgraded — not a trailing stop, just a one-time upgrade.
+      // Fractal at k is only considered if candle k+2 closed AFTER trade entry
+      // (i.e. the fractal was actually visible/confirmed after the trade opened).
       if (!openTrade.m30FractalUpgraded && tradeData.m30Candles && tradeData.m30Candles.length >= 5) {
         const c = tradeData.m30Candles;
         const tradeEntryEpoch = openTrade.entryEpoch || Math.floor(new Date(openTrade.openTime).getTime() / 1000);
         const currentIndex = c.length - 2;
 
         for (let k = 2; k <= currentIndex - 2; k++) {
-          if (c[k].epoch > tradeEntryEpoch) {
+          // Fractal is confirmed when candle k+2 closes; only use fractals confirmed after entry
+          if (c[k + 2].epoch + M30 > tradeEntryEpoch) {
             if (openTrade.direction === "BUY") {
               const isBottom = parseFloat(c[k].low) === Math.min(
                 parseFloat(c[k-2].low), parseFloat(c[k-1].low),
@@ -708,16 +714,17 @@ async function runScanMode() {
               );
               const fractalVal = parseFloat(c[k].low);
               if (isBottom) {
-                openTrade.m30FractalUpgraded = true;
                 if (fractalVal > openTrade.sl && fractalVal < openTrade.entry) {
+                  openTrade.m30FractalUpgraded = true;
                   openTrade.fractalSl = fractalVal;
                   openTrade.sl = fractalVal;
                   openTrade.fractalEpoch = c[k].epoch;
                   openTrade.fractalTimeframe = "M30";
                   fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
                   await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M30 Structure\n\nTrade: ${openTrade.direction}\nNew M30 Bottom Fractal SL: ${openTrade.sl.toFixed(4)}`);
+                  break;
                 }
-                break;
+                // Fractal found but doesn't qualify — keep scanning for a better one
               }
             } else if (openTrade.direction === "SELL") {
               const isTop = parseFloat(c[k].high) === Math.max(
@@ -726,16 +733,17 @@ async function runScanMode() {
               );
               const fractalVal = parseFloat(c[k].high);
               if (isTop) {
-                openTrade.m30FractalUpgraded = true;
                 if (fractalVal < openTrade.sl && fractalVal > openTrade.entry) {
+                  openTrade.m30FractalUpgraded = true;
                   openTrade.fractalSl = fractalVal;
                   openTrade.sl = fractalVal;
                   openTrade.fractalEpoch = c[k].epoch;
                   openTrade.fractalTimeframe = "M30";
                   fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
                   await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M30 Structure\n\nTrade: ${openTrade.direction}\nNew M30 Top Fractal SL: ${openTrade.sl.toFixed(4)}`);
+                  break;
                 }
-                break;
+                // Fractal found but doesn't qualify — keep scanning for a better one
               }
             }
           }
