@@ -166,6 +166,7 @@ async function executeManualClose(result, reason) {
     trade.result = finalResult;
     trade.resultSource = resultSource;
     trade.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+    if (typeof serverPnl === "number") trade.serverPnl = serverPnl;
     fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
 
     const icon = finalResult === "WIN" ? "✅" : "❌";
@@ -615,6 +616,7 @@ async function runScanMode() {
         if (recovered && typeof recovered.profit === "number") {
           t.result = recovered.profit >= 0 ? "WIN" : "LOSS"; t.resultSource = "server_history_verified";
           t.closeTime = t.closeTime || (recovered.sellTime ? new Date(recovered.sellTime * 1000).toISOString().replace("T", " ").substring(0, 19) : new Date().toISOString().replace("T", " ").substring(0, 19));
+          t.serverPnl = recovered.profit;
           const icon = t.result === "WIN" ? "✅" : "❌";
           const durationMs = new Date(t.closeTime) - new Date(t.openTime);
           // ✅ FIX 3: Use recovered.profit (not t.serverPnl which was never set)
@@ -671,6 +673,7 @@ async function runScanMode() {
         openTrade.result = finalResult;
         openTrade.resultSource = resultSource;
         openTrade.closeTime = new Date().toISOString().replace("T"," ").substring(0,19);
+        openTrade.serverPnl = typeof serverPnl === "number" ? serverPnl : null;
         fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
         const icon = finalResult === "WIN" ? "✅" : "❌";
         const contractType = openTrade.direction === "BUY" ? "MULTUP" : "MULTDOWN";
