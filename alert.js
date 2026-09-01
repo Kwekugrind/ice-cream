@@ -20,13 +20,13 @@ const SYMBOL = "1HZ100V"; const SYMBOL_NAME = "Volatility 100 (1s) Index"; const
 const TRADING_SYMBOL = SYMBOL;
 const STAKE_USD = 5;
 const RISK_REWARD = 1.5;
-const TARGET_TP1_USD = 2.50;  
-const SOFTWARE_TP_USD = 3.60; 
-const SOFTWARE_SL_USD = -3.60; 
-const SERVER_TP_USD = 10.00;  
-const BREAKEVEN_ACTIVATE_USD = 2.00; 
-const CATASTROPHIC_PNL_FLOOR = -5.50; 
-const MARKET_DATA_APP_ID = "1089"; 
+const TARGET_TP1_USD = 2.50;
+const SOFTWARE_TP_USD = 3.60;
+const SOFTWARE_SL_USD = -3.60;
+const SERVER_TP_USD = 10.00;
+const BREAKEVEN_ACTIVATE_USD = 2.00;
+const CATASTROPHIC_PNL_FLOOR = -5.50;
+const MARKET_DATA_APP_ID = "1089";
 
 const GATEWAY_URL = process.env.GATEWAY_URL || "http://127.0.0.1:3000";
 const GATEWAY_SECRET = process.env.GATEWAY_SECRET;
@@ -120,7 +120,7 @@ async function checkTelegramCommands() {
       if (text === "/status") {
         const trades = fs.existsSync("trades.json") ? JSON.parse(fs.readFileSync("trades.json")) : [];
         const open = trades.filter(t => !t.result && !t.pending);
-        const reply = open.length 
+        const reply = open.length
           ? `📍 *${REPO_LABEL} Active Trades:*\n` + open.map(t => `• ${t.direction} @ ${Number(t.entry).toFixed(4)} (SL: ${t.sl ? Number(t.sl).toFixed(4) : "N/A"})`).join("\n")
           : `⚪ *${REPO_LABEL}*: No open trades.`;
         await sendTelegram(reply);
@@ -169,8 +169,8 @@ async function executeManualClose(result, reason) {
     fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
 
     const icon = finalResult === "WIN" ? "✅" : "❌";
-    const pnlStr = (typeof serverPnl === "number") 
-      ? (serverPnl >= 0 ? `+$${serverPnl.toFixed(2)}` : `-$${Math.abs(serverPnl).toFixed(2)}`) 
+    const pnlStr = (typeof serverPnl === "number")
+      ? (serverPnl >= 0 ? `+$${serverPnl.toFixed(2)}` : `-$${Math.abs(serverPnl).toFixed(2)}`)
       : (finalResult === "WIN" ? "+$3.60" : "-$3.60");
 
     await sendTelegram(`${icon} *${REPO_LABEL} — Trade Closed Manually*\n\nDirection: ${trade.direction}\n📍 Entry: ${Number(trade.entry).toFixed(4)}\n💵 P&L: *${pnlStr}*\nReason: ${reason}\nClosed: ${trade.closeTime}`);
@@ -204,7 +204,7 @@ async function getOpenPortfolio() {
 async function executeTrade(direction) {
   const expectedContractType = direction === "BUY" ? "MULTUP" : "MULTDOWN";
   const slDollars = parseFloat(STAKE_USD.toFixed(2));
-  const tpValue = typeof SERVER_TP_USD !== 'undefined' ? SERVER_TP_USD : 10.00;
+  const tpValue = typeof SERVER_TP_USD !== "undefined" ? SERVER_TP_USD : 10.00;
   const payload = {
     buy: "1", price: STAKE_USD,
     parameters: { contract_type: expectedContractType, underlying_symbol: TRADING_SYMBOL, currency: "USD", amount: STAKE_USD, basis: "stake", multiplier: MULTIPLIER, limit_order: { stop_loss: slDollars, take_profit: tpValue } }
@@ -249,7 +249,7 @@ async function getContractProfitFromHistory(contractId, approxOpenEpoch) {
   const transactions = data.profit_table?.transactions || [];
   const match = transactions.find(tx => String(tx.contract_id) === String(contractId));
   if (!match) return null;
-  const profit = typeof match.profit === 'number' ? match.profit : (parseFloat(match.sell_price) - parseFloat(match.buy_price));
+  const profit = typeof match.profit === "number" ? match.profit : (parseFloat(match.sell_price) - parseFloat(match.buy_price));
   return { profit, sellTime: match.sell_time };
 }
 
@@ -394,7 +394,9 @@ function deriveHardStopPrice(entry, direction) {
 }
 
 function calcUnrealizedPnL(trade, currentPrice) {
-  const rawPnl = trade.direction === "BUY" ? (currentPrice - trade.entry) / trade.entry * STAKE_USD * MULTIPLIER : (trade.entry - currentPrice) / trade.entry * STAKE_USD * MULTIPLIER;
+  const rawPnl = trade.direction === "BUY"
+    ? (currentPrice - trade.entry) / trade.entry * STAKE_USD * MULTIPLIER
+    : (trade.entry - currentPrice) / trade.entry * STAKE_USD * MULTIPLIER;
   return rawPnl - COMMISSION_USD;
 }
 
@@ -530,8 +532,8 @@ function calculateBgaTakeProfits(entry, direction, slDistance, d1Candles) {
 }
 
 // ==================== MAIN SCANNER & TRADE LOGIC ====================
-let state = { 
-  waitingFor: null, setupEpoch: null, lastProcessedEpoch: null, lastTgUpdateId: 0, h1TrendEpoch: null, 
+let state = {
+  waitingFor: null, setupEpoch: null, lastProcessedEpoch: null, lastTgUpdateId: 0, h1TrendEpoch: null,
   phaseATriggeredEpoch: null, activeEntryType: null, phaseATaken: false, h1TrendCycleEpoch: null,
   phaseADeadlineEpoch: null, phaseAWindowExpired: false,
   phaseBStochCrossEpoch: null, phaseBStochDir: null
@@ -559,7 +561,7 @@ async function runScanMode() {
 
   // Duplicate check
   if (allLiveContracts.length > 2) {
-    const dupDetails = allLiveContracts.map(c => `• Contract ID: \`${c.contract_id}\` (${c.contract_type}) @ ${c.buy_price || 'N/A'}`).join("\n");
+    const dupDetails = allLiveContracts.map(c => `• Contract ID: \`${c.contract_id}\` (${c.contract_type}) @ ${c.buy_price || "N/A"}`).join("\n");
     await sendTelegram(`🚨 *DUPLICATE CONTRACTS DETECTED — ${REPO_LABEL}*\n\nFound *${allLiveContracts.length}* live open contracts on Deriv simultaneously:\n${dupDetails}\n\n⚠️ Bot will manage all contracts independently.`);
   }
 
@@ -567,7 +569,7 @@ async function runScanMode() {
     const liveStartTime = liveContract.date_start ? liveContract.date_start * 1000 : null;
     const expectedType = liveContract.contract_type === "MULTUP" ? "BUY" : "SELL";
     let matchedTrade = trades.find(t => String(t.contractId) === String(liveContract.contract_id) || (t.pending && t.direction === expectedType && liveStartTime && Math.abs(new Date(t.openTime).getTime() - liveStartTime) <= 60000));
-    
+
     if (matchedTrade) {
       if (matchedTrade.pending) {
         matchedTrade.contractId = liveContract.contract_id;
@@ -588,7 +590,7 @@ async function runScanMode() {
         id: `${SYMBOL}-${new Date().toISOString()}`,
         contractId: liveContract.contract_id,
         pending: false, repo: REPO_LABEL, symbol: SYMBOL, direction: dir, entry: entryPrice, sl: calculatedSl,
-        tp1: 0, tp2: 0, tp3: 0, h1OpenAtEntry: null, tp1Reached: false, breakevenSet: false, peakProfit: null, rr: RISK_REWARD, entryType: 'RECOVERED_LIVE', m15AgainstAtEntry: false, brokerSlAmount: STAKE_USD,
+        tp1: 0, tp2: 0, tp3: 0, h1OpenAtEntry: null, tp1Reached: false, breakevenSet: false, peakProfit: null, rr: RISK_REWARD, entryType: "RECOVERED_LIVE", m15AgainstAtEntry: false, brokerSlAmount: STAKE_USD,
         entryEpoch: liveStartTime ? Math.floor(liveStartTime / 1000) : Math.floor(Date.now() / 1000), fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false,
         openTime: liveStartTime ? new Date(liveStartTime).toISOString().replace("T", " ").substring(0, 19) : new Date().toISOString().replace("T", " ").substring(0, 19),
         closeTime: null, result: null, runnerUnlocked: false
@@ -610,12 +612,13 @@ async function runScanMode() {
           const openEpoch = t.openTime ? Math.floor(new Date(t.openTime).getTime() / 1000) : undefined;
           recovered = await getContractProfitFromHistory(t.contractId, openEpoch);
         } catch {}
-        if (recovered && typeof recovered.profit === 'number') {
+        if (recovered && typeof recovered.profit === "number") {
           t.result = recovered.profit >= 0 ? "WIN" : "LOSS"; t.resultSource = "server_history_verified";
           t.closeTime = t.closeTime || (recovered.sellTime ? new Date(recovered.sellTime * 1000).toISOString().replace("T", " ").substring(0, 19) : new Date().toISOString().replace("T", " ").substring(0, 19));
           const icon = t.result === "WIN" ? "✅" : "❌";
           const durationMs = new Date(t.closeTime) - new Date(t.openTime);
-          const pnlStr = recovered.profit >= 0 ? `+$${Number(t.serverPnl).toFixed(2)}` : `-$${Math.abs(Number(t.serverPnl)).toFixed(2)}`;
+          // ✅ FIX 3: Use recovered.profit (not t.serverPnl which was never set)
+          const pnlStr = recovered.profit >= 0 ? `+$${recovered.profit.toFixed(2)}` : `-$${Math.abs(recovered.profit).toFixed(2)}`;
           await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${t.result} (Broker Native Exit)*\n\nDirection: ${t.direction}\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${Number(t.entry).toFixed(4)}\n💵 P&L: *${pnlStr}*\nClosed: ${t.closeTime}`);
         } else {
           t.orphanRetryCount = (t.orphanRetryCount || 0) + 1;
@@ -637,15 +640,17 @@ async function runScanMode() {
   if (openTradesList.length > 0) {
     let tradeData;
     try { tradeData = await fetchOpenTradeData(); } catch (err) { console.warn(`[${REPO_LABEL}] Failed to fetch open trade data: ${err.message}. Skipping.`); return; }
-    
+
     const currentPrice = tradeData.price;
     const currentM5 = tradeData.candles[tradeData.candles.length - 1];
     const candleHigh = parseFloat(currentM5.high);
     const candleLow = parseFloat(currentM5.low);
-    
+
     for (const openTrade of openTradesList) {
+      // ✅ FIX 1: isBuy declared at the top of the loop — used by peak profit tracking and TP1 price check
+      const isBuy = openTrade.direction === "BUY";
       let pnl = calcUnrealizedPnL(openTrade, currentPrice);
-      
+
       const closeWith = async (result, exitReason) => {
         let serverPnl = pnl;
         let resultSource = "estimated_fallback";
@@ -662,7 +667,7 @@ async function runScanMode() {
             return;
           }
         }
-        const finalResult = (typeof serverPnl === 'number') ? (serverPnl >= 0 ? "WIN" : "LOSS") : result;
+        const finalResult = (typeof serverPnl === "number") ? (serverPnl >= 0 ? "WIN" : "LOSS") : result;
         openTrade.result = finalResult;
         openTrade.resultSource = resultSource;
         openTrade.closeTime = new Date().toISOString().replace("T"," ").substring(0,19);
@@ -674,13 +679,13 @@ async function runScanMode() {
         const tp1Status = openTrade.tp1Reached ? "✅ TP1 hit" : "❌ TP1 not reached";
         const runnerStatus = openTrade.runnerUnlocked ? "🚀 Runner Active" : "🔒 Standard";
         const pnlStr = serverPnl >= 0 ? `+$${serverPnl.toFixed(2)}` : `-$${Math.abs(serverPnl).toFixed(2)}`;
-        
+
         await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${finalResult}*\n\nDirection: ${openTrade.direction} (${contractType})\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${Number(openTrade.entry).toFixed(4)}\n🏁 Exit: ${currentPrice.toFixed(4)}\n🛑 SL: ${openTrade.sl ? openTrade.sl.toFixed(4) : "N/A"} ($${slDollars} hard)\n🎯 TP1: ${openTrade.tp1 ? openTrade.tp1.toFixed(4) : "N/A"} (BGA) ${tp1Status}\n🏃 Mode: ${runnerStatus}\n\n💵 P&L: *${pnlStr}* (Net of comm.)\nReason: ${exitReason}\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${openTrade.openTime}\nClosed: ${openTrade.closeTime}\n` + (openTrade.contractId ? `Contract: \`${openTrade.contractId}\`` : ""));
       };
 
       // 0. Phase C Recovery Liquidation Hook
-      const hasPhaseC = openTradesList.some(t => t.entryType === 'PHASE_C' && t.direction === openTrade.direction && !t.result);
-      if (openTrade.entryType?.startsWith('PHASE_B') && hasPhaseC) {
+      const hasPhaseC = openTradesList.some(t => t.entryType === "PHASE_C" && t.direction === openTrade.direction && !t.result);
+      if (openTrade.entryType?.startsWith("PHASE_B") && hasPhaseC) {
         if (pnl >= 0.20) {
           await closeWith("WIN", `Phase C Recovery — Original Phase B liquidated safely at +$${pnl.toFixed(2)}`);
           continue;
@@ -691,13 +696,13 @@ async function runScanMode() {
       if (!openTrade.m30FractalUpgraded && tradeData.m30Candles && tradeData.m30Candles.length >= 5) {
         const c = tradeData.m30Candles;
         const tradeEntryEpoch = openTrade.entryEpoch || Math.floor(new Date(openTrade.openTime).getTime() / 1000);
-        const currentIndex = c.length - 2; 
-        
+        const currentIndex = c.length - 2;
+
         for (let k = 2; k <= currentIndex - 2; k++) {
           if (c[k].epoch > tradeEntryEpoch) {
             if (openTrade.direction === "BUY") {
               const isBottom = parseFloat(c[k].low) === Math.min(
-                parseFloat(c[k-2].low), parseFloat(c[k-1].low), 
+                parseFloat(c[k-2].low), parseFloat(c[k-1].low),
                 parseFloat(c[k].low), parseFloat(c[k+1].low), parseFloat(c[k+2].low)
               );
               const fractalVal = parseFloat(c[k].low);
@@ -705,17 +710,17 @@ async function runScanMode() {
                 openTrade.m30FractalUpgraded = true;
                 if (fractalVal > openTrade.sl && fractalVal < openTrade.entry) {
                   openTrade.fractalSl = fractalVal;
-                  openTrade.sl = fractalVal; 
+                  openTrade.sl = fractalVal;
                   openTrade.fractalEpoch = c[k].epoch;
-                  openTrade.fractalTimeframe = 'M30';
+                  openTrade.fractalTimeframe = "M30";
                   fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
                   await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M30 Structure\n\nTrade: ${openTrade.direction}\nNew M30 Bottom Fractal SL: ${openTrade.sl.toFixed(4)}`);
                 }
-                break; 
+                break;
               }
             } else if (openTrade.direction === "SELL") {
               const isTop = parseFloat(c[k].high) === Math.max(
-                parseFloat(c[k-2].high), parseFloat(c[k-1].high), 
+                parseFloat(c[k-2].high), parseFloat(c[k-1].high),
                 parseFloat(c[k].high), parseFloat(c[k+1].high), parseFloat(c[k+2].high)
               );
               const fractalVal = parseFloat(c[k].high);
@@ -723,13 +728,13 @@ async function runScanMode() {
                 openTrade.m30FractalUpgraded = true;
                 if (fractalVal < openTrade.sl && fractalVal > openTrade.entry) {
                   openTrade.fractalSl = fractalVal;
-                  openTrade.sl = fractalVal; 
+                  openTrade.sl = fractalVal;
                   openTrade.fractalEpoch = c[k].epoch;
-                  openTrade.fractalTimeframe = 'M30';
+                  openTrade.fractalTimeframe = "M30";
                   fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
                   await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M30 Structure\n\nTrade: ${openTrade.direction}\nNew M30 Top Fractal SL: ${openTrade.sl.toFixed(4)}`);
                 }
-                break; 
+                break;
               }
             }
           }
@@ -741,21 +746,21 @@ async function runScanMode() {
       const maxPnlInCandle = calcUnrealizedPnL(openTrade, bestPriceInCandle);
       const currentHighestPnl = Math.max(pnl, maxPnlInCandle);
       if (openTrade.peakProfit === null || currentHighestPnl > openTrade.peakProfit) {
-        openTrade.peakProfit = currentHighestPnl; 
+        openTrade.peakProfit = currentHighestPnl;
         fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
       }
 
       // 3. M30 Market Structure Early Exit (Loss Prevention & Runner Exit)
       if (tradeData.m30Candles && tradeData.m30Candles.length >= 4) {
         const m30 = tradeData.m30Candles;
-        const latestClosedM30 = m30[m30.length - 2]; 
-        
+        const latestClosedM30 = m30[m30.length - 2];
+
         let structOpenPrice = null;
         for (let k = m30.length - 3; k >= 0; k--) {
           const c = m30[k];
           const cOpen = parseFloat(c.open);
           const cClose = parseFloat(c.close);
-          
+
           if (openTrade.direction === "BUY" && cClose > cOpen) {
             structOpenPrice = cOpen;
             break;
@@ -786,18 +791,18 @@ async function runScanMode() {
 
       // 4. Priority Exit Checks (Software SL, Hard SL, & Fractal SL)
       const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction);
-      const hardSlBreached = openTrade.direction === "BUY" 
-        ? (currentPrice <= hardStopPrice || candleLow <= hardStopPrice) 
+      const hardSlBreached = openTrade.direction === "BUY"
+        ? (currentPrice <= hardStopPrice || candleLow <= hardStopPrice)
         : (currentPrice >= hardStopPrice || candleHigh >= hardStopPrice);
-        
+
       let fractalBreached = false;
       let closedCandlePrice = null;
       let evalTimeframe = openTrade.fractalTimeframe;
 
       if (openTrade.fractalSl && evalTimeframe) {
-        if (evalTimeframe === 'M30' && tradeData.m30Candles && tradeData.m30Candles.length >= 2) {
+        if (evalTimeframe === "M30" && tradeData.m30Candles && tradeData.m30Candles.length >= 2) {
           closedCandlePrice = parseFloat(tradeData.m30Candles[tradeData.m30Candles.length - 2].close);
-        } else if (evalTimeframe === 'M15' && tradeData.m15Candles && tradeData.m15Candles.length >= 2) {
+        } else if (evalTimeframe === "M15" && tradeData.m15Candles && tradeData.m15Candles.length >= 2) {
           closedCandlePrice = parseFloat(tradeData.m15Candles[tradeData.m15Candles.length - 2].close);
         }
 
@@ -808,12 +813,12 @@ async function runScanMode() {
       }
 
       if (hardSlBreached || fractalBreached) {
-        const reason = fractalBreached 
-          ? `${evalTimeframe} Fractal Early Exit Hit (${evalTimeframe} Closed ${openTrade.direction === "BUY" ? "below" : "above"} ${openTrade.fractalSl.toFixed(4)})` 
+        const reason = fractalBreached
+          ? `${evalTimeframe} Fractal Early Exit Hit (${evalTimeframe} Closed ${openTrade.direction === "BUY" ? "below" : "above"} ${openTrade.fractalSl.toFixed(4)})`
           : `Hard SL hit — price breached SL ${hardStopPrice.toFixed(4)}`;
         await closeWith("LOSS", reason); continue;
       }
-      
+
       // 5. Software Stop Loss (-$3.60)
       if (pnl <= SOFTWARE_SL_USD) {
         await closeWith("LOSS", `Software Stop Loss hit — PnL dropped to $${pnl.toFixed(2)} (Limit: $${SOFTWARE_SL_USD.toFixed(2)})`); continue;
@@ -839,27 +844,27 @@ async function runScanMode() {
         await sendTelegram(`🚀 *${REPO_LABEL} — Profit Runner Unlocked!*\n\nTrade exceeded +$${SOFTWARE_TP_USD.toFixed(2)} (PnL: +$${pnl.toFixed(2)}). Hard TP removed.\n\nM30 Market Structure & Wide Disaster Trail ($2.50) are now active.`);
       }
 
-      // 7. Tiered Floor & Trailing Enforcement
+      // 7. Tiered Floor & Trailing Enforcement (Static Staircase & Wide Disaster Guard)
       if (openTrade.runnerUnlocked) {
-        // Wide Disaster Trail ($2.50)
+        // Wide Disaster Trail ($2.50 from Peak)
         const WIDE_TRAILING_DISTANCE = 2.50;
         let disasterLockLevel = openTrade.peakProfit - WIDE_TRAILING_DISTANCE;
         disasterLockLevel = Math.max(disasterLockLevel, 1.25); // Never drop below TP1 static floor
 
         if (pnl <= disasterLockLevel) {
-          await closeWith("WIN", `Wide Disaster Trail exit — locked +$${pnl.toFixed(2)} (peak $${openTrade.peakProfit.toFixed(2)}, trailed by $${WIDE_TRAILING_DISTANCE.toFixed(2)})`); 
+          await closeWith("WIN", `Wide Disaster Trail exit — locked +$${pnl.toFixed(2)} (peak $${openTrade.peakProfit.toFixed(2)}, trailed by $${WIDE_TRAILING_DISTANCE.toFixed(2)})`);
           continue;
         }
       } else if (openTrade.tp1Reached) {
         // TP1 Static Floor (+$1.25)
         if (pnl <= 1.25) {
-          await closeWith("WIN", `TP1 Static Floor exit — locked +$1.25`); 
+          await closeWith("WIN", `TP1 Static Floor exit — locked +$1.25`);
           continue;
         }
       } else if (openTrade.breakevenSet) {
         // Breakeven Floor (+$0.70)
         if (pnl <= 0.70) {
-          await closeWith("WIN", `Commission-Covered Breakeven exit — locked +$0.70`); 
+          await closeWith("WIN", `Commission-Covered Breakeven exit — locked +$0.70`);
           continue;
         }
       }
@@ -875,7 +880,7 @@ async function runScanMode() {
     allowScan = true;
   } else if (allLiveContracts.length === 1 && unresolvedTrades.length === 1) {
     const ot = unresolvedTrades[0];
-    if ((ot.entryType === 'PHASE_B' || ot.entryType === 'PHASE_B_NO_PRIOR_A') && ot.m15AgainstAtEntry && !ot.pending) {
+    if ((ot.entryType === "PHASE_B" || ot.entryType === "PHASE_B_NO_PRIOR_A") && ot.m15AgainstAtEntry && !ot.pending) {
       allowScan = true;
       phaseCTarget = ot;
     }
@@ -914,7 +919,7 @@ async function runScanMode() {
   let h1FreshBuy = false; let h1FreshSell = false; let h1TrendDir = null;
   let ema50_1h = null;
   let h1Closes = null;
-  
+
   if (h1Candles && h1Candles.length >= 250) {
     h1Closes = h1Candles.map(c => parseFloat(c.close));
     const h1ci = h1Candles.length - 2;
@@ -929,8 +934,8 @@ async function runScanMode() {
   }
 
   let h1NewCycleEpoch = null;
-  if (h1FreshBuy || h1FreshSell) { 
-    h1NewCycleEpoch = h1Candles[h1Candles.length - 2].epoch; 
+  if (h1FreshBuy || h1FreshSell) {
+    h1NewCycleEpoch = h1Candles[h1Candles.length - 2].epoch;
   }
 
   // ── TREND STATE MANAGEMENT ──
@@ -938,17 +943,17 @@ async function runScanMode() {
   if (h1NewCycleEpoch && state.h1TrendCycleEpoch !== h1NewCycleEpoch) {
     state.h1TrendCycleEpoch = h1NewCycleEpoch;
     state.waitingFor = h1FreshBuy ? "BUY" : "SELL";
-    state.phaseATaken = false; 
+    state.phaseATaken = false;
     state.phaseAWindowExpired = false;
     state.phaseADeadlineEpoch = h1NewCycleEpoch + PHASE_A_WINDOW_SECONDS;
-    state.phaseBStochCrossEpoch = null; 
+    state.phaseBStochCrossEpoch = null;
     state.phaseBStochDir = null;
   }
 
   // B. Trend Invalidation Guard (Current trend contradicts waiting state)
   if (h1TrendDir && state.waitingFor && h1TrendDir !== state.waitingFor) {
-    state.waitingFor = null; state.phaseATaken = false; state.h1TrendCycleEpoch = null; 
-    state.phaseADeadlineEpoch = null; state.phaseAWindowExpired = false; 
+    state.waitingFor = null; state.phaseATaken = false; state.h1TrendCycleEpoch = null;
+    state.phaseADeadlineEpoch = null; state.phaseAWindowExpired = false;
     state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
   }
 
@@ -960,21 +965,21 @@ async function runScanMode() {
       const currC = h1Closes[j];
       const prevEma = ema50_1h[j-1];
       const currEma = ema50_1h[j];
-      
+
       if (prevEma == null || currEma == null) break;
-      
+
       if (h1TrendDir === "BUY" && prevC <= prevEma && currC > currEma) {
         historicalCrossEpoch = h1Candles[j].epoch; break;
       } else if (h1TrendDir === "SELL" && prevC >= prevEma && currC < currEma) {
         historicalCrossEpoch = h1Candles[j].epoch; break;
       }
     }
-    
-    state.waitingFor = h1TrendDir; 
-    state.h1TrendCycleEpoch = historicalCrossEpoch; 
-    state.phaseATaken = false; 
+
+    state.waitingFor = h1TrendDir;
+    state.h1TrendCycleEpoch = historicalCrossEpoch;
+    state.phaseATaken = false;
     state.phaseADeadlineEpoch = historicalCrossEpoch + PHASE_A_WINDOW_SECONDS;
-    
+
     const nowEpoch = Math.floor(Date.now() / 1000);
     if (nowEpoch > state.phaseADeadlineEpoch) {
       state.phaseAWindowExpired = true;
@@ -1000,13 +1005,19 @@ async function runScanMode() {
 
   const si = candles.length - 2;
   const stoch = calculateStochastic(candles, 5, 3, 3);
-  
+
   // MACD M5 (12,16,9) with Main & Signal Lines
   const macd_m5 = calculateMACD(closes, 12, 16, 9);
-  
+
+  // ✅ FIX 2: Signal variables declared OUTSIDE the guard block so they are
+  // accessible at the if (signalTriggered) check below
+  let signalTriggered = false, direction = "", entry, sl, risk, tp1, tp2, tp3;
+  let entryType = null;
+  let m15AgainstAtEntry = false;
+
   // Guard against unformed MACD arrays before accessing indexes
   if (si >= 1 && stoch.k[si] != null && stoch.k[si-1] != null && macd_m5.macd[si] != null && macd_m5.macd[si-1] != null && macd_m5.signal[si] != null) {
-    
+
     const m5MacdBuyOk = macd_m5.macd[si] > macd_m5.signal[si];
     const m5MacdSellOk = macd_m5.macd[si] < macd_m5.signal[si];
 
@@ -1014,15 +1025,13 @@ async function runScanMode() {
     const m15Rsi = calculateRSI(m15Closes, 14);
     const m15Tdi = calculateBollingerBands(m15Rsi, 34, 1.619);
     const m15i = m15Candles.length - 2;
-    
-    const macd_m15_12_26_9 = calculateMACD(m15Closes, 12, 26, 9);
-    const liveM15Macd_12_26_9 = macd_m15_12_26_9.macd[m15Closes.length - 1]; 
-    
-    const macd_m15_12_16_9 = calculateMACD(m15Closes, 12, 16, 9);
-    const liveM15Macd_12_16_9 = macd_m15_12_16_9.macd[m15Closes.length - 1]; 
 
-    let signalTriggered = false, direction = "", entry, sl, risk, tp1, tp2, tp3; let entryType = null; let m15AgainstAtEntry = false;
-      
+    const macd_m15_12_26_9 = calculateMACD(m15Closes, 12, 26, 9);
+    const liveM15Macd_12_26_9 = macd_m15_12_26_9.macd[m15Closes.length - 1];
+
+    const macd_m15_12_16_9 = calculateMACD(m15Closes, 12, 16, 9);
+    const liveM15Macd_12_16_9 = macd_m15_12_16_9.macd[m15Closes.length - 1];
+
     if (phaseCTarget) {
       // ==== PHASE C EVALUATION ENGINE (Strictly %K only) ====
       const currentPnl = calcUnrealizedPnL(phaseCTarget, closes[i]);
@@ -1031,13 +1040,13 @@ async function runScanMode() {
           const stochCrossBuyPhaseC = stoch.k[si-1] <= 20 && stoch.k[si] > 20;
           const macdValid = liveM15Macd_12_16_9 !== null && liveM15Macd_12_16_9 >= 0;
           if (stochCrossBuyPhaseC && macdValid && m5MacdBuyOk) {
-            signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = 'PHASE_C';
+            signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = "PHASE_C";
           }
         } else if (phaseCTarget.direction === "SELL") {
           const stochCrossSellPhaseC = stoch.k[si-1] >= 80 && stoch.k[si] < 80;
           const macdValid = liveM15Macd_12_16_9 !== null && liveM15Macd_12_16_9 <= 0;
           if (stochCrossSellPhaseC && macdValid && m5MacdSellOk) {
-            signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = 'PHASE_C';
+            signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = "PHASE_C";
           }
         }
       }
@@ -1047,14 +1056,14 @@ async function runScanMode() {
         // 🛡️ Phase A with Strict %K-Only Crossover & M15 MACD Confluence
         const stochCrossBuyPhaseA = stoch.k[si-1] <= 20 && stoch.k[si] > 20;
         const stochCrossSellPhaseA = stoch.k[si-1] >= 80 && stoch.k[si] < 80;
-        
+
         const m15MacdBuyOk = liveM15Macd_12_26_9 !== null && liveM15Macd_12_26_9 >= 0;
         const m15MacdSellOk = liveM15Macd_12_26_9 !== null && liveM15Macd_12_26_9 <= 0;
 
         if (state.waitingFor === "BUY" && stochCrossBuyPhaseA && m15MacdBuyOk && m5MacdBuyOk) {
-          signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = 'PHASE_A'; state.phaseATaken = true;
+          signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = "PHASE_A"; state.phaseATaken = true;
         } else if (state.waitingFor === "SELL" && stochCrossSellPhaseA && m15MacdSellOk && m5MacdSellOk) {
-          signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = 'PHASE_A'; state.phaseATaken = true;
+          signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = "PHASE_A"; state.phaseATaken = true;
         }
       }
 
@@ -1077,7 +1086,7 @@ async function runScanMode() {
             state.phaseBStochDir = null;
           }
           if (state.phaseBStochDir === "BUY" && macdBuyB && m15MacdValidBuyB && m5MacdBuyOk) {
-            signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A';
+            signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = state.phaseATaken ? "PHASE_B" : "PHASE_B_NO_PRIOR_A";
             state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
           }
         } else if (state.waitingFor === "SELL") {
@@ -1090,13 +1099,13 @@ async function runScanMode() {
             state.phaseBStochDir = null;
           }
           if (state.phaseBStochDir === "SELL" && macdSellB && m15MacdValidSellB && m5MacdSellOk) {
-            signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = state.phaseATaken ? 'PHASE_B' : 'PHASE_B_NO_PRIOR_A';
+            signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = state.phaseATaken ? "PHASE_B" : "PHASE_B_NO_PRIOR_A";
             state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
           }
         }
       }
 
-      if (signalTriggered && (entryType === 'PHASE_B' || entryType === 'PHASE_B_NO_PRIOR_A') && m15Rsi[m15i] != null && m15Tdi.middle[m15i] != null) {
+      if (signalTriggered && (entryType === "PHASE_B" || entryType === "PHASE_B_NO_PRIOR_A") && m15Rsi[m15i] != null && m15Tdi.middle[m15i] != null) {
         if (direction === "BUY") m15AgainstAtEntry = m15Rsi[m15i] < m15Tdi.middle[m15i];
         else m15AgainstAtEntry = m15Rsi[m15i] > m15Tdi.middle[m15i];
       }
@@ -1106,7 +1115,7 @@ async function runScanMode() {
   if (signalTriggered) {
     try {
       const preCheckContracts = (await getOpenPortfolio()).filter(c => getContractSymbol(c) === TRADING_SYMBOL);
-      if (entryType === 'PHASE_C') {
+      if (entryType === "PHASE_C") {
         if (preCheckContracts.length > 1) return;
       } else {
         if (preCheckContracts.length > 0) {
@@ -1124,7 +1133,7 @@ async function runScanMode() {
     let initialFractal = findRecentFractal(m15Candles, m15Candles.length - 2, direction);
     const slDollars = parseFloat(STAKE_USD.toFixed(2));
     const hardStopPrice = deriveHardStopPrice(entry, direction);
-    
+
     if (direction === "BUY") {
       if (initialFractal && initialFractal > hardStopPrice && initialFractal < entry) sl = initialFractal;
       else { sl = hardStopPrice; initialFractal = null; }
@@ -1132,29 +1141,29 @@ async function runScanMode() {
       if (initialFractal && initialFractal < hardStopPrice && initialFractal > entry) sl = initialFractal;
       else { sl = hardStopPrice; initialFractal = null; }
     }
-    
-    let fractalTimeframe = initialFractal ? 'M15' : null;
+
+    let fractalTimeframe = initialFractal ? "M15" : null;
     risk = Math.abs(entry - sl);
     const slDistance = risk;
-    const bgaTps = await calculateBgaTakeProfits(entry, direction, slDistance, d1Candles);
+    const bgaTps = calculateBgaTakeProfits(entry, direction, slDistance, d1Candles);
     tp1 = bgaTps.tp1; tp2 = bgaTps.tp2; tp3 = bgaTps.tp3;
     const timeFormatted = new Date(currentCandleEpoch * 1000).toISOString().replace("T"," ").substring(0,19);
     const bgaTag = getBGAInfo(entry);
-    
-    let setupLabel = escapeMarkdown(entryType === 'PHASE_C' ? 'PHASE C (M15 Rescue Add-On)' 
-      : (entryType === 'PHASE_B_NO_PRIOR_A' ? 'PHASE B (Phase A window expired unfilled — fallback re-entry)' : `${entryType} (H1 EMA 50, ${PHASE_A_WINDOW_SECONDS/3600}h Phase A window)`));
-    
+
+    let setupLabel = escapeMarkdown(entryType === "PHASE_C" ? "PHASE C (M15 Rescue Add-On)"
+      : (entryType === "PHASE_B_NO_PRIOR_A" ? "PHASE B (Phase A window expired unfilled — fallback re-entry)" : `${entryType} (H1 EMA 50, ${PHASE_A_WINDOW_SECONDS/3600}h Phase A window)`));
+
     let message = `🚨 *${SYMBOL_NAME.toUpperCase()} CONFIRMED SIGNAL* 🚨\n\nDirection: ${direction}\nRepo: ${REPO_LABEL}\nTimeframe: M5\n\n📍 Entry: ${Number(entry).toFixed(4)}\n🛑 Initial SL: ${Number(sl).toFixed(4)} (${initialFractal ? "M15 Fractal" : "Hard Stop"})\n🎯 TP1: ${Number(tp1).toFixed(4)} (BGA Whole)\n🎯 TP2 (Ultimate TP): ${Number(tp2).toFixed(4)} (BGA)\n🎯 TP3: ${Number(tp3).toFixed(4)} (reference)\n\n💰 Stake: $${STAKE_USD}\n⚡ Setup: ${setupLabel}\n️ Confluence: ${bgaTag}\n━━━━━━━━━━━━━━━━━━━━\n⏰ Time (UTC): ${timeFormatted}\n\n💡 To close manually: send \`/close win\` or \`/close loss\` in this chat`;
     state.lastProcessedEpoch = currentCandleEpoch;
     fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
-    
+
     const pendingTradeRecord = {
-      id: `${SYMBOL}-${isoTime.replace(/[: ]/g, "-")}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, tp1, tp2, tp3, h1OpenAtEntry: null, tp1Reached: false, breakevenSet: false, peakProfit: null, rr: RISK_REWARD, entryType, m15AgainstAtEntry, brokerSlAmount: STAKE_USD, 
+      id: `${SYMBOL}-${isoTime.replace(/[: ]/g, "-")}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, tp1, tp2, tp3, h1OpenAtEntry: null, tp1Reached: false, breakevenSet: false, peakProfit: null, rr: RISK_REWARD, entryType, m15AgainstAtEntry, brokerSlAmount: STAKE_USD,
       entryEpoch: currentCandleEpoch, fractalSl: initialFractal, fractalEpoch: null, fractalTimeframe, m30FractalUpgraded: false, openTime: timeFormatted, closeTime: null, result: null, runnerUnlocked: false
     };
     trades.push(pendingTradeRecord);
     fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-    
+
     try {
       const contractId = await executeTrade(direction);
       if (!contractId) {
