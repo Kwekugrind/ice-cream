@@ -705,7 +705,7 @@
     "h1OpenAtEntry": null,
     "tp1Reached": false,
     "breakevenSet": false,
-    "peakProfit": null,
+    "peakProfit": 0.03606407075826257,
     "rr": 1.5,
     "entryType": "PHASE_B_NO_PRIOR_A",
     "m15AgainstAtEntry": true,
