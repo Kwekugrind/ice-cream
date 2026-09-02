@@ -537,6 +537,7 @@ let state = {
   waitingFor: null, setupEpoch: null, lastProcessedEpoch: null, lastTgUpdateId: 0, h1TrendEpoch: null,
   phaseATriggeredEpoch: null, activeEntryType: null, phaseATaken: false, h1TrendCycleEpoch: null,
   phaseADeadlineEpoch: null, phaseAWindowExpired: false,
+  phaseAStochCrossEpoch: null, phaseAStochDir: null,
   phaseBStochCrossEpoch: null, phaseBStochDir: null
 };
 try {
@@ -962,6 +963,8 @@ async function runScanMode() {
     state.phaseATaken = false;
     state.phaseAWindowExpired = false;
     state.phaseADeadlineEpoch = h1NewCycleEpoch + PHASE_A_WINDOW_SECONDS;
+    state.phaseAStochCrossEpoch = null;
+    state.phaseAStochDir = null;
     state.phaseBStochCrossEpoch = null;
     state.phaseBStochDir = null;
   }
@@ -970,6 +973,7 @@ async function runScanMode() {
   if (h1TrendDir && state.waitingFor && h1TrendDir !== state.waitingFor) {
     state.waitingFor = null; state.phaseATaken = false; state.h1TrendCycleEpoch = null;
     state.phaseADeadlineEpoch = null; state.phaseAWindowExpired = false;
+    state.phaseAStochCrossEpoch = null; state.phaseAStochDir = null;
     state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
   }
 
@@ -1067,17 +1071,27 @@ async function runScanMode() {
     } else {
       // ==== NORMAL PHASE A / B EVALUATION ====
       if (!state.phaseATaken && !state.phaseAWindowExpired) {
-        // 🛡️ Phase A with Strict %K-Only Crossover & M15 MACD Confluence
+        // 🛡️ Phase A: Stoch %K cross fires first and is recorded in state.
+        // M5 MACD signal crossover and M15 MACD (12,26,9) can align on any later candle
+        // within the remaining 2.5h window. No inner expiry on the stoch cross.
         const stochCrossBuyPhaseA = stoch.k[si-1] <= 20 && stoch.k[si] > 20;
         const stochCrossSellPhaseA = stoch.k[si-1] >= 80 && stoch.k[si] < 80;
 
         const m15MacdBuyOk = liveM15Macd_12_26_9 !== null && liveM15Macd_12_26_9 >= 0;
         const m15MacdSellOk = liveM15Macd_12_26_9 !== null && liveM15Macd_12_26_9 <= 0;
 
-        if (state.waitingFor === "BUY" && stochCrossBuyPhaseA && m15MacdBuyOk && m5MacdBuyOk) {
-          signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = "PHASE_A"; state.phaseATaken = true;
-        } else if (state.waitingFor === "SELL" && stochCrossSellPhaseA && m15MacdSellOk && m5MacdSellOk) {
-          signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = "PHASE_A"; state.phaseATaken = true;
+        if (state.waitingFor === "BUY") {
+          if (stochCrossBuyPhaseA) { state.phaseAStochCrossEpoch = currentCandleEpoch; state.phaseAStochDir = "BUY"; }
+          if (state.phaseAStochDir === "BUY" && m15MacdBuyOk && m5MacdBuyOk) {
+            signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = "PHASE_A"; state.phaseATaken = true;
+            state.phaseAStochCrossEpoch = null; state.phaseAStochDir = null;
+          }
+        } else if (state.waitingFor === "SELL") {
+          if (stochCrossSellPhaseA) { state.phaseAStochCrossEpoch = currentCandleEpoch; state.phaseAStochDir = "SELL"; }
+          if (state.phaseAStochDir === "SELL" && m15MacdSellOk && m5MacdSellOk) {
+            signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = "PHASE_A"; state.phaseATaken = true;
+            state.phaseAStochCrossEpoch = null; state.phaseAStochDir = null;
+          }
         }
       }
 
@@ -1085,8 +1099,6 @@ async function runScanMode() {
       if (!signalTriggered && (state.phaseATaken || state.phaseAWindowExpired)) {
         const stochCrossBuyB = stoch.k[si-1] <= 20 && stoch.k[si] > 20;
         const stochCrossSellB = stoch.k[si-1] >= 80 && stoch.k[si] < 80;
-        const macdBuyB = macd_m5.macd[si] > 0;
-        const macdSellB = macd_m5.macd[si] < 0;
         const m15MacdValidBuyB = liveM15Macd_12_26_9 !== null && liveM15Macd_12_26_9 >= 0;
         const m15MacdValidSellB = liveM15Macd_12_26_9 !== null && liveM15Macd_12_26_9 <= 0;
 
@@ -1099,7 +1111,7 @@ async function runScanMode() {
             state.phaseBStochCrossEpoch = null;
             state.phaseBStochDir = null;
           }
-          if (state.phaseBStochDir === "BUY" && macdBuyB && m15MacdValidBuyB && m5MacdBuyOk) {
+          if (state.phaseBStochDir === "BUY" && m15MacdValidBuyB && m5MacdBuyOk) {
             signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = state.phaseATaken ? "PHASE_B" : "PHASE_B_NO_PRIOR_A";
             state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
           }
@@ -1112,7 +1124,7 @@ async function runScanMode() {
             state.phaseBStochCrossEpoch = null;
             state.phaseBStochDir = null;
           }
-          if (state.phaseBStochDir === "SELL" && macdSellB && m15MacdValidSellB && m5MacdSellOk) {
+          if (state.phaseBStochDir === "SELL" && m15MacdValidSellB && m5MacdSellOk) {
             signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = state.phaseATaken ? "PHASE_B" : "PHASE_B_NO_PRIOR_A";
             state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
           }
