@@ -652,8 +652,10 @@
     "fractalTimeframe": "M15",
     "m30FractalUpgraded": false,
     "openTime": "2026-09-02 01:45:00",
-    "closeTime": null,
-    "result": null,
-    "runnerUnlocked": false
+    "closeTime": "2026-09-02 03:00:04",
+    "result": "LOSS",
+    "runnerUnlocked": false,
+    "resultSource": "server_close_confirmed",
+    "serverPnl": -2.346666938531398
   }
 ]
