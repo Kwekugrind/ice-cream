@@ -857,7 +857,7 @@ async function runScanMode() {
       if (pnl >= SOFTWARE_TP_USD && !openTrade.runnerUnlocked) {
         openTrade.runnerUnlocked = true;
         fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-        await sendTelegram(`🚀 *${REPO_LABEL} — Profit Runner Unlocked!*\n\nTrade exceeded +$${SOFTWARE_TP_USD.toFixed(2)} (PnL: +$${pnl.toFixed(2)}). Hard TP removed.\n\nM30 Market Structure & Wide Disaster Trail ($2.50) are now active.`);
+        await sendTelegram(`🚀 *${REPO_LABEL} — Profit Runner Unlocked!*\n\nTrade exceeded +$${SOFTWARE_TP_USD.toFixed(2)} (PnL: +$${pnl.toFixed(2)}). Hard TP removed.\n\nM15 Structure Trail & Wide Disaster Trail ($2.50) are now active.`);
       }
 
       // 7. Tiered Floor & Trailing Enforcement (Static Staircase & Wide Disaster Guard)
