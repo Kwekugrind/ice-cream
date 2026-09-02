@@ -694,20 +694,18 @@ async function runScanMode() {
         }
       }
 
-      // 1. M30 Fractal SL Tracking (Upgrades SL when new Fractal forms)
-      // Scans post-entry M30 fractals oldest-to-newest. Skips non-qualifying fractals
-      // (below current SL for BUY, above for SELL) and keeps looking until a valid one
-      // is found. Locks in once upgraded — not a trailing stop, just a one-time upgrade.
-      // Fractal at k is only considered if candle k+2 closed AFTER trade entry
-      // (i.e. the fractal was actually visible/confirmed after the trade opened).
-      if (!openTrade.m30FractalUpgraded && tradeData.m30Candles && tradeData.m30Candles.length >= 5) {
-        const c = tradeData.m30Candles;
+      // 1. M15 Fractal SL Tracking (one-time upgrade to tightest post-entry M15 fractal)
+      // Scans post-entry M15 fractals oldest-to-newest. Skips non-qualifying fractals
+      // and keeps looking until a valid one is found. Locks in once upgraded.
+      // Fractal at k is only considered if candle k+2 closed AFTER trade entry.
+      if (!openTrade.m30FractalUpgraded && tradeData.m15Candles && tradeData.m15Candles.length >= 5) {
+        const c = tradeData.m15Candles;
         const tradeEntryEpoch = openTrade.entryEpoch || Math.floor(new Date(openTrade.openTime).getTime() / 1000);
         const currentIndex = c.length - 2;
 
         for (let k = 2; k <= currentIndex - 2; k++) {
-          // Fractal is confirmed when candle k+2 closes; only use fractals confirmed after entry
-          if (c[k + 2].epoch + M30 > tradeEntryEpoch) {
+          // Fractal confirmed when candle k+2 closes; only use fractals confirmed after entry
+          if (c[k + 2].epoch + M15 > tradeEntryEpoch) {
             if (openTrade.direction === "BUY") {
               const isBottom = parseFloat(c[k].low) === Math.min(
                 parseFloat(c[k-2].low), parseFloat(c[k-1].low),
@@ -720,9 +718,9 @@ async function runScanMode() {
                   openTrade.fractalSl = fractalVal;
                   openTrade.sl = fractalVal;
                   openTrade.fractalEpoch = c[k].epoch;
-                  openTrade.fractalTimeframe = "M30";
+                  openTrade.fractalTimeframe = "M15";
                   fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-                  await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M30 Structure\n\nTrade: ${openTrade.direction}\nNew M30 Bottom Fractal SL: ${openTrade.sl.toFixed(4)}`);
+                  await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M15 Structure\n\nTrade: ${openTrade.direction}\nNew M15 Bottom Fractal SL: ${openTrade.sl.toFixed(4)}`);
                   break;
                 }
                 // Fractal found but doesn't qualify — keep scanning for a better one
@@ -739,9 +737,9 @@ async function runScanMode() {
                   openTrade.fractalSl = fractalVal;
                   openTrade.sl = fractalVal;
                   openTrade.fractalEpoch = c[k].epoch;
-                  openTrade.fractalTimeframe = "M30";
+                  openTrade.fractalTimeframe = "M15";
                   fs.writeFileSync("trades.json", JSON.stringify(trades, null, 2));
-                  await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M30 Structure\n\nTrade: ${openTrade.direction}\nNew M30 Top Fractal SL: ${openTrade.sl.toFixed(4)}`);
+                  await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M15 Structure\n\nTrade: ${openTrade.direction}\nNew M15 Top Fractal SL: ${openTrade.sl.toFixed(4)}`);
                   break;
                 }
                 // Fractal found but doesn't qualify — keep scanning for a better one
@@ -863,7 +861,43 @@ async function runScanMode() {
 
       // 7. Tiered Floor & Trailing Enforcement (Static Staircase & Wide Disaster Guard)
       if (openTrade.runnerUnlocked) {
-        // Wide Disaster Trail ($2.50 from Peak)
+        const tradeEntryEpochRunner = openTrade.entryEpoch || Math.floor(new Date(openTrade.openTime).getTime() / 1000);
+
+        // Count total M30 directional candles (closed) since entry
+        let m30DirectionalCount = 0;
+        if (tradeData.m30Candles) {
+          for (const rc of tradeData.m30Candles.slice(0, -1)) {
+            if (rc.epoch + M30 <= tradeEntryEpochRunner) continue;
+            const rcOpen = parseFloat(rc.open);
+            const rcClose = parseFloat(rc.close);
+            if (isBuy && rcClose > rcOpen) m30DirectionalCount++;
+            else if (!isBuy && rcClose < rcOpen) m30DirectionalCount++;
+          }
+        }
+
+        // M15 Structure Trail — activates after 3rd M30 directional candle closes
+        if (m30DirectionalCount >= 3 && tradeData.m15Candles && tradeData.m15Candles.length >= 4) {
+          const m15t = tradeData.m15Candles;
+          const latestClosedM15 = m15t[m15t.length - 2];
+          let m15StructOpen = null;
+          for (let k = m15t.length - 3; k >= 0; k--) {
+            const mc = m15t[k];
+            if (mc.epoch + M15 <= tradeEntryEpochRunner) break;
+            const mcOpen = parseFloat(mc.open);
+            const mcClose = parseFloat(mc.close);
+            if (isBuy && mcClose > mcOpen) { m15StructOpen = mcOpen; break; }
+            else if (!isBuy && mcClose < mcOpen) { m15StructOpen = mcOpen; break; }
+          }
+          if (m15StructOpen !== null) {
+            const latestM15Close = parseFloat(latestClosedM15.close);
+            if ((isBuy && latestM15Close < m15StructOpen) || (!isBuy && latestM15Close > m15StructOpen)) {
+              await closeWith("WIN", `M15 Structure Trail exit — Latest M15 closed at ${latestM15Close.toFixed(4)}, breaking M15 level ${m15StructOpen.toFixed(4)} (${m30DirectionalCount} M30 ${isBuy ? "bullish" : "bearish"} candles since entry).`);
+              continue;
+            }
+          }
+        }
+
+        // Wide Disaster Trail ($2.50 from Peak) — always active as safety net
         const WIDE_TRAILING_DISTANCE = 2.50;
         let disasterLockLevel = openTrade.peakProfit - WIDE_TRAILING_DISTANCE;
         disasterLockLevel = Math.max(disasterLockLevel, 1.25); // Never drop below TP1 static floor
