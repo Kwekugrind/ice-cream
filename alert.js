@@ -538,6 +538,7 @@ let state = {
   phaseATriggeredEpoch: null, activeEntryType: null, phaseATaken: false, h1TrendCycleEpoch: null,
   phaseADeadlineEpoch: null, phaseAWindowExpired: false,
   phaseAStochCrossEpoch: null, phaseAStochDir: null,
+  phaseBM15CondMet: false, phaseBM15CondDir: null,
   phaseBStochCrossEpoch: null, phaseBStochDir: null
 };
 try {
@@ -929,6 +930,9 @@ async function runScanMode() {
 
   if (allLiveContracts.length === 0 && unresolvedTrades.length === 0) {
     allowScan = true;
+    // Reset Phase B M15 gate so the next entry requires a fresh M15 retracement
+    state.phaseBM15CondMet = false;
+    state.phaseBM15CondDir = null;
   } else if (allLiveContracts.length === 1 && unresolvedTrades.length === 1) {
     const ot = unresolvedTrades[0];
     if ((ot.entryType === "PHASE_B" || ot.entryType === "PHASE_B_NO_PRIOR_A") && ot.m15AgainstAtEntry && !ot.pending) {
@@ -999,6 +1003,7 @@ async function runScanMode() {
     state.phaseADeadlineEpoch = h1NewCycleEpoch + PHASE_A_WINDOW_SECONDS;
     state.phaseAStochCrossEpoch = null;
     state.phaseAStochDir = null;
+    state.phaseBM15CondMet = false; state.phaseBM15CondDir = null;
     state.phaseBStochCrossEpoch = null;
     state.phaseBStochDir = null;
   }
@@ -1008,6 +1013,7 @@ async function runScanMode() {
     state.waitingFor = null; state.phaseATaken = false; state.h1TrendCycleEpoch = null;
     state.phaseADeadlineEpoch = null; state.phaseAWindowExpired = false;
     state.phaseAStochCrossEpoch = null; state.phaseAStochDir = null;
+    state.phaseBM15CondMet = false; state.phaseBM15CondDir = null;
     state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
   }
 
@@ -1080,6 +1086,9 @@ async function runScanMode() {
 
     const macd_m15_12_26_9 = calculateMACD(m15Closes, 12, 26, 9);
     const liveM15Macd_12_26_9 = macd_m15_12_26_9.macd[m15Closes.length - 1];
+    const liveM15MacdSignal_12_26_9 = macd_m15_12_26_9.signal[m15Closes.length - 1];
+    const m15Stoch = calculateStochastic(m15Candles, 5, 3, 3);
+    const m15si = m15Candles.length - 2;
 
     const macd_m15_12_16_9 = calculateMACD(m15Closes, 12, 16, 9);
     const liveM15Macd_12_16_9 = macd_m15_12_16_9.macd[m15Closes.length - 1];
@@ -1129,38 +1138,49 @@ async function runScanMode() {
         }
       }
 
-      // --- PHASE B (Stoch %K only + MACD 12,16,9) ---
+      // --- PHASE B ---
+      // Gate 1: M15 %K must first touch ≤20 (BUY) or ≥80 (SELL) — stays valid once met.
+      // Gate 2: M5 %K cross fires after Gate 1 is met — 47-minute confirmation window.
+      // Entry: M15 MACD (12,26,9) line > Signal (BUY trend filter) + M5 MACD signal crossover.
       if (!signalTriggered && (state.phaseATaken || state.phaseAWindowExpired)) {
         const stochCrossBuyB = stoch.k[si-1] <= 20 && stoch.k[si] > 20;
         const stochCrossSellB = stoch.k[si-1] >= 80 && stoch.k[si] < 80;
-        const m15MacdValidBuyB = liveM15Macd_12_26_9 !== null && liveM15Macd_12_26_9 >= 0;
-        const m15MacdValidSellB = liveM15Macd_12_26_9 !== null && liveM15Macd_12_26_9 <= 0;
+
+        // M15 MACD signal crossover as trend filter (not required to be a fresh cross)
+        const m15MacdValidBuyB = liveM15Macd_12_26_9 !== null && liveM15MacdSignal_12_26_9 !== null && liveM15Macd_12_26_9 > liveM15MacdSignal_12_26_9;
+        const m15MacdValidSellB = liveM15Macd_12_26_9 !== null && liveM15MacdSignal_12_26_9 !== null && liveM15Macd_12_26_9 < liveM15MacdSignal_12_26_9;
 
         if (state.waitingFor === "BUY") {
-          if (stochCrossBuyB) {
-            state.phaseBStochCrossEpoch = currentCandleEpoch;
-            state.phaseBStochDir = "BUY";
+          // Gate 1: M15 %K touches ≤20 — record once, stays valid permanently
+          if (!state.phaseBM15CondMet && m15Stoch.k[m15si] !== null && m15Stoch.k[m15si] <= 20) {
+            state.phaseBM15CondMet = true; state.phaseBM15CondDir = "BUY";
           }
-          if (state.phaseBStochCrossEpoch && (currentCandleEpoch - state.phaseBStochCrossEpoch > 2820)) {
-            state.phaseBStochCrossEpoch = null;
-            state.phaseBStochDir = null;
-          }
-          if (state.phaseBStochDir === "BUY" && m15MacdValidBuyB && m5MacdBuyOk) {
-            signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = state.phaseATaken ? "PHASE_B" : "PHASE_B_NO_PRIOR_A";
-            state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
+          if (state.phaseBM15CondDir === "BUY") {
+            // Gate 2: M5 %K cross
+            if (stochCrossBuyB) { state.phaseBStochCrossEpoch = currentCandleEpoch; state.phaseBStochDir = "BUY"; }
+            if (state.phaseBStochCrossEpoch && (currentCandleEpoch - state.phaseBStochCrossEpoch > 2820)) {
+              state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
+            }
+            if (state.phaseBStochDir === "BUY" && m15MacdValidBuyB && m5MacdBuyOk) {
+              signalTriggered = true; direction = "BUY"; entry = closes[i]; entryType = state.phaseATaken ? "PHASE_B" : "PHASE_B_NO_PRIOR_A";
+              state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
+            }
           }
         } else if (state.waitingFor === "SELL") {
-          if (stochCrossSellB) {
-            state.phaseBStochCrossEpoch = currentCandleEpoch;
-            state.phaseBStochDir = "SELL";
+          // Gate 1: M15 %K touches ≥80 — record once, stays valid permanently
+          if (!state.phaseBM15CondMet && m15Stoch.k[m15si] !== null && m15Stoch.k[m15si] >= 80) {
+            state.phaseBM15CondMet = true; state.phaseBM15CondDir = "SELL";
           }
-          if (state.phaseBStochCrossEpoch && (currentCandleEpoch - state.phaseBStochCrossEpoch > 2820)) {
-            state.phaseBStochCrossEpoch = null;
-            state.phaseBStochDir = null;
-          }
-          if (state.phaseBStochDir === "SELL" && m15MacdValidSellB && m5MacdSellOk) {
-            signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = state.phaseATaken ? "PHASE_B" : "PHASE_B_NO_PRIOR_A";
-            state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
+          if (state.phaseBM15CondDir === "SELL") {
+            // Gate 2: M5 %K cross
+            if (stochCrossSellB) { state.phaseBStochCrossEpoch = currentCandleEpoch; state.phaseBStochDir = "SELL"; }
+            if (state.phaseBStochCrossEpoch && (currentCandleEpoch - state.phaseBStochCrossEpoch > 2820)) {
+              state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
+            }
+            if (state.phaseBStochDir === "SELL" && m15MacdValidSellB && m5MacdSellOk) {
+              signalTriggered = true; direction = "SELL"; entry = closes[i]; entryType = state.phaseATaken ? "PHASE_B" : "PHASE_B_NO_PRIOR_A";
+              state.phaseBStochCrossEpoch = null; state.phaseBStochDir = null;
+            }
           }
         }
       }
