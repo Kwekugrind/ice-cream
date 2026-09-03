@@ -488,6 +488,8 @@ function hasSellPattern(candles, i) {
 // For BUY: price must have pulled back 61.8–79% from the swing high toward the swing low.
 // For SELL: price must have pulled back 61.8–79% from the swing low toward the swing high.
 // Uses 3-bar fractals (1 candle on each side) for H1 swing identification.
+// State fields saved each scan: oteSwingHigh, oteSwingLow, ote618Price, ote79Price,
+//   oteRetracePct, oteInZone, oteDirection — so dashboard can display them.
 
 function findH1SwingPoints(h1Candles) {
   const swingHighs = [];
@@ -510,63 +512,52 @@ function findH1SwingPoints(h1Candles) {
   return { swingHighs, swingLows };
 }
 
-function isInH1OTEZone(h1Candles, currentPrice, direction) {
-  if (!h1Candles || h1Candles.length < 10) return false;
+// Core OTE computation — returns all data needed for both signal check and state saving.
+// Returns null if swing points cannot be identified.
+function computeH1OTEData(h1Candles, currentPrice, direction) {
+  if (!h1Candles || h1Candles.length < 10) return null;
   const { swingHighs, swingLows } = findH1SwingPoints(h1Candles);
-  if (swingHighs.length === 0 || swingLows.length === 0) return false;
-
-  if (direction === "BUY") {
-    // Find most recent swing HIGH, then the swing LOW that preceded it
-    const recentHigh = swingHighs[swingHighs.length - 1];
-    // Most recent swing low that occurred BEFORE the recent high
-    const recentLow = swingLows.slice().reverse().find(sl => sl.index < recentHigh.index);
-    if (!recentLow) return false;
-    const range = recentHigh.price - recentLow.price;
-    if (range <= 0) return false;
-    // Retracement ratio: how far price has pulled back from high toward low
-    const retracementRatio = (recentHigh.price - currentPrice) / range;
-    const inZone = retracementRatio >= 0.618 && retracementRatio <= 0.79;
-    dbg(`[OTE BUY] SwingLow=${recentLow.price.toFixed(4)}, SwingHigh=${recentHigh.price.toFixed(4)}, Price=${currentPrice.toFixed(4)}, Retrace=${(retracementRatio * 100).toFixed(1)}%, InZone=${inZone}`);
-    return inZone;
-  } else {
-    // SELL: find most recent swing LOW, then the swing HIGH that preceded it
-    const recentLow = swingLows[swingLows.length - 1];
-    const recentHigh = swingHighs.slice().reverse().find(sh => sh.index < recentLow.index);
-    if (!recentHigh) return false;
-    const range = recentHigh.price - recentLow.price;
-    if (range <= 0) return false;
-    // Retracement ratio: how far price has pulled back from low toward high
-    const retracementRatio = (currentPrice - recentLow.price) / range;
-    const inZone = retracementRatio >= 0.618 && retracementRatio <= 0.79;
-    dbg(`[OTE SELL] SwingHigh=${recentHigh.price.toFixed(4)}, SwingLow=${recentLow.price.toFixed(4)}, Price=${currentPrice.toFixed(4)}, Retrace=${(retracementRatio * 100).toFixed(1)}%, InZone=${inZone}`);
-    return inZone;
-  }
-}
-
-// Returns OTE retracement percentage string for Telegram message (diagnostic)
-function getOTEInfo(h1Candles, currentPrice, direction) {
-  if (!h1Candles || h1Candles.length < 10) return "N/A";
-  const { swingHighs, swingLows } = findH1SwingPoints(h1Candles);
-  if (swingHighs.length === 0 || swingLows.length === 0) return "N/A";
+  if (swingHighs.length === 0 || swingLows.length === 0) return null;
   try {
     if (direction === "BUY") {
       const recentHigh = swingHighs[swingHighs.length - 1];
       const recentLow = swingLows.slice().reverse().find(sl => sl.index < recentHigh.index);
-      if (!recentLow) return "N/A";
+      if (!recentLow) return null;
       const range = recentHigh.price - recentLow.price;
-      if (range <= 0) return "N/A";
-      const ratio = (recentHigh.price - currentPrice) / range;
-      return `${(ratio * 100).toFixed(1)}% retrace (${recentLow.price.toFixed(2)}→${recentHigh.price.toFixed(2)})`;
+      if (range <= 0) return null;
+      // OTE price levels: where 61.8% and 79% retracements land in price
+      const ote618Price = recentHigh.price - (range * 0.618);
+      const ote79Price  = recentHigh.price - (range * 0.79);
+      const retracementRatio = (recentHigh.price - currentPrice) / range;
+      const inZone = retracementRatio >= 0.618 && retracementRatio <= 0.79;
+      dbg(`[OTE BUY] SwingLow=${recentLow.price.toFixed(4)}, SwingHigh=${recentHigh.price.toFixed(4)}, 61.8%=${ote618Price.toFixed(4)}, 79%=${ote79Price.toFixed(4)}, Retrace=${(retracementRatio*100).toFixed(1)}%, InZone=${inZone}`);
+      return { swingHigh: recentHigh.price, swingLow: recentLow.price, ote618Price, ote79Price, retracePct: (retracementRatio * 100).toFixed(1), inZone, direction };
     } else {
       const recentLow = swingLows[swingLows.length - 1];
       const recentHigh = swingHighs.slice().reverse().find(sh => sh.index < recentLow.index);
-      if (!recentHigh) return "N/A";
+      if (!recentHigh) return null;
       const range = recentHigh.price - recentLow.price;
-      if (range <= 0) return "N/A";
-      const ratio = (currentPrice - recentLow.price) / range;
-      return `${(ratio * 100).toFixed(1)}% retrace (${recentHigh.price.toFixed(2)}→${recentLow.price.toFixed(2)})`;
+      if (range <= 0) return null;
+      const ote618Price = recentLow.price + (range * 0.618);
+      const ote79Price  = recentLow.price + (range * 0.79);
+      const retracementRatio = (currentPrice - recentLow.price) / range;
+      const inZone = retracementRatio >= 0.618 && retracementRatio <= 0.79;
+      dbg(`[OTE SELL] SwingHigh=${recentHigh.price.toFixed(4)}, SwingLow=${recentLow.price.toFixed(4)}, 61.8%=${ote618Price.toFixed(4)}, 79%=${ote79Price.toFixed(4)}, Retrace=${(retracementRatio*100).toFixed(1)}%, InZone=${inZone}`);
+      return { swingHigh: recentHigh.price, swingLow: recentLow.price, ote618Price, ote79Price, retracePct: (retracementRatio * 100).toFixed(1), inZone, direction };
     }
-  } catch { return "N/A"; }
+  } catch { return null; }
+}
+
+function isInH1OTEZone(h1Candles, currentPrice, direction) {
+  const data = computeH1OTEData(h1Candles, currentPrice, direction);
+  return data ? data.inZone : false;
+}
+
+// Returns OTE retracement string for Telegram message
+function getOTEInfo(h1Candles, currentPrice, direction) {
+  const data = computeH1OTEData(h1Candles, currentPrice, direction);
+  if (!data) return "N/A";
+  return `${data.retracePct}% retrace | SwingLow=${data.swingLow.toFixed(2)} SwingHigh=${data.swingHigh.toFixed(2)} | 61.8%=${data.ote618Price.toFixed(2)} 79%=${data.ote79Price.toFixed(2)}`;
 }
 
 // ── Daily Bias (BGA Chapter 17) ──
@@ -714,7 +705,15 @@ let state = {
   phaseBTdiExtremeDir: null,
   phaseBTdiCrossEpoch: null,
   phaseBTdiCrossDir: null,
-  phaseBTdiWasAboveSignal: null
+  phaseBTdiWasAboveSignal: null,
+  // H1 Fibonacci OTE data — saved each scan so dashboard can display the price levels
+  oteSwingHigh: null,
+  oteSwingLow: null,
+  ote618Price: null,
+  ote79Price: null,
+  oteRetracePct: null,
+  oteInZone: false,
+  oteDirection: null
 };
 try {
   const s = JSON.parse(fs.readFileSync("state.json"));
@@ -1199,6 +1198,25 @@ async function runScanMode() {
 
   // 1. Daily Bias (BGA Ch. 17) — suppress entries against D1 direction
   const dailyBias = getDailyBias(d1Candles, currentPrice);
+
+  // Save H1 OTE Fibonacci levels to state every scan so dashboard can display them
+  if (state.waitingFor && h1Candles && h1Candles.length >= 10) {
+    const oteData = computeH1OTEData(h1Candles, currentPrice, state.waitingFor);
+    if (oteData) {
+      state.oteSwingHigh  = parseFloat(oteData.swingHigh.toFixed(4));
+      state.oteSwingLow   = parseFloat(oteData.swingLow.toFixed(4));
+      state.ote618Price   = parseFloat(oteData.ote618Price.toFixed(4));
+      state.ote79Price    = parseFloat(oteData.ote79Price.toFixed(4));
+      state.oteRetracePct = oteData.retracePct;
+      state.oteInZone     = oteData.inZone;
+      state.oteDirection  = oteData.direction;
+    } else {
+      state.oteSwingHigh = null; state.oteSwingLow = null;
+      state.ote618Price = null; state.ote79Price = null;
+      state.oteRetracePct = null; state.oteInZone = false;
+      state.oteDirection = null;
+    }
+  }
 
   // 2. M15 TDI (BGA Ch. 18-20)
   const m15Tdi = calculateTDI(m15Candles);
