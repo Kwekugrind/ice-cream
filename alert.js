@@ -861,6 +861,7 @@ async function runScanMode() {
   const h1TdiDir    = h1TdiReady
     ? (h1TdiRsi > h1TdiMiddle ? "BUY" : h1TdiRsi < h1TdiMiddle ? "SELL" : null)
     : null;
+  state.h1TdiDir = h1TdiDir;
 
   // ── H1 SMA(8) ──
   const h1Closes  = h1Candles.map(c => parseFloat(c.close));
@@ -870,6 +871,7 @@ async function runScanMode() {
   const h1Sma8Dir = h1Sma8Val !== null
     ? (h1LastClose > h1Sma8Val ? "BUY" : h1LastClose < h1Sma8Val ? "SELL" : null)
     : null;
+  state.h1Sma8Dir = h1Sma8Dir;
 
   // ── M15 TDI ──
   const m15Tdi    = calculateTDI(m15Candles);
@@ -883,6 +885,7 @@ async function runScanMode() {
   const m15TdiDir    = m15TdiReady
     ? (m15TdiRsi > m15TdiMiddle ? "BUY" : m15TdiRsi < m15TdiMiddle ? "SELL" : null)
     : null;
+  state.m15TdiDir = m15TdiDir;
 
   // ── M5 CCI(14) ──
   const m5Cci = calculateCCI(candles);
