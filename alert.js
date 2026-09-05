@@ -30,10 +30,6 @@ const FADE_A_GATE2_WINDOW = 900; // 15 minutes (3 M5 candles)
 // Tolerance for "price touching fib79" — candle high/low within 0.5% of the level
 const FIB79_TOUCH_TOLERANCE = 0.005;
 
-// Phase A: how many closed M15 candles back to look for a fresh M15 TDI middle-band cross.
-// 3 = cross must have occurred within the last 45 minutes.
-const PHASE_A_M15_CROSS_LOOKBACK = 3;
-
 const GATEWAY_URL = process.env.GATEWAY_URL || "http://127.0.0.1:3000";
 const GATEWAY_SECRET = process.env.GATEWAY_SECRET;
 
@@ -374,25 +370,7 @@ function calculateBollingerBands(data, period = 34, deviation = 1.619) {
   return { upper, middle, lower };
 }
 
-// Returns true if the M15 TDI RSI crossed the middle band in `direction` within the last
-// `lookback` closed M15 candles. Prevents Phase A from firing when M15 RSI has been
-// sitting on one side for hours — the cross must be genuinely recent.
-function findM15FreshCross(rsiArr, middleArr, currentIdx, direction, lookback) {
-  for (let i = currentIdx; i >= Math.max(1, currentIdx - lookback); i--) {
-    const prev = rsiArr[i - 1];
-    const curr = rsiArr[i];
-    const prevMid = middleArr[i - 1];
-    const currMid = middleArr[i];
-    if (prev === null || curr === null || prevMid === null || currMid === null) continue;
-    if (direction === "BUY"  && prev < prevMid && curr >= currMid) return true;
-    if (direction === "SELL" && prev > prevMid && curr <= currMid) return true;
-  }
-  return false;
-}
-
 // TDI: RSI(14) smoothed by SMA(7) signal line, with Bollinger Bands(34, 1.619) as volatility envelope.
-// RSI above middle band = bullish. RSI at/past outer band = extreme zone for Fade A Gate 1.
-// RSI crosses signal line = momentum shift (Fade A Gate 2 entry trigger).
 function calculateTDI(candles, rsiPeriod = 14, signalPeriod = 7, bbPeriod = 34, bbDev = 1.619) {
   const closes = candles.map(c => parseFloat(c.close));
   const rsi = calculateRSI(closes, rsiPeriod);
@@ -404,8 +382,6 @@ function calculateTDI(candles, rsiPeriod = 14, signalPeriod = 7, bbPeriod = 34, 
 }
 
 // CCI(14): precision M5 entry trigger.
-// BUY: CCI crosses UP through -100 (prev < -100, curr > -100)
-// SELL: CCI crosses DOWN through +100 (prev > +100, curr < +100)
 function calculateCCI(candles, period = 14) {
   const result = new Array(candles.length).fill(null);
   for (let i = period - 1; i < candles.length; i++) {
@@ -421,10 +397,6 @@ function calculateCCI(candles, period = 14) {
 }
 
 // Previous Day Fibonacci: drawn from yesterday's D1 high/low.
-// Bullish yesterday (close > open): fib drawn from low to high.
-// Bearish yesterday (close <= open): fib drawn from high to low.
-// In both cases, 0% is the origin and 79% is near the extreme end.
-// dailyBiasPrice = today's D1 open (the fixed horizontal Daily Bias line).
 function computeDailyFibLevels(d1Candles) {
   if (!d1Candles || d1Candles.length < 2) return null;
   const yesterday = d1Candles[d1Candles.length - 2];
@@ -487,12 +459,6 @@ function findRecentFractal(candles, currentIndex, direction) {
   return null;
 }
 
-// Derive which phase to look for based on the most recently closed trade.
-// WIN on PHASE_A → look for PHASE_B next (re-entry in same direction as Phase A after retracement).
-// WIN on FADE_A  → look for FADE_B next (re-entry in same direction as Fade A after retracement).
-// Any LOSS, or PHASE_B/FADE_B WIN → idle (look for PHASE_A or FADE_A).
-// NOTE: Phase B direction is locked to the last Phase A trade direction — NOT current H1 TDI.
-//       Fade B direction is locked to the last Fade A trade direction — NOT current H1 SMA8.
 function deriveNextPhase(trades) {
   const closedTrades = trades.filter(t => t.result)
     .sort((a, b) => new Date(b.closeTime || 0) - new Date(a.closeTime || 0));
@@ -506,28 +472,11 @@ function deriveNextPhase(trades) {
 }
 
 // ==================== STATE ====================
-// nextPhase: null     = idle (look for PHASE_A or FADE_A)
-//            "PHASE_B" = after PHASE_A WIN — wait for Phase B CCI re-entry (same direction as Phase A)
-//            "FADE_B"  = after FADE_A WIN  — wait for Fade B CCI re-entry (same direction as Fade A)
-//
-// PHASE A:  Must be in the direction of the daily bias (price > dailyBiasPrice = BUY, price < = SELL).
-//           H1 TDI + H1 SMA(8) + M15 fresh cross all agree with bias direction.
-// PHASE B:  Re-entry locked to the direction of the last closed PHASE_A trade (not current H1 TDI).
-//           Fires on M5 CCI cross in that locked direction. TP at fib61.8.
-// FADE A:   Direction is AGAINST the daily bias (price > dailyBiasPrice = SELL fade, price < = BUY fade).
-//           At fib79 with M15 TDI outer band + RSI/signal cross + M5 CCI. TP at daily bias price.
-// FADE B:   Re-entry locked to the direction of the last closed FADE_A trade (not current H1 SMA8).
-//           Fires on M5 CCI cross in that locked direction. TP at fib0.
-//
-// fadeAGate1Met: true when M15 TDI RSI touched outer band while price was at/near fib79
-// fadeAGate1Dir: "BUY" or "SELL" (direction of the Fade A trade when Gate 1 fired)
-// fadeAWasAboveSig: tracks RSI position relative to signal line for cross detection (Gate 2)
-// fadeAGate2CrossEpoch: epoch when Gate 2 RSI-signal cross was detected (for FADE_A_GATE2_WINDOW)
-// fib0..fib100, dailyBiasPrice: previous-day Fibonacci levels (updated each scan, displayed on dashboard)
 let state = {
   lastProcessedEpoch: null,
   lastTgUpdateId: 0,
   nextPhase: null,
+  phaseAAlignment: null,
   fadeAGate1Met: false,
   fadeAGate1Dir: null,
   fadeAWasAboveSig: null,
@@ -692,7 +641,7 @@ async function runScanMode() {
         await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${finalResult}*\n\nDirection: ${openTrade.direction} (${contractType})\nSymbol: ${SYMBOL_NAME}\n\n📍 Entry: ${Number(openTrade.entry).toFixed(4)}\n🏁 Exit: ${currentPrice.toFixed(4)}\n🛑 SL: ${openTrade.sl ? openTrade.sl.toFixed(4) : "N/A"} ($${slDollars} hard)\n🎯 Fib TP: ${fibTpLabel} (${openTrade.entryType})\n\n💵 P&L: *${pnlStr}* (Net of comm.)\nReason: ${exitReason}\nDuration: ${formatDuration(durationMs)}\n\nOpened: ${openTrade.openTime}\nClosed: ${openTrade.closeTime}\n` + (openTrade.contractId ? `Contract: \`${openTrade.contractId}\`` : ""));
       };
 
-      // 1. M15 Fractal SL Tracking (one-time upgrade from hard stop to M15 structure)
+      // 1. M15 Fractal SL Tracking
       if (!openTrade.m30FractalUpgraded && tradeData.m15Candles && tradeData.m15Candles.length >= 5) {
         const c = tradeData.m15Candles;
         const tradeEntryEpoch = openTrade.entryEpoch || Math.floor(new Date(openTrade.openTime).getTime() / 1000);
@@ -788,7 +737,7 @@ async function runScanMode() {
         await closeWith("LOSS", reason); continue;
       }
 
-      // 4. Catastrophic floor — absolute last-resort P&L backstop
+      // 4. Catastrophic floor
       if (pnl <= CATASTROPHIC_PNL_FLOOR) {
         await closeWith("LOSS", `Catastrophic floor hit — PnL $${pnl.toFixed(2)} (Floor: $${CATASTROPHIC_PNL_FLOOR.toFixed(2)})`); continue;
       }
@@ -798,7 +747,7 @@ async function runScanMode() {
         await closeWith("LOSS", `Software SL hit — PnL $${pnl.toFixed(2)} (Limit: $${SOFTWARE_SL_USD.toFixed(2)})`); continue;
       }
 
-      // 6. Fibonacci TP Close — closes when price reaches the stored fib level for this phase
+      // 6. Fibonacci TP Close
       if (openTrade.fibTpPrice) {
         const tpHit = isBuy
           ? (currentPrice >= openTrade.fibTpPrice || candleHigh >= openTrade.fibTpPrice)
@@ -855,7 +804,6 @@ async function runScanMode() {
     fs.writeFileSync("state.json", JSON.stringify(state, null, 2)); return;
   }
 
-  // Save fib levels to state for dashboard display
   state.fibBullish     = fib.bullish;
   state.fib0           = parseFloat(fib.fib0.toFixed(4));
   state.fib50          = parseFloat(fib.fib50.toFixed(4));
@@ -866,7 +814,7 @@ async function runScanMode() {
 
   // ── H1 TDI — Main Trend Direction ──
   const h1Tdi    = calculateTDI(h1Candles);
-  const h1i      = h1Candles.length - 2;  // Last closed H1 candle
+  const h1i      = h1Candles.length - 2;
   const h1TdiRsi    = h1Tdi.rsi[h1i];
   const h1TdiMiddle = h1Tdi.middle[h1i];
   const h1TdiReady  = h1TdiRsi !== null && h1TdiMiddle !== null;
@@ -887,7 +835,7 @@ async function runScanMode() {
 
   // ── M15 TDI ──
   const m15Tdi    = calculateTDI(m15Candles);
-  const m15i      = m15Candles.length - 2;  // Last closed M15 candle
+  const m15i      = m15Candles.length - 2;
   const m15TdiRsi    = m15Tdi.rsi[m15i];
   const m15TdiSignal = m15Tdi.signal[m15i];
   const m15TdiMiddle = m15Tdi.middle[m15i];
@@ -904,11 +852,11 @@ async function runScanMode() {
   const m5CciBuyCross  = m5Cci[si - 1] !== null && m5Cci[si] !== null && m5Cci[si - 1] < -100 && m5Cci[si] > -100;
   const m5CciSellCross = m5Cci[si - 1] !== null && m5Cci[si] !== null && m5Cci[si - 1] > 100  && m5Cci[si] < 100;
 
-  // ── Derive Next Phase From Trades ──
+  // ── Derive Next Phase ──
   const nextPhase = deriveNextPhase(trades);
   state.nextPhase = nextPhase;
 
-  // Reset Fade A gates when cycle completes (PHASE_B or FADE_B just won → idle)
+  // Reset Fade A gates when cycle completes
   if (nextPhase === null && (state.fadeAGate1Met || state.fadeAGate2CrossEpoch)) {
     const lastClosed = trades.filter(t => t.result).sort((a, b) => new Date(b.closeTime || 0) - new Date(a.closeTime || 0))[0];
     if (lastClosed?.entryType === "PHASE_B" || lastClosed?.entryType === "FADE_B") {
@@ -927,54 +875,54 @@ async function runScanMode() {
 
   let signalTriggered = false, direction = "", fibTpPrice = null, entryType = null;
 
+  // M15 Signal Line Status for Phase B and Fade B
+  const m15RsiAboveSignal = m15TdiReady && m15TdiRsi > m15TdiSignal;
+  const m15RsiBelowSignal = m15TdiReady && m15TdiRsi < m15TdiSignal;
+
   // ─────────────────────────────────────────
-  // PHASE B: After PHASE_A WIN — M5 CCI only
-  // Direction is LOCKED to the last Phase A trade direction.
-  // Phase B is a re-entry in the same direction after price retraces.
-  // TP: Fibonacci 61.8%
+  // PHASE B: After PHASE_A WIN — M5 CCI + M15 Signal
   // ─────────────────────────────────────────
   if (nextPhase === "PHASE_B") {
     const lastPhaseA = trades
       .filter(t => t.result && t.entryType === "PHASE_A")
       .sort((a, b) => new Date(b.closeTime || 0) - new Date(a.closeTime || 0))[0];
     const phaseBDir = lastPhaseA?.direction;
-    if (phaseBDir === "BUY" && m5CciBuyCross) {
+    
+    if (phaseBDir === "BUY" && m5CciBuyCross && m15RsiAboveSignal) {
       const tp = fib.fib618;
-      if (tp > currentPrice) {  // TP must be above entry for BUY
+      if (tp > currentPrice) {
         signalTriggered = true; direction = "BUY"; entryType = "PHASE_B"; fibTpPrice = tp;
-        dbg(`[PHASE_B BUY] Locked to Phase A direction BUY, CCI cross, TP ${tp.toFixed(4)}`);
+        dbg(`[PHASE_B BUY] Locked to Phase A direction BUY, CCI cross, M15 RSI > Signal, TP ${tp.toFixed(4)}`);
       }
-    } else if (phaseBDir === "SELL" && m5CciSellCross) {
+    } else if (phaseBDir === "SELL" && m5CciSellCross && m15RsiBelowSignal) {
       const tp = fib.fib618;
-      if (tp < currentPrice) {  // TP must be below entry for SELL
+      if (tp < currentPrice) {
         signalTriggered = true; direction = "SELL"; entryType = "PHASE_B"; fibTpPrice = tp;
-        dbg(`[PHASE_B SELL] Locked to Phase A direction SELL, CCI cross, TP ${tp.toFixed(4)}`);
+        dbg(`[PHASE_B SELL] Locked to Phase A direction SELL, CCI cross, M15 RSI < Signal, TP ${tp.toFixed(4)}`);
       }
     }
   }
 
   // ─────────────────────────────────────────
-  // FADE B: After FADE_A WIN — M5 CCI only
-  // Direction is LOCKED to the last Fade A trade direction.
-  // Fade B is a re-entry in the same counter-trend direction after price retraces.
-  // TP: Fibonacci 0%
+  // FADE B: After FADE_A WIN — M5 CCI + M15 Signal
   // ─────────────────────────────────────────
   else if (nextPhase === "FADE_B") {
     const lastFadeA = trades
       .filter(t => t.result && t.entryType === "FADE_A")
       .sort((a, b) => new Date(b.closeTime || 0) - new Date(a.closeTime || 0))[0];
     const fadeBDir = lastFadeA?.direction;
-    if (fadeBDir === "BUY" && m5CciBuyCross) {
+    
+    if (fadeBDir === "BUY" && m5CciBuyCross && m15RsiAboveSignal) {
       const tp = fib.fib0;
       if (tp > currentPrice) {
         signalTriggered = true; direction = "BUY"; entryType = "FADE_B"; fibTpPrice = tp;
-        dbg(`[FADE_B BUY] Locked to Fade A direction BUY, CCI cross, TP ${tp.toFixed(4)}`);
+        dbg(`[FADE_B BUY] Locked to Fade A direction BUY, CCI cross, M15 RSI > Signal, TP ${tp.toFixed(4)}`);
       }
-    } else if (fadeBDir === "SELL" && m5CciSellCross) {
+    } else if (fadeBDir === "SELL" && m5CciSellCross && m15RsiBelowSignal) {
       const tp = fib.fib0;
       if (tp < currentPrice) {
         signalTriggered = true; direction = "SELL"; entryType = "FADE_B"; fibTpPrice = tp;
-        dbg(`[FADE_B SELL] Locked to Fade A direction SELL, CCI cross, TP ${tp.toFixed(4)}`);
+        dbg(`[FADE_B SELL] Locked to Fade A direction SELL, CCI cross, M15 RSI < Signal, TP ${tp.toFixed(4)}`);
       }
     }
   }
@@ -983,46 +931,47 @@ async function runScanMode() {
   // IDLE: Look for PHASE_A or FADE_A
   // ─────────────────────────────────────────
   else {
-    // PHASE A: H1 TDI + H1 SMA(8) + M15 TDI fresh cross all agree — TP at Fibonacci 50%
-    // Direction MUST match the daily bias (price above daily open = BUY, below = SELL).
-    // M15 TDI must show a FRESH cross of the middle band (not just sitting above/below for hours).
-    const m15FreshBuyCross  = m15TdiReady && findM15FreshCross(m15Tdi.rsi, m15Tdi.middle, m15i, "BUY",  PHASE_A_M15_CROSS_LOOKBACK);
-    const m15FreshSellCross = m15TdiReady && findM15FreshCross(m15Tdi.rsi, m15Tdi.middle, m15i, "SELL", PHASE_A_M15_CROSS_LOOKBACK);
-
     // Daily bias direction: price above daily open = BULLISH, below = BEARISH
     const dailyBiasDir = currentPrice > fib.dailyBiasPrice ? "BUY" : "SELL";
 
-    if (!signalTriggered && h1TdiDir && h1Sma8Dir) {
-      if (h1TdiDir === "BUY" && h1Sma8Dir === "BUY" && m15FreshBuyCross && dailyBiasDir === "BUY") {
-        const tp = fib.fib50;
-        if (tp > currentPrice) {
-          signalTriggered = true; direction = "BUY"; entryType = "PHASE_A"; fibTpPrice = tp;
-          dbg(`[PHASE_A BUY] Bias BUY (price ${currentPrice.toFixed(4)} > open ${fib.dailyBiasPrice.toFixed(4)}), H1 TDI RSI ${h1TdiRsi?.toFixed(2)} > mid ${h1TdiMiddle?.toFixed(2)}, H1 SMA8 ${h1Sma8Val?.toFixed(4)}, M15 fresh BUY cross confirmed`);
+    // PHASE A: Daily Bias + H1 TDI + H1 SMA(8) + M15 TDI (Perfectly Aligned) — TP at Fibonacci 50%
+    const isAlignedBuy = h1TdiDir === "BUY" && h1Sma8Dir === "BUY" && m15TdiDir === "BUY" && dailyBiasDir === "BUY";
+    const isAlignedSell = h1TdiDir === "SELL" && h1Sma8Dir === "SELL" && m15TdiDir === "SELL" && dailyBiasDir === "SELL";
+
+    if (!signalTriggered) {
+      if (isAlignedBuy) {
+        if (state.phaseAAlignment !== "BUY") {
+          const tp = fib.fib50;
+          if (tp > currentPrice) {
+            signalTriggered = true; direction = "BUY"; entryType = "PHASE_A"; fibTpPrice = tp;
+            dbg(`[PHASE_A BUY] Perfect alignment achieved (Bias, H1 TDI, H1 SMA8, M15 TDI)`);
+          }
         }
-      } else if (h1TdiDir === "SELL" && h1Sma8Dir === "SELL" && m15FreshSellCross && dailyBiasDir === "SELL") {
-        const tp = fib.fib50;
-        if (tp < currentPrice) {
-          signalTriggered = true; direction = "SELL"; entryType = "PHASE_A"; fibTpPrice = tp;
-          dbg(`[PHASE_A SELL] Bias SELL (price ${currentPrice.toFixed(4)} < open ${fib.dailyBiasPrice.toFixed(4)}), H1 TDI RSI ${h1TdiRsi?.toFixed(2)} < mid ${h1TdiMiddle?.toFixed(2)}, H1 SMA8 ${h1Sma8Val?.toFixed(4)}, M15 fresh SELL cross confirmed`);
+        state.phaseAAlignment = "BUY"; // ALWAYS registers alignment to prevent late firing
+      } else if (isAlignedSell) {
+        if (state.phaseAAlignment !== "SELL") {
+          const tp = fib.fib50;
+          if (tp < currentPrice) {
+            signalTriggered = true; direction = "SELL"; entryType = "PHASE_A"; fibTpPrice = tp;
+            dbg(`[PHASE_A SELL] Perfect alignment achieved (Bias, H1 TDI, H1 SMA8, M15 TDI)`);
+          }
         }
+        state.phaseAAlignment = "SELL"; // ALWAYS registers alignment to prevent late firing
+      } else {
+        // Reset alignment state if conditions misalign, allowing for a fresh trigger later
+        state.phaseAAlignment = null;
       }
     }
 
     // FADE A: Counter-trend at Fib 79% level
-    // Direction is AGAINST the daily bias (price above open = SELL fade, price below open = BUY fade).
-    // Gate 1 (sticky): price touches 79% level AND M15 TDI RSI at outer band
-    // Gate 2: M15 TDI RSI crosses signal line inward (15-min window)
-    // Trigger: Gate 1 + Gate 2 active + M5 CCI cross — TP at Daily Bias line
     if (!signalTriggered && h1TdiDir && m15TdiReady && m15TdiUpper !== null && m15TdiLower !== null) {
-      // Fade direction is always opposite to daily bias, not H1 TDI
+      // Fade direction is always opposite to daily bias
       const fadeDir = dailyBiasDir === "BUY" ? "SELL" : "BUY";
 
-      // Check if price is touching the 79% fib level
       const priceTouched79 = fadeDir === "SELL"
         ? (currentCandleHigh >= fib.fib79 || Math.abs(currentPrice - fib.fib79) / fib.fib79 <= FIB79_TOUCH_TOLERANCE)
         : (currentCandleLow  <= fib.fib79 || Math.abs(currentPrice - fib.fib79) / fib.fib79 <= FIB79_TOUCH_TOLERANCE);
 
-      // Invalidate gates if H1 TDI direction changed since Gate 1 was set
       if (state.fadeAGate1Met && state.fadeAGate1Dir !== fadeDir) {
         state.fadeAGate1Met = false;
         state.fadeAGate1Dir = null;
@@ -1036,13 +985,13 @@ async function runScanMode() {
         if (fadeDir === "SELL" && m15TdiRsi >= m15TdiUpper) {
           state.fadeAGate1Met = true;
           state.fadeAGate1Dir = "SELL";
-          state.fadeAWasAboveSig = true;  // RSI above upper band → definitely above signal
+          state.fadeAWasAboveSig = true;
           state.fadeAGate2CrossEpoch = null;
           dbg(`[FADE A Gate 1 SELL] RSI ${m15TdiRsi.toFixed(2)} >= upper ${m15TdiUpper.toFixed(2)} at fib79 ${fib.fib79.toFixed(4)}`);
         } else if (fadeDir === "BUY" && m15TdiRsi <= m15TdiLower) {
           state.fadeAGate1Met = true;
           state.fadeAGate1Dir = "BUY";
-          state.fadeAWasAboveSig = false;  // RSI below lower band → definitely below signal
+          state.fadeAWasAboveSig = false;
           state.fadeAGate2CrossEpoch = null;
           dbg(`[FADE A Gate 1 BUY] RSI ${m15TdiRsi.toFixed(2)} <= lower ${m15TdiLower.toFixed(2)} at fib79 ${fib.fib79.toFixed(4)}`);
         }
@@ -1052,7 +1001,6 @@ async function runScanMode() {
       if (state.fadeAGate1Met && state.fadeAGate1Dir === fadeDir) {
         const nowAboveSig = m15TdiRsi > m15TdiSignal;
 
-        // Detect fresh signal cross
         if (fadeDir === "BUY" && nowAboveSig && state.fadeAWasAboveSig === false && !state.fadeAGate2CrossEpoch) {
           state.fadeAGate2CrossEpoch = currentCandleEpoch;
           dbg(`[FADE A Gate 2 BUY] RSI crossed above signal at ${currentCandleEpoch}`);
@@ -1061,7 +1009,6 @@ async function runScanMode() {
           dbg(`[FADE A Gate 2 SELL] RSI crossed below signal at ${currentCandleEpoch}`);
         }
 
-        // Expire Gate 2 if window elapsed
         if (state.fadeAGate2CrossEpoch && (currentCandleEpoch - state.fadeAGate2CrossEpoch > FADE_A_GATE2_WINDOW)) {
           state.fadeAGate2CrossEpoch = null;
           dbg("[FADE A Gate 2] Window expired — resetting");
@@ -1083,7 +1030,6 @@ async function runScanMode() {
           }
         }
 
-        // Update signal position tracker for next scan
         if (!signalTriggered) state.fadeAWasAboveSig = nowAboveSig;
       }
     }
@@ -1126,7 +1072,7 @@ async function runScanMode() {
       ? `SMA8 ${h1Sma8Val.toFixed(4)} | Close ${h1LastClose.toFixed(4)} → *${h1Sma8Dir}*`
       : "N/A";
     const m15CrossLabel = entryType === "PHASE_A"
-      ? (direction === "BUY" ? " ✅ Fresh cross ↑" : " ✅ Fresh cross ↓")
+      ? (direction === "BUY" ? " ✅ Perfect Align ↑" : " ✅ Perfect Align ↓")
       : "";
     const m15TdiLabel = m15TdiReady
       ? `RSI ${m15TdiRsi.toFixed(1)} | Signal ${m15TdiSignal.toFixed(1)} | Mid ${m15TdiMiddle.toFixed(1)} → *${m15TdiDir}*${m15CrossLabel}`
@@ -1135,10 +1081,10 @@ async function runScanMode() {
     const fibLabel = `0%: ${fib.fib0.toFixed(4)} | 50%: ${fib.fib50.toFixed(4)} | 61.8%: ${fib.fib618.toFixed(4)} | 79%: ${fib.fib79.toFixed(4)} | Bias: ${fib.dailyBiasPrice.toFixed(4)}`;
 
     const setupDescriptions = {
-      PHASE_A: "H1 TDI + H1 SMA(8) + M15 TDI (all aligned)",
-      PHASE_B: "Phase B Re-entry — M5 CCI cross (after Phase A WIN)",
+      PHASE_A: "H1 TDI + H1 SMA(8) + M15 TDI (Perfect Alignment)",
+      PHASE_B: "Phase B Re-entry — M5 CCI + M15 Signal (after Phase A WIN)",
       FADE_A:  "Fade A Counter-trade — Fib 79% + M15 TDI Gate + M5 CCI",
-      FADE_B:  "Fade B Re-entry — M5 CCI cross (after Fade A WIN)"
+      FADE_B:  "Fade B Re-entry — M5 CCI + M15 Signal (after Fade A WIN)"
     };
     const setupLabel = escapeMarkdown(setupDescriptions[entryType] || entryType);
 
