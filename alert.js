@@ -30,6 +30,10 @@ const FADE_A_GATE2_WINDOW = 900; // 15 minutes (3 M5 candles)
 // Tolerance for "price touching fib79" — candle high/low within 0.5% of the level
 const FIB79_TOUCH_TOLERANCE = 0.005;
 
+// Phase A: how many closed M15 candles back to look for a fresh M15 TDI middle-band cross.
+// 3 = cross must have occurred within the last 45 minutes.
+const PHASE_A_M15_CROSS_LOOKBACK = 3;
+
 const GATEWAY_URL = process.env.GATEWAY_URL || "http://127.0.0.1:3000";
 const GATEWAY_SECRET = process.env.GATEWAY_SECRET;
 
@@ -368,6 +372,22 @@ function calculateBollingerBands(data, period = 34, deviation = 1.619) {
     lower.push(mean - (stdev * deviation));
   }
   return { upper, middle, lower };
+}
+
+// Returns true if the M15 TDI RSI crossed the middle band in `direction` within the last
+// `lookback` closed M15 candles. Prevents Phase A from firing when M15 RSI has been
+// sitting on one side for hours — the cross must be genuinely recent.
+function findM15FreshCross(rsiArr, middleArr, currentIdx, direction, lookback) {
+  for (let i = currentIdx; i >= Math.max(1, currentIdx - lookback); i--) {
+    const prev = rsiArr[i - 1];
+    const curr = rsiArr[i];
+    const prevMid = middleArr[i - 1];
+    const currMid = middleArr[i];
+    if (prev === null || curr === null || prevMid === null || currMid === null) continue;
+    if (direction === "BUY"  && prev < prevMid && curr >= currMid) return true;
+    if (direction === "SELL" && prev > prevMid && curr <= currMid) return true;
+  }
+  return false;
 }
 
 // TDI: RSI(14) smoothed by SMA(7) signal line, with Bollinger Bands(34, 1.619) as volatility envelope.
@@ -756,12 +776,17 @@ async function runScanMode() {
         await closeWith("LOSS", reason); continue;
       }
 
-      // 4. Software Stop Loss (-$3.60)
+      // 4. Catastrophic floor — absolute last-resort P&L backstop
+      if (pnl <= CATASTROPHIC_PNL_FLOOR) {
+        await closeWith("LOSS", `Catastrophic floor hit — PnL $${pnl.toFixed(2)} (Floor: $${CATASTROPHIC_PNL_FLOOR.toFixed(2)})`); continue;
+      }
+
+      // 5. Software Stop Loss (-$3.60)
       if (pnl <= SOFTWARE_SL_USD) {
         await closeWith("LOSS", `Software SL hit — PnL $${pnl.toFixed(2)} (Limit: $${SOFTWARE_SL_USD.toFixed(2)})`); continue;
       }
 
-      // 5. Fibonacci TP Close — closes when price reaches the stored fib level for this phase
+      // 6. Fibonacci TP Close — closes when price reaches the stored fib level for this phase
       if (openTrade.fibTpPrice) {
         const tpHit = isBuy
           ? (currentPrice >= openTrade.fibTpPrice || candleHigh >= openTrade.fibTpPrice)
@@ -928,19 +953,23 @@ async function runScanMode() {
   // IDLE: Look for PHASE_A or FADE_A
   // ─────────────────────────────────────────
   else {
-    // PHASE A: H1 TDI + H1 SMA(8) + M15 TDI all agree — TP at Fibonacci 50%
-    if (!signalTriggered && h1TdiDir && h1Sma8Dir && m15TdiDir) {
-      if (h1TdiDir === "BUY" && h1Sma8Dir === "BUY" && m15TdiDir === "BUY") {
+    // PHASE A: H1 TDI + H1 SMA(8) + M15 TDI fresh cross all agree — TP at Fibonacci 50%
+    // M15 TDI must show a FRESH cross of the middle band (not just sitting above/below for hours).
+    const m15FreshBuyCross  = m15TdiReady && findM15FreshCross(m15Tdi.rsi, m15Tdi.middle, m15i, "BUY",  PHASE_A_M15_CROSS_LOOKBACK);
+    const m15FreshSellCross = m15TdiReady && findM15FreshCross(m15Tdi.rsi, m15Tdi.middle, m15i, "SELL", PHASE_A_M15_CROSS_LOOKBACK);
+
+    if (!signalTriggered && h1TdiDir && h1Sma8Dir) {
+      if (h1TdiDir === "BUY" && h1Sma8Dir === "BUY" && m15FreshBuyCross) {
         const tp = fib.fib50;
         if (tp > currentPrice) {
           signalTriggered = true; direction = "BUY"; entryType = "PHASE_A"; fibTpPrice = tp;
-          dbg(`[PHASE_A BUY] H1 TDI RSI ${h1TdiRsi?.toFixed(2)} > mid ${h1TdiMiddle?.toFixed(2)}, H1 SMA8 ${h1Sma8Val?.toFixed(4)}, M15 TDI RSI ${m15TdiRsi?.toFixed(2)} > mid ${m15TdiMiddle?.toFixed(2)}`);
+          dbg(`[PHASE_A BUY] H1 TDI RSI ${h1TdiRsi?.toFixed(2)} > mid ${h1TdiMiddle?.toFixed(2)}, H1 SMA8 ${h1Sma8Val?.toFixed(4)}, M15 fresh BUY cross confirmed`);
         }
-      } else if (h1TdiDir === "SELL" && h1Sma8Dir === "SELL" && m15TdiDir === "SELL") {
+      } else if (h1TdiDir === "SELL" && h1Sma8Dir === "SELL" && m15FreshSellCross) {
         const tp = fib.fib50;
         if (tp < currentPrice) {
           signalTriggered = true; direction = "SELL"; entryType = "PHASE_A"; fibTpPrice = tp;
-          dbg(`[PHASE_A SELL] H1 TDI RSI ${h1TdiRsi?.toFixed(2)} < mid ${h1TdiMiddle?.toFixed(2)}, H1 SMA8 ${h1Sma8Val?.toFixed(4)}, M15 TDI RSI ${m15TdiRsi?.toFixed(2)} < mid ${m15TdiMiddle?.toFixed(2)}`);
+          dbg(`[PHASE_A SELL] H1 TDI RSI ${h1TdiRsi?.toFixed(2)} < mid ${h1TdiMiddle?.toFixed(2)}, H1 SMA8 ${h1Sma8Val?.toFixed(4)}, M15 fresh SELL cross confirmed`);
         }
       }
     }
@@ -1060,8 +1089,11 @@ async function runScanMode() {
     const h1Sma8Label = h1Sma8Val
       ? `SMA8 ${h1Sma8Val.toFixed(4)} | Close ${h1LastClose.toFixed(4)} → *${h1Sma8Dir}*`
       : "N/A";
+    const m15CrossLabel = entryType === "PHASE_A"
+      ? (direction === "BUY" ? " ✅ Fresh cross ↑" : " ✅ Fresh cross ↓")
+      : "";
     const m15TdiLabel = m15TdiReady
-      ? `RSI ${m15TdiRsi.toFixed(1)} | Signal ${m15TdiSignal.toFixed(1)} | Mid ${m15TdiMiddle.toFixed(1)} → *${m15TdiDir}*`
+      ? `RSI ${m15TdiRsi.toFixed(1)} | Signal ${m15TdiSignal.toFixed(1)} | Mid ${m15TdiMiddle.toFixed(1)} → *${m15TdiDir}*${m15CrossLabel}`
       : "N/A";
     const cciLabel = m5Cci[si] !== null ? m5Cci[si].toFixed(1) : "N/A";
     const fibLabel = `0%: ${fib.fib0.toFixed(4)} | 50%: ${fib.fib50.toFixed(4)} | 61.8%: ${fib.fib618.toFixed(4)} | 79%: ${fib.fib79.toFixed(4)} | Bias: ${fib.dailyBiasPrice.toFixed(4)}`;
