@@ -1,7 +1,7 @@
 import WebSocket from "ws";
 import fetch from "node-fetch";
 import fs from "fs";
-import "dotenv/config"; // <--- ADD THIS LINE
+import "dotenv/config";
 
 // ==================== REPOSITORY CONFIGURATION ====================
 // UNCOMMENT THE CONFIGURATION MATCHING YOUR REPOSITORY:
@@ -29,6 +29,9 @@ const FADE_A_GATE2_WINDOW = 900; // 15 minutes (3 M5 candles)
 
 // Tolerance for "price touching fib79" — candle high/low within 0.5% of the level
 const FIB79_TOUCH_TOLERANCE = 0.005;
+
+// Phase A: Strictly look back 1 closed candle to ensure we ONLY arm on the exact cross
+const PHASE_A_M15_CROSS_LOOKBACK = 1;
 
 const GATEWAY_URL = process.env.GATEWAY_URL || "http://127.0.0.1:3000";
 const GATEWAY_SECRET = process.env.GATEWAY_SECRET;
@@ -370,6 +373,19 @@ function calculateBollingerBands(data, period = 34, deviation = 1.619) {
   return { upper, middle, lower };
 }
 
+function findM15FreshCross(rsiArr, middleArr, currentIdx, direction, lookback) {
+  for (let i = currentIdx; i >= Math.max(1, currentIdx - lookback); i--) {
+    const prev = rsiArr[i - 1];
+    const curr = rsiArr[i];
+    const prevMid = middleArr[i - 1];
+    const currMid = middleArr[i];
+    if (prev === null || curr === null || prevMid === null || currMid === null) continue;
+    if (direction === "BUY"  && prev < prevMid && curr >= currMid) return true;
+    if (direction === "SELL" && prev > prevMid && curr <= currMid) return true;
+  }
+  return false;
+}
+
 // TDI: RSI(14) smoothed by SMA(7) signal line, with Bollinger Bands(34, 1.619) as volatility envelope.
 function calculateTDI(candles, rsiPeriod = 14, signalPeriod = 7, bbPeriod = 34, bbDev = 1.619) {
   const closes = candles.map(c => parseFloat(c.close));
@@ -476,7 +492,7 @@ let state = {
   lastProcessedEpoch: null,
   lastTgUpdateId: 0,
   nextPhase: null,
-  phaseAAlignment: null,
+  phaseA_WaitDir: null,
   fadeAGate1Met: false,
   fadeAGate1Dir: null,
   fadeAWasAboveSig: null,
@@ -804,6 +820,18 @@ async function runScanMode() {
     fs.writeFileSync("state.json", JSON.stringify(state, null, 2)); return;
   }
 
+  // MIDNIGHT ROLLOVER FIX: Reset Fade A gates if the new day started (Daily Bias changed)
+  const newBiasPrice = parseFloat(fib.dailyBiasPrice.toFixed(4));
+  if (state.dailyBiasPrice !== null && state.dailyBiasPrice !== newBiasPrice) {
+    if (state.fadeAGate1Met || state.fadeAGate2CrossEpoch) {
+      dbg("[FADE A] Midnight rollover detected. Resetting Fade A gates for the new day.");
+      state.fadeAGate1Met = false;
+      state.fadeAGate1Dir = null;
+      state.fadeAWasAboveSig = null;
+      state.fadeAGate2CrossEpoch = null;
+    }
+  }
+
   state.fibBullish     = fib.bullish;
   state.fib0           = parseFloat(fib.fib0.toFixed(4));
   state.fib50          = parseFloat(fib.fib50.toFixed(4));
@@ -934,32 +962,41 @@ async function runScanMode() {
     // Daily bias direction: price above daily open = BULLISH, below = BEARISH
     const dailyBiasDir = currentPrice > fib.dailyBiasPrice ? "BUY" : "SELL";
 
-    // PHASE A: Daily Bias + H1 TDI + H1 SMA(8) + M15 TDI (Perfectly Aligned) — TP at Fibonacci 50%
-    const isAlignedBuy = h1TdiDir === "BUY" && h1Sma8Dir === "BUY" && m15TdiDir === "BUY" && dailyBiasDir === "BUY";
-    const isAlignedSell = h1TdiDir === "SELL" && h1Sma8Dir === "SELL" && m15TdiDir === "SELL" && dailyBiasDir === "SELL";
+    // PHASE A: Fresh M15 Cross + H1 Alignment (Wait State Logic) + M5 CCI
+    const m15FreshBuyCross  = m15TdiReady && findM15FreshCross(m15Tdi.rsi, m15Tdi.middle, m15i, "BUY",  PHASE_A_M15_CROSS_LOOKBACK);
+    const m15FreshSellCross = m15TdiReady && findM15FreshCross(m15Tdi.rsi, m15Tdi.middle, m15i, "SELL", PHASE_A_M15_CROSS_LOOKBACK);
+
+    const h1AlignedBuy = h1TdiDir === "BUY" && h1Sma8Dir === "BUY" && dailyBiasDir === "BUY";
+    const h1AlignedSell = h1TdiDir === "SELL" && h1Sma8Dir === "SELL" && dailyBiasDir === "SELL";
 
     if (!signalTriggered) {
-      if (isAlignedBuy) {
-        if (state.phaseAAlignment !== "BUY") {
+      // 1. Arm Wait State ONLY on a Fresh M15 Cross (prevents late entries)
+      if (m15FreshBuyCross) state.phaseA_WaitDir = "BUY";
+      else if (m15FreshSellCross) state.phaseA_WaitDir = "SELL";
+
+      // 2. Evaluate Wait State
+      if (state.phaseA_WaitDir === "BUY") {
+        if (m15TdiDir !== "BUY") {
+          state.phaseA_WaitDir = null; // M15 misaligned, reset wait state
+        } else if (h1AlignedBuy && m5CciBuyCross) {
           const tp = fib.fib50;
           if (tp > currentPrice) {
             signalTriggered = true; direction = "BUY"; entryType = "PHASE_A"; fibTpPrice = tp;
-            dbg(`[PHASE_A BUY] Perfect alignment achieved (Bias, H1 TDI, H1 SMA8, M15 TDI)`);
+            state.phaseA_WaitDir = null;
+            dbg(`[PHASE_A BUY] Fresh M15 Cross + H1 Aligned + M5 CCI. Executing.`);
           }
         }
-        state.phaseAAlignment = "BUY"; // ALWAYS registers alignment to prevent late firing
-      } else if (isAlignedSell) {
-        if (state.phaseAAlignment !== "SELL") {
+      } else if (state.phaseA_WaitDir === "SELL") {
+        if (m15TdiDir !== "SELL") {
+          state.phaseA_WaitDir = null; // M15 misaligned, reset wait state
+        } else if (h1AlignedSell && m5CciSellCross) {
           const tp = fib.fib50;
           if (tp < currentPrice) {
             signalTriggered = true; direction = "SELL"; entryType = "PHASE_A"; fibTpPrice = tp;
-            dbg(`[PHASE_A SELL] Perfect alignment achieved (Bias, H1 TDI, H1 SMA8, M15 TDI)`);
+            state.phaseA_WaitDir = null;
+            dbg(`[PHASE_A SELL] Fresh M15 Cross + H1 Aligned + M5 CCI. Executing.`);
           }
         }
-        state.phaseAAlignment = "SELL"; // ALWAYS registers alignment to prevent late firing
-      } else {
-        // Reset alignment state if conditions misalign, allowing for a fresh trigger later
-        state.phaseAAlignment = null;
       }
     }
 
@@ -1072,7 +1109,7 @@ async function runScanMode() {
       ? `SMA8 ${h1Sma8Val.toFixed(4)} | Close ${h1LastClose.toFixed(4)} → *${h1Sma8Dir}*`
       : "N/A";
     const m15CrossLabel = entryType === "PHASE_A"
-      ? (direction === "BUY" ? " ✅ Perfect Align ↑" : " ✅ Perfect Align ↓")
+      ? (direction === "BUY" ? " ✅ Fresh Cross ↑" : " ✅ Fresh Cross ↓")
       : "";
     const m15TdiLabel = m15TdiReady
       ? `RSI ${m15TdiRsi.toFixed(1)} | Signal ${m15TdiSignal.toFixed(1)} | Mid ${m15TdiMiddle.toFixed(1)} → *${m15TdiDir}*${m15CrossLabel}`
@@ -1081,7 +1118,7 @@ async function runScanMode() {
     const fibLabel = `0%: ${fib.fib0.toFixed(4)} | 50%: ${fib.fib50.toFixed(4)} | 61.8%: ${fib.fib618.toFixed(4)} | 79%: ${fib.fib79.toFixed(4)} | Bias: ${fib.dailyBiasPrice.toFixed(4)}`;
 
     const setupDescriptions = {
-      PHASE_A: "H1 TDI + H1 SMA(8) + M15 TDI (Perfect Alignment)",
+      PHASE_A: "H1 TDI + H1 SMA(8) + M15 TDI + M5 CCI",
       PHASE_B: "Phase B Re-entry — M5 CCI + M15 Signal (after Phase A WIN)",
       FADE_A:  "Fade A Counter-trade — Fib 79% + M15 TDI Gate + M5 CCI",
       FADE_B:  "Fade B Re-entry — M5 CCI + M15 Signal (after Fade A WIN)"
