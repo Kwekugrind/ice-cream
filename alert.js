@@ -23,15 +23,13 @@ const SOFTWARE_SL_USD = -3.60;
 const SERVER_TP_USD = 10.00;
 const CATASTROPHIC_PNL_FLOOR = -5.50;
 const MARKET_DATA_APP_ID = "1089";
+const TARGET_MIN_PROFIT = 5.00; // FIX: was previously referenced but never declared (caused a crash on every signal)
 
-// Fade A: Gate 2 window — how long after RSI crosses signal line does CCI have to fire
-const FADE_A_GATE2_WINDOW = 900; // 15 minutes (3 M5 candles)
+const FIB_TOLERANCE = 0.005; // 0.5% tolerance for Reversal zone touches
 
-// Tolerance for "price touching fib79" — candle high/low within 0.5% of the level
-const FIB79_TOUCH_TOLERANCE = 0.005;
-
-// Phase A: Strictly look back 1 closed candle to ensure we ONLY arm on the exact cross
-const PHASE_A_M15_CROSS_LOOKBACK = 1;
+// Symbols where Stochastic rarely retraces all the way to 20/80 — allow a fresh 50-midline
+// cross as a fallback confirmation (per spec caveat), so we don't miss entries on these instruments.
+const STOCH_MIDLINE_FALLBACK_SYMBOLS = ["R_50", "R_10"];
 
 const GATEWAY_URL = process.env.GATEWAY_URL || "http://127.0.0.1:3000";
 const GATEWAY_SECRET = process.env.GATEWAY_SECRET;
@@ -44,7 +42,6 @@ const TRIGGER_SOURCE = process.env.TRIGGER_SOURCE || "manual";
 const M5  = 5  * 60;
 const M15 = 15 * 60;
 const M30 = 30 * 60;
-const H1  = 60 * 60;
 const D1  = 24 * 60 * 60;
 
 const DEBUG = process.env.DEBUG === "true";
@@ -260,19 +257,17 @@ async function fetchAllData() {
     const results = {};
     wsPublic.on("open", () => {
       wsPublic.send(JSON.stringify({ req_id: 1, ticks_history: SYMBOL, granularity: M5,  count: 120, end: "latest", style: "candles" }));
-      wsPublic.send(JSON.stringify({ req_id: 2, ticks_history: SYMBOL, granularity: H1,  count: 250, end: "latest", style: "candles" }));
       wsPublic.send(JSON.stringify({ req_id: 4, ticks_history: SYMBOL, granularity: M15, count: 250, end: "latest", style: "candles" }));
-      wsPublic.send(JSON.stringify({ req_id: 5, ticks_history: SYMBOL, granularity: D1,  count: 5,   end: "latest", style: "candles" }));
       wsPublic.send(JSON.stringify({ req_id: 6, ticks_history: SYMBOL, granularity: M30, count: 120, end: "latest", style: "candles" }));
+      wsPublic.send(JSON.stringify({ req_id: 5, ticks_history: SYMBOL, granularity: D1,  count: 5,   end: "latest", style: "candles" }));
     });
     wsPublic.on("message", d => {
       const msg = JSON.parse(d);
       if (msg.req_id === 1) results.m5  = msg.candles;
-      if (msg.req_id === 2) results.h1  = msg.candles;
       if (msg.req_id === 4) results.m15 = msg.candles;
-      if (msg.req_id === 5) results.d1  = msg.candles;
       if (msg.req_id === 6) results.m30 = msg.candles;
-      if (results.m5 && results.h1 && results.d1 && results.m15 && results.m30) { wsPublic.close(); resolve(results); }
+      if (msg.req_id === 5) results.d1  = msg.candles;
+      if (results.m5 && results.m15 && results.m30 && results.d1) { wsPublic.close(); resolve(results); }
     });
     wsPublic.on("error", err => { wsPublic.close(); reject(err); });
     setTimeout(() => { wsPublic.close(); reject(new Error("fetchAllData timeout")); }, 15000);
@@ -302,7 +297,7 @@ async function fetchOpenTradeData() {
   });
 }
 
-async function getCurrentPrice(sym = SYMBOL) {
+async function getCurrentPrice() {
   const data = await fetchOpenTradeData();
   return data.price;
 }
@@ -316,134 +311,62 @@ function sma(data, period) {
   });
 }
 
-function ema(data, period) {
-  const k = 2 / (period + 1);
-  const result = [];
-  let prev = null;
-  for (let i = 0; i < data.length; i++) {
-    if (i < period - 1) { result.push(null); continue; }
-    if (i === period - 1) { prev = data.slice(0, period).reduce((a, b) => a + b, 0) / period; result.push(prev); continue; }
-    prev = data[i] * k + prev * (1 - k);
-    result.push(prev);
+function calculateStoch(candles, kPeriod = 18, dPeriod = 12, slowing = 25) {
+  const fastK = new Array(candles.length).fill(null);
+  for (let i = kPeriod - 1; i < candles.length; i++) {
+    const sl = candles.slice(i - kPeriod + 1, i + 1);
+    const hh = Math.max(...sl.map(c => parseFloat(c.high)));
+    const ll = Math.min(...sl.map(c => parseFloat(c.low)));
+    const c = parseFloat(candles[i].close);
+    fastK[i] = hh === ll ? 100 : ((c - ll) / (hh - ll)) * 100;
   }
-  return result;
+  const slowK = sma(fastK.map(v => v !== null ? v : 50), slowing).map((v, i) => fastK[i] === null ? null : v);
+  const slowD = sma(slowK.map(v => v !== null ? v : 50), dPeriod).map((v, i) => slowK[i] === null ? null : v);
+  return { k: slowK, d: slowD }; // K = Green, D = Red
 }
 
-function calculateRSI(data, period = 14) {
-  const result = new Array(data.length).fill(null);
-  if (data.length <= period) return result;
-  let gainSum = 0, lossSum = 0;
-  for (let i = 1; i <= period; i++) {
-    const diff = data[i] - data[i - 1];
-    if (diff >= 0) gainSum += diff;
-    else lossSum -= diff;
-  }
-  let avgGain = gainSum / period;
-  let avgLoss = lossSum / period;
-  let rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-  result[period] = 100 - (100 / (1 + rs));
-  for (let i = period + 1; i < data.length; i++) {
-    const diff = data[i] - data[i - 1];
-    const gain = diff >= 0 ? diff : 0;
-    const loss = diff >= 0 ? 0 : -diff;
-    avgGain = ((avgGain * (period - 1)) + gain) / period;
-    avgLoss = ((avgLoss * (period - 1)) + loss) / period;
-    rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-    result[i] = 100 - (100 / (1 + rs));
-  }
-  return result;
-}
-
-function calculateBollingerBands(data, period = 34, deviation = 1.619) {
-  const middle = sma(data, period);
-  const upper = [];
-  const lower = [];
-  for (let i = 0; i < data.length; i++) {
-    if (i < period - 1 || middle[i] == null || data[i] == null) {
-      upper.push(null); lower.push(null); continue;
-    }
-    const slice = data.slice(i - period + 1, i + 1);
-    if (slice.some(val => val == null)) { upper.push(null); lower.push(null); continue; }
-    const mean = middle[i];
-    const variance = slice.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / period;
-    const stdev = Math.sqrt(variance);
-    upper.push(mean + (stdev * deviation));
-    lower.push(mean - (stdev * deviation));
-  }
-  return { upper, middle, lower };
-}
-
-function findM15FreshCross(rsiArr, middleArr, currentIdx, direction, lookback) {
-  for (let i = currentIdx; i >= Math.max(1, currentIdx - lookback); i--) {
-    const prev = rsiArr[i - 1];
-    const curr = rsiArr[i];
-    const prevMid = middleArr[i - 1];
-    const currMid = middleArr[i];
-    if (prev === null || curr === null || prevMid === null || currMid === null) continue;
-    if (direction === "BUY"  && prev < prevMid && curr >= currMid) return true;
-    if (direction === "SELL" && prev > prevMid && curr <= currMid) return true;
-  }
-  return false;
-}
-
-// TDI: RSI(14) smoothed by SMA(7) signal line, with Bollinger Bands(34, 1.619) as volatility envelope.
-function calculateTDI(candles, rsiPeriod = 14, signalPeriod = 7, bbPeriod = 34, bbDev = 1.619) {
+function calculateEnvelopes(candles, period = 50, devPct = 0.05) {
   const closes = candles.map(c => parseFloat(c.close));
-  const rsi = calculateRSI(closes, rsiPeriod);
-  const rsiForSignal = rsi.map(v => v !== null ? v : 50);
-  const rawSignal = sma(rsiForSignal, signalPeriod);
-  const signal = rawSignal.map((v, i) => rsi[i] === null ? null : v);
-  const bands = calculateBollingerBands(rsi, bbPeriod, bbDev);
-  return { rsi, signal, upper: bands.upper, middle: bands.middle, lower: bands.lower };
+  const mid = sma(closes, period);
+  const up = mid.map(m => m !== null ? m * (1 + devPct / 100) : null);
+  const lo = mid.map(m => m !== null ? m * (1 - devPct / 100) : null);
+  return { upper: up, lower: lo };
 }
 
-// CCI(14): precision M5 entry trigger.
-function calculateCCI(candles, period = 14) {
-  const result = new Array(candles.length).fill(null);
-  for (let i = period - 1; i < candles.length; i++) {
-    const slice = candles.slice(i - period + 1, i + 1);
-    const typicalPrices = slice.map(c => (parseFloat(c.high) + parseFloat(c.low) + parseFloat(c.close)) / 3);
-    const meanTP = typicalPrices.reduce((a, b) => a + b, 0) / period;
-    const meanDev = typicalPrices.reduce((a, b) => a + Math.abs(b - meanTP), 0) / period;
-    if (meanDev === 0) { result[i] = 0; continue; }
-    const currentTP = typicalPrices[typicalPrices.length - 1];
-    result[i] = (currentTP - meanTP) / (0.015 * meanDev);
+function calculateCCI(candles, n = 100) {
+  const out = new Array(candles.length).fill(null);
+  for (let i = n - 1; i < candles.length; i++) {
+    const sl = candles.slice(i - n + 1, i + 1);
+    const tp = sl.map(c => (parseFloat(c.high) + parseFloat(c.low) + parseFloat(c.close)) / 3);
+    const m = tp.reduce((a, b) => a + b, 0) / n;
+    const md = tp.reduce((s, v) => s + Math.abs(v - m), 0) / n;
+    out[i] = md === 0 ? 0 : (tp[tp.length - 1] - m) / (0.015 * md);
   }
-  return result;
+  return out;
 }
 
-// Previous Day Fibonacci: drawn from yesterday's D1 high/low.
 function computeDailyFibLevels(d1Candles) {
   if (!d1Candles || d1Candles.length < 2) return null;
   const yesterday = d1Candles[d1Candles.length - 2];
   const today     = d1Candles[d1Candles.length - 1];
 
-  const prevHigh  = parseFloat(yesterday.high);
-  const prevLow   = parseFloat(yesterday.low);
-  const prevOpen  = parseFloat(yesterday.open);
-  const prevClose = parseFloat(yesterday.close);
-  const range     = prevHigh - prevLow;
-  if (range <= 0) return null;
+  const h = parseFloat(yesterday.high);
+  const l = parseFloat(yesterday.low);
+  const o = parseFloat(yesterday.open);
+  const c = parseFloat(yesterday.close);
+  const rng = h - l;
+  if (rng <= 0) return null;
 
-  const bullish = prevClose > prevOpen;
+  const bullish = c > o;
   const dailyBiasPrice = parseFloat(today.open);
 
-  let fib0, fib50, fib618, fib79, fib100;
   if (bullish) {
-    fib0   = prevLow;
-    fib50  = prevLow + 0.50  * range;
-    fib618 = prevLow + 0.618 * range;
-    fib79  = prevLow + 0.79  * range;
-    fib100 = prevHigh;
+    // 0% at Top, 100% at Bottom
+    return { bullish, fibM50: h + 0.5*rng, fib0: h, fib50: h - 0.5*rng, fib79: h - 0.79*rng, fib100: l, fib1618: h - 1.618*rng, dailyBiasPrice };
   } else {
-    fib0   = prevHigh;
-    fib50  = prevHigh - 0.50  * range;
-    fib618 = prevHigh - 0.618 * range;
-    fib79  = prevHigh - 0.79  * range;
-    fib100 = prevLow;
+    // 0% at Bottom, 100% at Top
+    return { bullish, fibM50: l - 0.5*rng, fib0: l, fib50: l + 0.5*rng, fib79: l + 0.79*rng, fib100: h, fib1618: l + 1.618*rng, dailyBiasPrice };
   }
-
-  return { bullish, fib0, fib50, fib618, fib79, fib100, dailyBiasPrice, prevHigh, prevLow };
 }
 
 function deriveHardStopPrice(entry, direction) {
@@ -475,36 +398,25 @@ function findRecentFractal(candles, currentIndex, direction) {
   return null;
 }
 
-// Derive next phase: correctly uses .startsWith to support ($5 Ext) labels
-function deriveNextPhase(trades) {
-  const closedTrades = trades.filter(t => t.result)
-    .sort((a, b) => new Date(b.closeTime || 0) - new Date(a.closeTime || 0));
-  const lastClosed = closedTrades[0];
-  if (!lastClosed) return null;
-  if (lastClosed.result === "WIN") {
-    if (lastClosed.entryType && lastClosed.entryType.startsWith("PHASE_A")) return "PHASE_B";
-    if (lastClosed.entryType && lastClosed.entryType.startsWith("FADE_A"))  return "FADE_B";
-  }
-  return null;
-}
-
 // ==================== STATE ====================
 let state = {
   lastProcessedEpoch: null,
   lastTgUpdateId: 0,
+  armed: null,
+  confirm: null, // { label, cci:{aligned}, stoch:{aligned}, env:{aligned} } — persists across candles
+  dailyBiasPrice: null,
+  // These placeholders ensure the Dashboard UI doesn't crash when rendering
   nextPhase: null,
-  phaseA_WaitDir: null,
-  fadeAGate1Met: false,
-  fadeAGate1Dir: null,
-  fadeAWasAboveSig: null,
-  fadeAGate2CrossEpoch: null,
+  h1TdiDir: null,
   fibBullish: null,
   fib0: null,
   fib50: null,
   fib618: null,
   fib79: null,
   fib100: null,
-  dailyBiasPrice: null
+  cciAligned: false,
+  stochAligned: false,
+  envAligned: false
 };
 try {
   const s = JSON.parse(fs.readFileSync("state.json"));
@@ -796,18 +708,17 @@ async function runScanMode() {
     console.warn(`[${REPO_LABEL}] Failed to fetch market candles: ${fetchErr.message}. Skipping scan.`); return;
   }
   const candles   = scanData.m5;
-  const h1Candles = scanData.h1;
-  const d1Candles = scanData.d1;
   const m15Candles = scanData.m15;
+  const m30Candles = scanData.m30;
+  const d1Candles = scanData.d1;
 
-  if (!candles || candles.length < 60)     return;
-  if (!h1Candles || h1Candles.length < 50) return;
-  if (!m15Candles || m15Candles.length < 100) return;
+  if (!candles || candles.length < 120)     return;
+  if (!m15Candles || m15Candles.length < 50) return;
+  if (!m30Candles || m30Candles.length < 50) return;
   if (!d1Candles || d1Candles.length < 2)  return;
 
   const si = candles.length - 2;  // Last closed M5 candle index
   const currentCandleEpoch = candles[si].epoch;
-  const closes = candles.map(c => parseFloat(c.close));
 
   if (state.lastProcessedEpoch === currentCandleEpoch) {
     console.log("Already processed this candle — skipping."); return;
@@ -821,277 +732,184 @@ async function runScanMode() {
     fs.writeFileSync("state.json", JSON.stringify(state, null, 2)); return;
   }
 
-  // MIDNIGHT ROLLOVER FIX: Reset Fade A gates if the new day started (Daily Bias changed)
+  // MIDNIGHT ROLLOVER FIX: Reset Arm/Confirmation State if the new day started
   const newBiasPrice = parseFloat(fib.dailyBiasPrice.toFixed(4));
   if (state.dailyBiasPrice !== null && state.dailyBiasPrice !== newBiasPrice) {
-    if (state.fadeAGate1Met || state.fadeAGate2CrossEpoch) {
-      dbg("[FADE A] Midnight rollover detected. Resetting Fade A gates for the new day.");
-      state.fadeAGate1Met = false;
-      state.fadeAGate1Dir = null;
-      state.fadeAWasAboveSig = null;
-      state.fadeAGate2CrossEpoch = null;
-    }
+    dbg("[FIB] Midnight rollover detected. Resetting Arm/Confirmation State for the new day.");
+    state.armed = null;
+    state.confirm = null;
   }
+  state.dailyBiasPrice = newBiasPrice;
 
+  // Sync state for Dashboard UI Compatibility
   state.fibBullish     = fib.bullish;
   state.fib0           = parseFloat(fib.fib0.toFixed(4));
   state.fib50          = parseFloat(fib.fib50.toFixed(4));
-  state.fib618         = parseFloat(fib.fib618.toFixed(4));
+  state.fib618         = parseFloat(fib.fib1618?.toFixed(4) || 0); // Repurposed for Dashboard UI
   state.fib79          = parseFloat(fib.fib79.toFixed(4));
   state.fib100         = parseFloat(fib.fib100.toFixed(4));
-  state.dailyBiasPrice = parseFloat(fib.dailyBiasPrice.toFixed(4));
+  state.h1TdiDir       = fib.bullish ? "BULL" : "BEAR";
 
-  // ── H1 TDI — Main Trend Direction ──
-  const h1Tdi    = calculateTDI(h1Candles);
-  const h1i      = h1Candles.length - 2;
-  const h1TdiRsi    = h1Tdi.rsi[h1i];
-  const h1TdiMiddle = h1Tdi.middle[h1i];
-  const h1TdiReady  = h1TdiRsi !== null && h1TdiMiddle !== null;
-  const h1TdiDir    = h1TdiReady
-    ? (h1TdiRsi > h1TdiMiddle ? "BUY" : h1TdiRsi < h1TdiMiddle ? "SELL" : null)
-    : null;
-  state.h1TdiDir = h1TdiDir;
+  // ── RAW INDICATOR VALUES ──
+  const currentPrice = parseFloat(candles[si].close);
+  const maxH         = Math.max(...candles.slice(-12).map(x => parseFloat(x.high)));
+  const minL         = Math.min(...candles.slice(-12).map(x => parseFloat(x.low)));
+  const m15Close     = parseFloat(m15Candles[m15Candles.length - 2].close);
+  const m30Close     = parseFloat(m30Candles[m30Candles.length - 2].close);
 
-  // ── H1 SMA(8) ──
-  const h1Closes  = h1Candles.map(c => parseFloat(c.close));
-  const h1Sma8Arr = sma(h1Closes, 8);
-  const h1Sma8Val = h1Sma8Arr[h1i];
-  const h1LastClose = h1Closes[h1i];
-  const h1Sma8Dir = h1Sma8Val !== null
-    ? (h1LastClose > h1Sma8Val ? "BUY" : h1LastClose < h1Sma8Val ? "SELL" : null)
-    : null;
-  state.h1Sma8Dir = h1Sma8Dir;
+  const cci   = calculateCCI(candles, 100);
+  const env   = calculateEnvelopes(candles, 50, 0.05);
+  const stoch = calculateStoch(candles, 18, 12, 25);
+  const m30St = calculateStoch(m30Candles, 18, 12, 25); // informational only — shown in alerts, not part of the 4 documented indicators
 
-  // ── M15 TDI ──
-  const m15Tdi    = calculateTDI(m15Candles);
-  const m15i      = m15Candles.length - 2;
-  const m15TdiRsi    = m15Tdi.rsi[m15i];
-  const m15TdiSignal = m15Tdi.signal[m15i];
-  const m15TdiMiddle = m15Tdi.middle[m15i];
-  const m15TdiUpper  = m15Tdi.upper[m15i];
-  const m15TdiLower  = m15Tdi.lower[m15i];
-  const m15TdiReady  = m15TdiRsi !== null && m15TdiSignal !== null && m15TdiMiddle !== null;
-  const m15TdiDir    = m15TdiReady
-    ? (m15TdiRsi > m15TdiMiddle ? "BUY" : m15TdiRsi < m15TdiMiddle ? "SELL" : null)
-    : null;
-  state.m15TdiDir = m15TdiDir;
+  const cVal    = cci[si];
+  const prevCci = cci[si - 1];
+  const eUp     = env.upper[si];
+  const eLo     = env.lower[si];
+  const sK      = stoch.k[si];
+  const sD      = stoch.d[si];
+  const prevK   = stoch.k[si - 1];
+  const prevD   = stoch.d[si - 1];
 
-  // ── M5 CCI(14) ──
-  const m5Cci = calculateCCI(candles);
-  const m5CciBuyCross  = m5Cci[si - 1] !== null && m5Cci[si] !== null && m5Cci[si - 1] < -100 && m5Cci[si] > -100;
-  const m5CciSellCross = m5Cci[si - 1] !== null && m5Cci[si] !== null && m5Cci[si - 1] > 100  && m5Cci[si] < 100;
+  const m30K = m30St.k[m30Candles.length - 2];
+  const m30D = m30St.d[m30Candles.length - 2];
 
-  // ── Derive Next Phase ──
-  const nextPhase = deriveNextPhase(trades);
-  state.nextPhase = nextPhase;
+  if (cVal === null || prevCci === null || eUp === null || eLo === null ||
+      sK === null || sD === null || prevK === null || prevD === null || m30K === null) {
+    state.lastProcessedEpoch = currentCandleEpoch;
+    fs.writeFileSync("state.json", JSON.stringify(state, null, 2)); return;
+  }
 
-  // Reset Fade A gates when cycle completes (correctly checks startsWith to catch $5 Ext trades)
-  if (nextPhase === null && (state.fadeAGate1Met || state.fadeAGate2CrossEpoch)) {
-    const lastClosed = trades.filter(t => t.result).sort((a, b) => new Date(b.closeTime || 0) - new Date(a.closeTime || 0))[0];
-    if (lastClosed?.entryType?.startsWith("PHASE_B") || lastClosed?.entryType?.startsWith("FADE_B")) {
-      state.fadeAGate1Met = false;
-      state.fadeAGate1Dir = null;
-      state.fadeAWasAboveSig = null;
-      state.fadeAGate2CrossEpoch = null;
+  // ── A. FIB ARMING STATE MACHINE ──
+  // Determines WHICH setup is active (direction/type/target) based on where price touched
+  // and whether the M15 (reversal) or M30 (continuation) candle confirmed a close beyond the level.
+  let newArm = null;
+
+  if (fib.bullish) {
+    if (maxH >= fib.fib0) {
+      if (m30Close > fib.fib0) newArm = { type: "CONT", dir: "BUY", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_BUY (0%)" };
+      else if (m15Close < fib.fib0) newArm = { type: "REV", dir: "SELL", tp: fib.fib50, lbl: "REV_SELL (0% Fake)" };
+    }
+    if (minL <= fib.fib79 + FIB_TOLERANCE && m15Close > fib.fib79) newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lbl: "REV_BUY (79%)" };
+    if (minL <= fib.fib100 + FIB_TOLERANCE) {
+      if (m30Close < fib.fib100) newArm = { type: "CONT", dir: "SELL", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_SELL (100%)" };
+      else if (m15Close > fib.fib100) newArm = { type: "REV", dir: "BUY", tp: fib.fib50, lbl: "REV_BUY (100% Fake)" };
+    }
+  } else {
+    if (minL <= fib.fib0) {
+      if (m30Close < fib.fib0) newArm = { type: "CONT", dir: "SELL", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_SELL (0%)" };
+      else if (m15Close > fib.fib0) newArm = { type: "REV", dir: "BUY", tp: fib.fib50, lbl: "REV_BUY (0% Fake)" };
+    }
+    if (maxH >= fib.fib79 - FIB_TOLERANCE && m15Close < fib.fib79) newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lbl: "REV_SELL (79%)" };
+    if (maxH >= fib.fib100 - FIB_TOLERANCE) {
+      if (m30Close > fib.fib100) newArm = { type: "CONT", dir: "BUY", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_BUY (100%)" };
+      else if (m15Close < fib.fib100) newArm = { type: "REV", dir: "SELL", tp: fib.fib50, lbl: "REV_SELL (100% Fake)" };
     }
   }
 
-  // ==================== SIGNAL EVALUATION ====================
+  // Only re-arm (and reset confirmation flags) when a genuinely NEW setup appears.
+  if (newArm && (!state.armed || state.armed.lbl !== newArm.lbl)) {
+    dbg(`[STATE] New Arm: ${newArm.lbl} — resetting CCI/Stoch/Envelope confirmation flags`);
+    state.armed = newArm;
+    state.confirm = { label: newArm.lbl, cci: { aligned: false }, stoch: { aligned: false }, env: { aligned: false } };
+  }
 
-  const currentPrice = closes[si];
-  const currentCandleHigh = parseFloat(candles[si].high);
-  const currentCandleLow  = parseFloat(candles[si].low);
+  state.nextPhase = state.armed ? state.armed.lbl : null;
 
+  // ── B/C/D. INDEPENDENT INDICATOR CONFIRMATION ──
+  // Each indicator keeps its own persistent "aligned" flag. Once true it STAYS true (even across
+  // many candles / regardless of order) until that SAME indicator's condition invalidates — at
+  // which point ONLY that indicator resets and waits for a fresh alignment again.
+  if (state.armed && state.confirm) {
+    const { type, dir } = state.armed;
+
+    // --- Indicator 2: CCI(100) on Typical Price ---
+    // Case A (CONT / momentum breakout beyond fib 0 or 100): needs a FRESH cross through +/-70.5.
+    // Case B (REV / price inside fib 0-100): needs CCI to have been beyond +/-70.5 and then a FRESH cross back through it.
+    if (dir === "BUY") {
+      const freshAlign = type === "CONT"
+        ? (prevCci <= 70.5 && cVal > 70.5)     // fresh breakout cross up
+        : (prevCci <= -70.5 && cVal > -70.5);  // fresh release from oversold
+      if (freshAlign) state.confirm.cci.aligned = true;
+      else if (state.confirm.cci.aligned) {
+        if (type === "CONT" && cVal <= 70.5) state.confirm.cci.aligned = false;
+        if (type === "REV"  && cVal <= -70.5) state.confirm.cci.aligned = false;
+      }
+    } else { // SELL
+      const freshAlign = type === "CONT"
+        ? (prevCci >= -70.5 && cVal < -70.5)
+        : (prevCci >= 70.5 && cVal < 70.5);
+      if (freshAlign) state.confirm.cci.aligned = true;
+      else if (state.confirm.cci.aligned) {
+        if (type === "CONT" && cVal >= -70.5) state.confirm.cci.aligned = false;
+        if (type === "REV"  && cVal >= 70.5) state.confirm.cci.aligned = false;
+      }
+    }
+
+    // --- Indicator 3: Stochastic (18,12,25 SMA on M5) ---
+    const crossUp         = prevK <= prevD && sK > sD;
+    const crossDown       = prevK >= prevD && sK < sD;
+    const crossedAbove50  = prevK < 50 && sK >= 50;
+    const crossedBelow50  = prevK > 50 && sK <= 50;
+    const midlineFallback = STOCH_MIDLINE_FALLBACK_SYMBOLS.includes(SYMBOL);
+
+    if (dir === "BUY") {
+      let freshAlign;
+      if (type === "REV") {
+        // Primary: fresh cross up while still oversold (<=20).
+        // Fallback (Vix 10/50 caveat): fresh cross up that coincides with a 50-midline cross.
+        freshAlign = (crossUp && sK <= 20) || (midlineFallback && crossUp && crossedAbove50);
+      } else {
+        // CONT: embedded/continuation momentum — fresh cross up while pinned above midline.
+        freshAlign = crossUp && sK >= 50;
+      }
+      if (freshAlign) state.confirm.stoch.aligned = true;
+      else if (state.confirm.stoch.aligned && crossDown) state.confirm.stoch.aligned = false; // invalidated by an opposite cross
+    } else { // SELL
+      let freshAlign;
+      if (type === "REV") {
+        freshAlign = (crossDown && sK >= 80) || (midlineFallback && crossDown && crossedBelow50);
+      } else {
+        freshAlign = crossDown && sK <= 50;
+      }
+      if (freshAlign) state.confirm.stoch.aligned = true;
+      else if (state.confirm.stoch.aligned && crossUp) state.confirm.stoch.aligned = false;
+    }
+
+    // --- Indicator 4: Envelopes (50 SMA, 0.05% dev, Close) ---
+    if (dir === "BUY") {
+      if (currentPrice > eUp) state.confirm.env.aligned = true;
+      else if (state.confirm.env.aligned && currentPrice <= eUp) state.confirm.env.aligned = false;
+    } else {
+      if (currentPrice < eLo) state.confirm.env.aligned = true;
+      else if (state.confirm.env.aligned && currentPrice >= eLo) state.confirm.env.aligned = false;
+    }
+  }
+
+  // Dashboard visibility
+  state.cciAligned   = state.confirm ? state.confirm.cci.aligned   : false;
+  state.stochAligned = state.confirm ? state.confirm.stoch.aligned : false;
+  state.envAligned   = state.confirm ? state.confirm.env.aligned   : false;
+
+  // ── TRIGGER LOGIC ──
+  // Fires only once Fib is armed AND all three indicators are independently aligned —
+  // they do NOT need to have aligned on the same candle.
   let signalTriggered = false, direction = "", fibTpPrice = null, entryType = null;
 
-  // M15 Signal Line Status for Phase B and Fade B
-  const m15RsiAboveSignal = m15TdiReady && m15TdiRsi > m15TdiSignal;
-  const m15RsiBelowSignal = m15TdiReady && m15TdiRsi < m15TdiSignal;
-
-  // ─────────────────────────────────────────
-  // PHASE B: After PHASE_A WIN — M5 CCI + M15 Signal
-  // ─────────────────────────────────────────
-  if (nextPhase === "PHASE_B") {
-    const lastPhaseA = trades
-      .filter(t => t.result && t.entryType?.startsWith("PHASE_A"))
-      .sort((a, b) => new Date(b.closeTime || 0) - new Date(a.closeTime || 0))[0];
-    const phaseBDir = lastPhaseA?.direction;
-    
-    if (phaseBDir === "BUY" && m5CciBuyCross && m15RsiAboveSignal) {
-      const tp = fib.fib618;
-      if (tp > currentPrice) {
-        signalTriggered = true; direction = "BUY"; entryType = "PHASE_B"; fibTpPrice = tp;
-        dbg(`[PHASE_B BUY] Locked to Phase A direction BUY, CCI cross, M15 RSI > Signal, TP ${tp.toFixed(4)}`);
-      }
-    } else if (phaseBDir === "SELL" && m5CciSellCross && m15RsiBelowSignal) {
-      const tp = fib.fib618;
-      if (tp < currentPrice) {
-        signalTriggered = true; direction = "SELL"; entryType = "PHASE_B"; fibTpPrice = tp;
-        dbg(`[PHASE_B SELL] Locked to Phase A direction SELL, CCI cross, M15 RSI < Signal, TP ${tp.toFixed(4)}`);
-      }
-    }
+  if (state.armed && state.confirm &&
+      state.confirm.cci.aligned && state.confirm.stoch.aligned && state.confirm.env.aligned) {
+    signalTriggered = true;
+    direction   = state.armed.dir;
+    entryType   = state.armed.lbl;
+    fibTpPrice  = state.armed.tp;
+    state.armed   = null; // clear the trap
+    state.confirm = null;
   }
 
-  // ─────────────────────────────────────────
-  // FADE B: After FADE_A WIN — M5 CCI + M15 Signal
-  // ─────────────────────────────────────────
-  else if (nextPhase === "FADE_B") {
-    const lastFadeA = trades
-      .filter(t => t.result && t.entryType?.startsWith("FADE_A"))
-      .sort((a, b) => new Date(b.closeTime || 0) - new Date(a.closeTime || 0))[0];
-    const fadeBDir = lastFadeA?.direction;
-    
-    if (fadeBDir === "BUY" && m5CciBuyCross && m15RsiAboveSignal) {
-      const tp = fib.fib0;
-      if (tp > currentPrice) {
-        signalTriggered = true; direction = "BUY"; entryType = "FADE_B"; fibTpPrice = tp;
-        dbg(`[FADE_B BUY] Locked to Fade A direction BUY, CCI cross, M15 RSI > Signal, TP ${tp.toFixed(4)}`);
-      }
-    } else if (fadeBDir === "SELL" && m5CciSellCross && m15RsiBelowSignal) {
-      const tp = fib.fib0;
-      if (tp < currentPrice) {
-        signalTriggered = true; direction = "SELL"; entryType = "FADE_B"; fibTpPrice = tp;
-        dbg(`[FADE_B SELL] Locked to Fade A direction SELL, CCI cross, M15 RSI < Signal, TP ${tp.toFixed(4)}`);
-      }
-    }
-  }
-
-  // ─────────────────────────────────────────
-  // IDLE: Look for PHASE_A or FADE_A
-  // ─────────────────────────────────────────
-  else {
-    // Daily bias direction: price above daily open = BULLISH, below = BEARISH
-    const dailyBiasDir = currentPrice > fib.dailyBiasPrice ? "BUY" : "SELL";
-
-    // PHASE A: Fresh M15 Cross + H1 Alignment (Wait State Logic) + M5 CCI
-    const m15FreshBuyCross  = m15TdiReady && findM15FreshCross(m15Tdi.rsi, m15Tdi.middle, m15i, "BUY",  PHASE_A_M15_CROSS_LOOKBACK);
-    const m15FreshSellCross = m15TdiReady && findM15FreshCross(m15Tdi.rsi, m15Tdi.middle, m15i, "SELL", PHASE_A_M15_CROSS_LOOKBACK);
-
-    const h1AlignedBuy = h1TdiDir === "BUY" && h1Sma8Dir === "BUY" && dailyBiasDir === "BUY";
-    const h1AlignedSell = h1TdiDir === "SELL" && h1Sma8Dir === "SELL" && dailyBiasDir === "SELL";
-
-    if (!signalTriggered) {
-      // 1. Arm Wait State ONLY on a Fresh M15 Cross (prevents late entries)
-      if (m15FreshBuyCross) state.phaseA_WaitDir = "BUY";
-      else if (m15FreshSellCross) state.phaseA_WaitDir = "SELL";
-
-      // 2. Evaluate Wait State
-      if (state.phaseA_WaitDir === "BUY") {
-        if (m15TdiDir !== "BUY") {
-          state.phaseA_WaitDir = null; // M15 misaligned, reset wait state
-        } else if (h1AlignedBuy && m5CciBuyCross) {
-          const tp = fib.fib50;
-          if (tp > currentPrice) {
-            signalTriggered = true; direction = "BUY"; entryType = "PHASE_A"; fibTpPrice = tp;
-            state.phaseA_WaitDir = null;
-            dbg(`[PHASE_A BUY] Fresh M15 Cross + H1 Aligned + M5 CCI. Executing.`);
-          }
-        }
-      } else if (state.phaseA_WaitDir === "SELL") {
-        if (m15TdiDir !== "SELL") {
-          state.phaseA_WaitDir = null; // M15 misaligned, reset wait state
-        } else if (h1AlignedSell && m5CciSellCross) {
-          const tp = fib.fib50;
-          if (tp < currentPrice) {
-            signalTriggered = true; direction = "SELL"; entryType = "PHASE_A"; fibTpPrice = tp;
-            state.phaseA_WaitDir = null;
-            dbg(`[PHASE_A SELL] Fresh M15 Cross + H1 Aligned + M5 CCI. Executing.`);
-          }
-        }
-      }
-    }
-
-    // FADE A: Counter-trend at Fib 79% level
-    if (!signalTriggered && h1TdiDir && m15TdiReady && m15TdiUpper !== null && m15TdiLower !== null) {
-      // Fade direction is always opposite to daily bias
-      const fadeDir = dailyBiasDir === "BUY" ? "SELL" : "BUY";
-
-      const priceTouched79 = fadeDir === "SELL"
-        ? (currentCandleHigh >= fib.fib79 || Math.abs(currentPrice - fib.fib79) / fib.fib79 <= FIB79_TOUCH_TOLERANCE)
-        : (currentCandleLow  <= fib.fib79 || Math.abs(currentPrice - fib.fib79) / fib.fib79 <= FIB79_TOUCH_TOLERANCE);
-
-      if (state.fadeAGate1Met && state.fadeAGate1Dir !== fadeDir) {
-        state.fadeAGate1Met = false;
-        state.fadeAGate1Dir = null;
-        state.fadeAWasAboveSig = null;
-        state.fadeAGate2CrossEpoch = null;
-        dbg("[FADE A] Gates invalidated — daily bias direction changed");
-      }
-
-      // Gate 1: price at 79% + M15 TDI RSI at outer band
-      if (!state.fadeAGate1Met && priceTouched79) {
-        if (fadeDir === "SELL" && m15TdiRsi >= m15TdiUpper) {
-          state.fadeAGate1Met = true;
-          state.fadeAGate1Dir = "SELL";
-          state.fadeAWasAboveSig = true;
-          state.fadeAGate2CrossEpoch = null;
-          dbg(`[FADE A Gate 1 SELL] RSI ${m15TdiRsi.toFixed(2)} >= upper ${m15TdiUpper.toFixed(2)} at fib79 ${fib.fib79.toFixed(4)}`);
-        } else if (fadeDir === "BUY" && m15TdiRsi <= m15TdiLower) {
-          state.fadeAGate1Met = true;
-          state.fadeAGate1Dir = "BUY";
-          state.fadeAWasAboveSig = false;
-          state.fadeAGate2CrossEpoch = null;
-          dbg(`[FADE A Gate 1 BUY] RSI ${m15TdiRsi.toFixed(2)} <= lower ${m15TdiLower.toFixed(2)} at fib79 ${fib.fib79.toFixed(4)}`);
-        }
-      }
-
-      // Gate 2: after Gate 1, detect RSI crossing the signal line
-      if (state.fadeAGate1Met && state.fadeAGate1Dir === fadeDir) {
-        const nowAboveSig = m15TdiRsi > m15TdiSignal;
-
-        if (fadeDir === "BUY" && nowAboveSig && state.fadeAWasAboveSig === false && !state.fadeAGate2CrossEpoch) {
-          state.fadeAGate2CrossEpoch = currentCandleEpoch;
-          dbg(`[FADE A Gate 2 BUY] RSI crossed above signal at ${currentCandleEpoch}`);
-        } else if (fadeDir === "SELL" && !nowAboveSig && state.fadeAWasAboveSig === true && !state.fadeAGate2CrossEpoch) {
-          state.fadeAGate2CrossEpoch = currentCandleEpoch;
-          dbg(`[FADE A Gate 2 SELL] RSI crossed below signal at ${currentCandleEpoch}`);
-        }
-
-        if (state.fadeAGate2CrossEpoch && (currentCandleEpoch - state.fadeAGate2CrossEpoch > FADE_A_GATE2_WINDOW)) {
-          state.fadeAGate2CrossEpoch = null;
-          dbg("[FADE A Gate 2] Window expired — resetting");
-        }
-
-        // Entry: Gate 2 active + M5 CCI cross
-        if (state.fadeAGate2CrossEpoch) {
-          const tp = fib.dailyBiasPrice;
-          if (fadeDir === "BUY" && m5CciBuyCross && tp > currentPrice) {
-            signalTriggered = true; direction = "BUY"; entryType = "FADE_A"; fibTpPrice = tp;
-            state.fadeAGate1Met = false; state.fadeAGate1Dir = null;
-            state.fadeAWasAboveSig = null; state.fadeAGate2CrossEpoch = null;
-            dbg(`[FADE A BUY FIRED] Entry ${currentPrice.toFixed(4)}, TP (Daily Bias) ${tp.toFixed(4)}`);
-          } else if (fadeDir === "SELL" && m5CciSellCross && tp < currentPrice) {
-            signalTriggered = true; direction = "SELL"; entryType = "FADE_A"; fibTpPrice = tp;
-            state.fadeAGate1Met = false; state.fadeAGate1Dir = null;
-            state.fadeAWasAboveSig = null; state.fadeAGate2CrossEpoch = null;
-            dbg(`[FADE A SELL FIRED] Entry ${currentPrice.toFixed(4)}, TP (Daily Bias) ${tp.toFixed(4)}`);
-          }
-        }
-
-        if (!signalTriggered) state.fadeAWasAboveSig = nowAboveSig;
-      }
-    }
-  }
-
-  // ── Trade Execution ──
+  // ── EXECUTE & DYNAMIC TP OVERRIDE ──
   if (signalTriggered) {
-    try {
-      const preCheckContracts = (await getOpenPortfolio()).filter(c => getContractSymbol(c) === TRADING_SYMBOL);
-      if (preCheckContracts.length > 0) {
-        state.lastProcessedEpoch = currentCandleEpoch;
-        fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
-        return;
-      }
-    } catch (preErr) {
-      state.lastProcessedEpoch = currentCandleEpoch;
-      fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
-      return;
-    }
-
     const entry = currentPrice;
 
-    // ── DYNAMIC TP CALCULATOR ($5 Minimum vs Fib) ──
-    const TARGET_MIN_PROFIT = 5.00;
     const requiredRawPnl = TARGET_MIN_PROFIT + COMMISSION_USD;
     const priceMoveFraction = requiredRawPnl / (STAKE_USD * MULTIPLIER);
     const minTpPrice = direction === "BUY" 
@@ -1108,7 +926,7 @@ async function runScanMode() {
       dbg(`[TP OVERRIDE] Extended SELL TP to ${fibTpPrice.toFixed(4)} for $5 target.`);
     }
 
-    let initialFractal = findRecentFractal(m15Candles, m15i, direction);
+    let initialFractal = findRecentFractal(candles, si, direction);
     const hardStopPrice = deriveHardStopPrice(entry, direction);
 
     let sl;
@@ -1118,36 +936,21 @@ async function runScanMode() {
       sl = (initialFractal && initialFractal < hardStopPrice && initialFractal > entry) ? initialFractal : (initialFractal = null, hardStopPrice);
     }
 
-    const fractalTimeframe = initialFractal ? "M15" : null;
+    const fractalTimeframe = initialFractal ? "M5" : null;
     const timeFormatted = new Date(currentCandleEpoch * 1000).toISOString().replace("T", " ").substring(0, 19);
 
-    // Telegram entry message
-    const h1TdiLabel = h1TdiReady
-      ? `RSI ${h1TdiRsi.toFixed(1)} | Mid ${h1TdiMiddle.toFixed(1)} → *${h1TdiDir}*`
-      : "N/A";
-    const h1Sma8Label = h1Sma8Val
-      ? `SMA8 ${h1Sma8Val.toFixed(4)} | Close ${h1LastClose.toFixed(4)} → *${h1Sma8Dir}*`
-      : "N/A";
-    const m15CrossLabel = entryType.includes("PHASE_A")
-      ? (direction === "BUY" ? " ✅ Fresh Cross ↑" : " ✅ Fresh Cross ↓")
-      : "";
-    const m15TdiLabel = m15TdiReady
-      ? `RSI ${m15TdiRsi.toFixed(1)} | Signal ${m15TdiSignal.toFixed(1)} | Mid ${m15TdiMiddle.toFixed(1)} → *${m15TdiDir}*${m15CrossLabel}`
-      : "N/A";
-    const cciLabel = m5Cci[si] !== null ? m5Cci[si].toFixed(1) : "N/A";
-    const fibLabel = `0%: ${fib.fib0.toFixed(4)} | 50%: ${fib.fib50.toFixed(4)} | 61.8%: ${fib.fib618.toFixed(4)} | 79%: ${fib.fib79.toFixed(4)} | Bias: ${fib.dailyBiasPrice.toFixed(4)}`;
+    const m30Str = `M30 Stoch (info): %K ${m30K.toFixed(1)} | %D ${m30D.toFixed(1)}`;
+    const m5Str  = `M5 Stoch: %K ${sK.toFixed(1)} | %D ${sD.toFixed(1)}`;
+    const cciStr = `M5 CCI(100): ${cVal.toFixed(1)}`;
+    const envStr = `M5 Env: Close ${currentPrice.toFixed(4)} | Upper ${eUp.toFixed(4)} | Lower ${eLo.toFixed(4)}`;
+    
+    let fibLabel = "";
+    if (fib.bullish) fibLabel = `0%: ${fib.fib0.toFixed(4)} | 50%: ${fib.fib50.toFixed(4)} | 79%: ${fib.fib79.toFixed(4)} | 100%: ${fib.fib100.toFixed(4)} | Bullish`;
+    else fibLabel = `0%: ${fib.fib0.toFixed(4)} | 50%: ${fib.fib50.toFixed(4)} | 79%: ${fib.fib79.toFixed(4)} | 100%: ${fib.fib100.toFixed(4)} | Bearish`;
 
-    const baseType = (entryType || "").replace(" ($5 Ext)", "");
-    const extSuffix = (entryType || "").includes(" ($5 Ext)") ? " ($5 Minimum Extended)" : "";
-    const setupDescriptions = {
-      PHASE_A: "H1 TDI + H1 SMA(8) + M15 TDI + M5 CCI",
-      PHASE_B: "Phase B Re-entry — M5 CCI + M15 Signal (after Phase A WIN)",
-      FADE_A:  "Fade A Counter-trade — Fib 79% + M15 TDI Gate + M5 CCI",
-      FADE_B:  "Fade B Re-entry — M5 CCI + M15 Signal (after Fade A WIN)"
-    };
-    const setupLabel = escapeMarkdown((setupDescriptions[baseType] || baseType) + extSuffix);
+    const setupLabel = escapeMarkdown(entryType);
 
-    const message = `🚨 *${SYMBOL_NAME.toUpperCase()} SIGNAL* 🚨\n\nDirection: *${direction}*\nRepo: ${REPO_LABEL}\nSetup: ${setupLabel}\n\n📍 Entry: ${entry.toFixed(4)}\n🛑 Initial SL: ${sl.toFixed(4)} (${initialFractal ? "M15 Fractal" : "Hard Stop"})\n🎯 Fib TP: *${fibTpPrice.toFixed(4)}* (${entryType})\n\n💰 Stake: $${STAKE_USD} | Server TP backstop: $${SERVER_TP_USD}\n\n📐 *Confluence*\n• H1 TDI: ${h1TdiLabel}\n• H1 SMA(8): ${h1Sma8Label}\n• M15 TDI: ${m15TdiLabel}\n• M5 CCI(14): ${cciLabel}\n• Fib Levels: ${fibLabel}\n━━━━━━━━━━━━━━━━━━━━\n⏰ Time (UTC): ${timeFormatted}\n\n💡 To close manually: send \`/close win\` or \`/close loss\` in this chat`;
+    const message = `🚨 *${SYMBOL_NAME.toUpperCase()} SIGNAL* 🚨\n\nDirection: *${direction}*\nRepo: ${REPO_LABEL}\nSetup: ${setupLabel}\n\n📍 Entry: ${entry.toFixed(4)}\n🛑 Initial SL: ${sl.toFixed(4)} (${initialFractal ? "M5 Fractal" : "Hard Stop"})\n🎯 Fib TP: *${fibTpPrice.toFixed(4)}*\n\n💰 Stake: $${STAKE_USD} | Server TP backstop: $${SERVER_TP_USD}\n\n📐 *Confluence*\n• ${m30Str}\n• ${m5Str}\n• ${cciStr}\n• ${envStr}\n• Fib Levels: ${fibLabel}\n━━━━━━━━━━━━━━━━━━━━\n⏰ Time (UTC): ${timeFormatted}\n\n💡 To close manually: send \`/close win\` or \`/close loss\` in this chat`;
 
     state.lastProcessedEpoch = currentCandleEpoch;
     fs.writeFileSync("state.json", JSON.stringify(state, null, 2));
