@@ -475,14 +475,15 @@ function findRecentFractal(candles, currentIndex, direction) {
   return null;
 }
 
+// Derive next phase: correctly uses .startsWith to support ($5 Ext) labels
 function deriveNextPhase(trades) {
   const closedTrades = trades.filter(t => t.result)
     .sort((a, b) => new Date(b.closeTime || 0) - new Date(a.closeTime || 0));
   const lastClosed = closedTrades[0];
   if (!lastClosed) return null;
   if (lastClosed.result === "WIN") {
-    if (lastClosed.entryType === "PHASE_A") return "PHASE_B";
-    if (lastClosed.entryType === "FADE_A")  return "FADE_B";
+    if (lastClosed.entryType && lastClosed.entryType.startsWith("PHASE_A")) return "PHASE_B";
+    if (lastClosed.entryType && lastClosed.entryType.startsWith("FADE_A"))  return "FADE_B";
   }
   return null;
 }
@@ -884,10 +885,10 @@ async function runScanMode() {
   const nextPhase = deriveNextPhase(trades);
   state.nextPhase = nextPhase;
 
-  // Reset Fade A gates when cycle completes
+  // Reset Fade A gates when cycle completes (correctly checks startsWith to catch $5 Ext trades)
   if (nextPhase === null && (state.fadeAGate1Met || state.fadeAGate2CrossEpoch)) {
     const lastClosed = trades.filter(t => t.result).sort((a, b) => new Date(b.closeTime || 0) - new Date(a.closeTime || 0))[0];
-    if (lastClosed?.entryType === "PHASE_B" || lastClosed?.entryType === "FADE_B") {
+    if (lastClosed?.entryType?.startsWith("PHASE_B") || lastClosed?.entryType?.startsWith("FADE_B")) {
       state.fadeAGate1Met = false;
       state.fadeAGate1Dir = null;
       state.fadeAWasAboveSig = null;
@@ -912,7 +913,7 @@ async function runScanMode() {
   // ─────────────────────────────────────────
   if (nextPhase === "PHASE_B") {
     const lastPhaseA = trades
-      .filter(t => t.result && t.entryType === "PHASE_A")
+      .filter(t => t.result && t.entryType?.startsWith("PHASE_A"))
       .sort((a, b) => new Date(b.closeTime || 0) - new Date(a.closeTime || 0))[0];
     const phaseBDir = lastPhaseA?.direction;
     
@@ -936,7 +937,7 @@ async function runScanMode() {
   // ─────────────────────────────────────────
   else if (nextPhase === "FADE_B") {
     const lastFadeA = trades
-      .filter(t => t.result && t.entryType === "FADE_A")
+      .filter(t => t.result && t.entryType?.startsWith("FADE_A"))
       .sort((a, b) => new Date(b.closeTime || 0) - new Date(a.closeTime || 0))[0];
     const fadeBDir = lastFadeA?.direction;
     
@@ -1088,6 +1089,25 @@ async function runScanMode() {
     }
 
     const entry = currentPrice;
+
+    // ── DYNAMIC TP CALCULATOR ($5 Minimum vs Fib) ──
+    const TARGET_MIN_PROFIT = 5.00;
+    const requiredRawPnl = TARGET_MIN_PROFIT + COMMISSION_USD;
+    const priceMoveFraction = requiredRawPnl / (STAKE_USD * MULTIPLIER);
+    const minTpPrice = direction === "BUY" 
+      ? entry * (1 + priceMoveFraction) 
+      : entry * (1 - priceMoveFraction);
+
+    if (direction === "BUY" && minTpPrice > fibTpPrice) {
+      fibTpPrice = minTpPrice;
+      entryType = entryType + " ($5 Ext)";
+      dbg(`[TP OVERRIDE] Extended BUY TP to ${fibTpPrice.toFixed(4)} for $5 target.`);
+    } else if (direction === "SELL" && minTpPrice < fibTpPrice) {
+      fibTpPrice = minTpPrice;
+      entryType = entryType + " ($5 Ext)";
+      dbg(`[TP OVERRIDE] Extended SELL TP to ${fibTpPrice.toFixed(4)} for $5 target.`);
+    }
+
     let initialFractal = findRecentFractal(m15Candles, m15i, direction);
     const hardStopPrice = deriveHardStopPrice(entry, direction);
 
@@ -1108,7 +1128,7 @@ async function runScanMode() {
     const h1Sma8Label = h1Sma8Val
       ? `SMA8 ${h1Sma8Val.toFixed(4)} | Close ${h1LastClose.toFixed(4)} → *${h1Sma8Dir}*`
       : "N/A";
-    const m15CrossLabel = entryType === "PHASE_A"
+    const m15CrossLabel = entryType.includes("PHASE_A")
       ? (direction === "BUY" ? " ✅ Fresh Cross ↑" : " ✅ Fresh Cross ↓")
       : "";
     const m15TdiLabel = m15TdiReady
@@ -1117,13 +1137,15 @@ async function runScanMode() {
     const cciLabel = m5Cci[si] !== null ? m5Cci[si].toFixed(1) : "N/A";
     const fibLabel = `0%: ${fib.fib0.toFixed(4)} | 50%: ${fib.fib50.toFixed(4)} | 61.8%: ${fib.fib618.toFixed(4)} | 79%: ${fib.fib79.toFixed(4)} | Bias: ${fib.dailyBiasPrice.toFixed(4)}`;
 
+    const baseType = (entryType || "").replace(" ($5 Ext)", "");
+    const extSuffix = (entryType || "").includes(" ($5 Ext)") ? " ($5 Minimum Extended)" : "";
     const setupDescriptions = {
       PHASE_A: "H1 TDI + H1 SMA(8) + M15 TDI + M5 CCI",
       PHASE_B: "Phase B Re-entry — M5 CCI + M15 Signal (after Phase A WIN)",
       FADE_A:  "Fade A Counter-trade — Fib 79% + M15 TDI Gate + M5 CCI",
       FADE_B:  "Fade B Re-entry — M5 CCI + M15 Signal (after Fade A WIN)"
     };
-    const setupLabel = escapeMarkdown(setupDescriptions[entryType] || entryType);
+    const setupLabel = escapeMarkdown((setupDescriptions[baseType] || baseType) + extSuffix);
 
     const message = `🚨 *${SYMBOL_NAME.toUpperCase()} SIGNAL* 🚨\n\nDirection: *${direction}*\nRepo: ${REPO_LABEL}\nSetup: ${setupLabel}\n\n📍 Entry: ${entry.toFixed(4)}\n🛑 Initial SL: ${sl.toFixed(4)} (${initialFractal ? "M15 Fractal" : "Hard Stop"})\n🎯 Fib TP: *${fibTpPrice.toFixed(4)}* (${entryType})\n\n💰 Stake: $${STAKE_USD} | Server TP backstop: $${SERVER_TP_USD}\n\n📐 *Confluence*\n• H1 TDI: ${h1TdiLabel}\n• H1 SMA(8): ${h1Sma8Label}\n• M15 TDI: ${m15TdiLabel}\n• M5 CCI(14): ${cciLabel}\n• Fib Levels: ${fibLabel}\n━━━━━━━━━━━━━━━━━━━━\n⏰ Time (UTC): ${timeFormatted}\n\n💡 To close manually: send \`/close win\` or \`/close loss\` in this chat`;
 
