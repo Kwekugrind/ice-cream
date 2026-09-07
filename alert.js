@@ -23,11 +23,14 @@ const STAKE_USD = 5;
 const SOFTWARE_SL_USD = -3.60;
 const SERVER_TP_USD = 10.00;
 const CATASTROPHIC_PNL_FLOOR = -5.50;
-const MARKET_DATA_APP_ID = "1089";
 const TARGET_MIN_PROFIT = 5.00;
 
 const FIB_TOLERANCE = 0.005; 
 const STOCH_MIDLINE_FALLBACK_SYMBOLS = ["R_50", "R_10"];
+
+// Pulling custom credentials from Section 12 of your Handbook
+const MARKET_DATA_APP_ID = process.env.DERIV_APP_ID || "1089";
+const DERIV_API_TOKEN = process.env.DERIV_API_TOKEN;
 
 const GATEWAY_URL = process.env.GATEWAY_URL || "http://127.0.0.1:3000";
 const GATEWAY_SECRET = process.env.GATEWAY_SECRET;
@@ -627,12 +630,17 @@ let firstTickReceived = false;
 
 function startLiveStream() {
   console.log(`[${REPO_LABEL}] Starting Live 24/7 Candle Stream via Deriv WebSocket...`);
-  liveWs = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
+  const APP_ID = process.env.DERIV_APP_ID || MARKET_DATA_APP_ID;
+  liveWs = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${APP_ID}`);
   let pingInterval;
 
   liveWs.on("open", () => {
-    // Patched to use 1-minute candle stream to completely bypass Deriv API symbol restrictions
-    liveWs.send(JSON.stringify({ ticks_history: SYMBOL, end: "latest", count: 1, granularity: 60, style: "candles", subscribe: 1 }));
+    // Authenticate the socket to bypass Deriv's Synthetic Indices streaming block
+    if (process.env.DERIV_API_TOKEN) {
+      liveWs.send(JSON.stringify({ authorize: process.env.DERIV_API_TOKEN }));
+    } else {
+      liveWs.send(JSON.stringify({ ticks_history: SYMBOL, end: "latest", count: 1, granularity: 60, style: "candles", subscribe: 1 }));
+    }
     pingInterval = setInterval(() => { if (liveWs.readyState === WebSocket.OPEN) liveWs.send(JSON.stringify({ ping: 1 })); }, 25000);
   });
 
@@ -640,7 +648,12 @@ function startLiveStream() {
     const data = JSON.parse(d);
     if (data.error) { console.error("WS Error:", data.error.message); return; }
     
-    // Listen for real-time candle updates instead of raw ticks
+    // Once authorized, we can freely subscribe to the heavy Synthetic Indices
+    if (data.msg_type === "authorize") {
+      liveWs.send(JSON.stringify({ ticks_history: SYMBOL, end: "latest", count: 1, granularity: 60, style: "candles", subscribe: 1 }));
+      return;
+    }
+
     if (data.ohlc) {
       if (!firstTickReceived) {
         console.log(`[${REPO_LABEL}] ✅ Live stream connected and receiving price updates successfully.`);
