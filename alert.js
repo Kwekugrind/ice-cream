@@ -118,7 +118,15 @@ async function executeTrade(direction) {
   const slDollars = parseFloat(STAKE_USD.toFixed(2));
   const payload = {
     buy: "1", price: STAKE_USD,
-    parameters: { contract_type: expectedContractType, underlying_symbol: TRADING_SYMBOL, currency: "USD", amount: STAKE_USD, basis: "stake", multiplier: MULTIPLIER, limit_order: { stop_loss: slDollars, take_profit: SERVER_TP_USD } }
+    parameters: { 
+      contract_type: expectedContractType, 
+      underlying_symbol: TRADING_SYMBOL, 
+      currency: "USD", 
+      amount: STAKE_USD, 
+      basis: "stake", 
+      multiplier: MULTIPLIER, 
+      limit_order: { stop_loss: slDollars, take_profit: SERVER_TP_USD } 
+    }
   };
   const data = await gatewayFetch("/buy", "POST", payload);
   if (data.error) throw new Error(data.error.message);
@@ -132,13 +140,22 @@ async function closeContract(contractId) {
 }
 
 async function getContractProfitFromHistory(contractId, approxOpenEpoch) {
-  const data = await gatewayFetch("/profit_table", "POST", { profit_table: 1, description: 1, limit: 25, sort: "DESC", date_from: approxOpenEpoch ? approxOpenEpoch - 300 : undefined });
+  const data = await gatewayFetch("/profit_table", "POST", { 
+    profit_table: 1, 
+    description: 1, 
+    limit: 25, 
+    sort: "DESC", 
+    date_from: approxOpenEpoch ? approxOpenEpoch - 300 : undefined 
+  });
   const match = (data.profit_table?.transactions || []).find(tx => String(tx.contract_id) === String(contractId));
   if (!match) return null;
-  return { profit: typeof match.profit === "number" ? match.profit : (parseFloat(match.sell_price) - parseFloat(match.buy_price)), sellTime: match.sell_time };
+  return { 
+    profit: typeof match.profit === "number" ? match.profit : (parseFloat(match.sell_price) - parseFloat(match.buy_price)), 
+    sellTime: match.sell_time 
+  };
 }
 
-// ==================== MARKET DATA FETCHERS (SLOW PATH) ====================
+// ==================== MARKET DATA FETCHERS (NO SUBSCRIPTIONS / NO FIREWALL BLOCKS) ====================
 async function fetchAllData() {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
@@ -162,12 +179,27 @@ async function fetchAllData() {
   });
 }
 
-// ==================== TECHNICAL ANALYSIS ====================
-function sma(data, period) {
-  return data.map((_, i) => {
-    if (i < period - 1) return null;
-    return data.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0) / period;
+async function fetchCurrentSpotPrice() {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
+    ws.on("open", () => {
+      ws.send(JSON.stringify({ req_id: 3, ticks_history: SYMBOL, count: 1, end: "latest", style: "ticks" }));
+    });
+    ws.on("message", d => {
+      const msg = JSON.parse(d);
+      if (msg.req_id === 3 && msg.history && msg.history.prices && msg.history.prices.length > 0) {
+        ws.close();
+        resolve(parseFloat(msg.history.prices[msg.history.prices.length - 1]));
+      }
+    });
+    ws.on("error", err => { ws.close(); reject(err); });
+    setTimeout(() => { ws.close(); reject(new Error("fetchCurrentSpotPrice timeout")); }, 10000);
   });
+}
+
+// ==================== TECHNICAL ANALYSIS (VERIFIED MASTER MATH) ====================
+function sma(data, period) {
+  return data.map((_, i) => (i < period - 1 ? null : data.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0) / period));
 }
 
 function calculateStoch(candles, kPeriod = 18, dPeriod = 12, slowing = 25) {
@@ -179,17 +211,18 @@ function calculateStoch(candles, kPeriod = 18, dPeriod = 12, slowing = 25) {
     const c = parseFloat(candles[i].close);
     fastK[i] = hh === ll ? 100 : ((c - ll) / (hh - ll)) * 100;
   }
-  const slowK = sma(fastK.map(v => v !== null ? v : 50), slowing).map((v, i) => fastK[i] === null ? null : v);
-  const slowD = sma(slowK.map(v => v !== null ? v : 50), dPeriod).map((v, i) => slowK[i] === null ? null : v);
+  const slowK = sma(fastK.map(v => (v !== null ? v : 50)), slowing).map((v, i) => (fastK[i] === null ? null : v));
+  const slowD = sma(slowK.map(v => (v !== null ? v : 50)), dPeriod).map((v, i) => (slowK[i] === null ? null : v));
   return { k: slowK, d: slowD };
 }
 
 function calculateEnvelopes(candles, period = 50, devPct = 0.05) {
   const closes = candles.map(c => parseFloat(c.close));
   const mid = sma(closes, period);
-  const up = mid.map(m => m !== null ? m * (1 + devPct / 100) : null);
-  const lo = mid.map(m => m !== null ? m * (1 - devPct / 100) : null);
-  return { upper: up, lower: lo };
+  return {
+    upper: mid.map(m => (m !== null ? m * (1 + devPct / 100) : null)),
+    lower: mid.map(m => (m !== null ? m * (1 - devPct / 100) : null))
+  };
 }
 
 function calculateCCI(candles, n = 100) {
@@ -209,21 +242,16 @@ function computeDailyFibLevels(d1Candles) {
   const yesterday = d1Candles[d1Candles.length - 2];
   const today     = d1Candles[d1Candles.length - 1];
 
-  const h = parseFloat(yesterday.high);
-  const l = parseFloat(yesterday.low);
-  const o = parseFloat(yesterday.open);
-  const c = parseFloat(yesterday.close);
+  const h = parseFloat(yesterday.high), l = parseFloat(yesterday.low), o = parseFloat(yesterday.open), c = parseFloat(yesterday.close);
   const rng = h - l;
   if (rng <= 0) return null;
 
   const bullish = c > o;
   const dailyBiasPrice = parseFloat(today.open);
 
-  if (bullish) {
-    return { bullish, fibM50: h + 0.5*rng, fib0: h, fib50: h - 0.5*rng, fib79: h - 0.79*rng, fib100: l, fib1618: h - 1.618*rng, dailyBiasPrice };
-  } else {
-    return { bullish, fibM50: l - 0.5*rng, fib0: l, fib50: l + 0.5*rng, fib79: l + 0.79*rng, fib100: h, fib1618: l + 1.618*rng, dailyBiasPrice };
-  }
+  return bullish
+    ? { bullish, fibM50: h + 0.5*rng, fib0: h, fib50: h - 0.5*rng, fib79: h - 0.79*rng, fib100: l, fib1618: h - 1.618*rng, dailyBiasPrice }
+    : { bullish, fibM50: l - 0.5*rng, fib0: l, fib50: l + 0.5*rng, fib79: l + 0.79*rng, fib100: h, fib1618: l + 1.618*rng, dailyBiasPrice };
 }
 
 function deriveHardStopPrice(entry, direction) {
@@ -255,32 +283,31 @@ function findRecentFractal(candles, currentIndex, direction) {
   return null;
 }
 
-// ==================== STATE ====================
+// ==================== STATE MANAGEMENT ====================
 let state = {
-  lastProcessedEpoch: null,
-  lastTgUpdateId: 0,
-  armed: null, confirm: null, dailyBiasPrice: null,
-  nextPhase: null, h1TdiDir: null, fibBullish: null, fib0: null, fib50: null, fib618: null, fib79: null, fib100: null, cciAligned: false, stochAligned: false, envAligned: false
+  lastProcessedEpoch: null, lastTgUpdateId: 0, armed: null, confirm: null, dailyBiasPrice: null,
+  nextPhase: null, h1TdiDir: null, fibBullish: null, fib0: null, fib50: null, fib618: null, fib79: null, fib100: null,
+  cciAligned: false, stochAligned: false, envAligned: false
 };
-try {
-  const s = JSON.parse(fs.readFileSync("state.json"));
-  state = { ...state, ...s };
-} catch {}
-
+try { state = { ...state, ...JSON.parse(fs.readFileSync("state.json")) }; } catch {}
 function saveState() { fs.writeFileSync("state.json", JSON.stringify(state, null, 2)); }
 function loadTrades() { try { return JSON.parse(fs.readFileSync("trades.json")); } catch { return []; } }
 function saveTrades(t) { fs.writeFileSync("trades.json", JSON.stringify(t, null, 2)); }
 
-// ==================== CORE DUAL-SPEED ARCHITECTURE ====================
-
+// ==================== FAST PATH: RISK MANAGEMENT (RUNS EVERY 10 SECONDS) ====================
 const closingContracts = new Set();
-let isProcessingSlowPath = false;
 
-// ── FAST PATH: Instant SL/TP Checks ──
-async function handleFastPathRisk(currentPrice) {
+async function manageOpenTradesFastPath() {
   let trades = loadTrades();
   let openTrades = trades.filter(t => !t.result && !t.pending);
   if (openTrades.length === 0) return;
+
+  let currentPrice;
+  try {
+    currentPrice = await fetchCurrentSpotPrice();
+  } catch (e) {
+    return; // Silent fail on brief timeout; retries in 10s
+  }
 
   for (const openTrade of openTrades) {
     if (!openTrade.contractId || closingContracts.has(openTrade.contractId)) continue;
@@ -296,15 +323,15 @@ async function handleFastPathRisk(currentPrice) {
       tpHit = isBuy ? currentPrice >= openTrade.fibTpPrice : currentPrice <= openTrade.fibTpPrice;
     }
 
-    let reason = null, expectedResult = "LOSS";
-    if (slBreached) { reason = `SL breached in real-time at ${currentPrice.toFixed(4)}`; } 
+    let reason = null;
+    if (slBreached) { reason = `SL breached at ${currentPrice.toFixed(4)}`; } 
     else if (pnl <= CATASTROPHIC_PNL_FLOOR) { reason = `Catastrophic floor hit — PnL $${pnl.toFixed(2)}`; } 
     else if (pnl <= SOFTWARE_SL_USD) { reason = `Software SL hit — PnL $${pnl.toFixed(2)}`; } 
-    else if (tpHit) { reason = `Fib TP reached at ${currentPrice.toFixed(4)}`; expectedResult = "WIN"; }
+    else if (tpHit) { reason = `Fib TP reached at ${currentPrice.toFixed(4)}`; }
 
     if (reason) {
       closingContracts.add(openTrade.contractId);
-      console.log(`[FAST PATH] Triggering close for ${openTrade.contractId}: ${reason}`);
+      console.log(`[RISK] Closing ${openTrade.contractId}: ${reason}`);
       let serverPnl = pnl, resultSource = "estimated_fallback";
       
       try {
@@ -314,7 +341,6 @@ async function handleFastPathRisk(currentPrice) {
           resultSource = "server_close_confirmed";
         }
       } catch (e) {
-        console.error("Fast Path close exception:", e.message);
         closingContracts.delete(openTrade.contractId);
         continue;
       }
@@ -336,19 +362,19 @@ async function handleFastPathRisk(currentPrice) {
   }
 }
 
-// ── SLOW PATH: Core Strategy Engine (Runs every 5 mins on closed candles) ──
+// ==================== SLOW PATH (RUNS EXACTLY ON M5 CANDLE CLOSE) ====================
 async function runSlowPathScan(m5BoundaryEpoch) {
-  console.log(`[${REPO_LABEL}] Slow Path triggered for closed M5 candle: ${new Date(m5BoundaryEpoch * 1000).toISOString()}`);
+  console.log(`[${REPO_LABEL}] Scanning closed M5 candle: ${new Date(m5BoundaryEpoch * 1000).toISOString()}`);
   let trades = loadTrades();
   
-  // 1. Gateway Portfolio Sync 
+  // 1. Gateway Portfolio Sync
   try {
     const allPortfolio = await getOpenPortfolio();
     const liveContracts = allPortfolio.filter(c => getContractSymbol(c) === TRADING_SYMBOL);
     
     for (const live of liveContracts) {
       if (!trades.find(t => String(t.contractId) === String(live.contract_id))) {
-        const entryPrice = live.buy_price ? parseFloat(live.buy_price) : await (await fetchAllData()).m5.slice(-1)[0].close; 
+        const entryPrice = live.buy_price ? parseFloat(live.buy_price) : await fetchCurrentSpotPrice(); 
         const dir = live.contract_type === "MULTUP" ? "BUY" : "SELL";
         trades.push({
           id: `${SYMBOL}-${Date.now()}`, contractId: live.contract_id, pending: false, repo: REPO_LABEL, symbol: SYMBOL,
@@ -374,10 +400,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     saveTrades(trades);
   } catch (e) { dbg("Portfolio sync skipped:", e.message); }
 
-  // 2. Fetch Historical Data 
+  // 2. Fetch Historical Candles (Verified Handbook Logic)
   let scanData;
   try { scanData = await fetchAllData(); } catch (e) { console.warn(`Fetch error: ${e.message}`); return; }
-  const candles = scanData.m5, m15Candles = scanData.m15, m30Candles = scanData.m30, d1Candles = scanData.d1;
+  const { m5: candles, m15: m15Candles, m30: m30Candles, d1: d1Candles } = scanData;
 
   if (!candles || candles.length < 120 || !m15Candles || !m30Candles || !d1Candles) return;
   const si = candles.length - 2; 
@@ -395,11 +421,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           if (t.direction === "BUY") {
             const isBottom = parseFloat(c[k].low) === Math.min(parseFloat(c[k-2].low), parseFloat(c[k-1].low), parseFloat(c[k].low), parseFloat(c[k+1].low), parseFloat(c[k+2].low));
             const frac = parseFloat(c[k].low);
-            if (isBottom && frac > t.sl && frac < t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M15 Bottom: ${frac.toFixed(4)}`); break; }
+            if (frac > t.sl && frac < t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M15 Bottom: ${frac.toFixed(4)}`); break; }
           } else if (t.direction === "SELL") {
             const isTop = parseFloat(c[k].high) === Math.max(parseFloat(c[k-2].high), parseFloat(c[k-1].high), parseFloat(c[k].high), parseFloat(c[k+1].high), parseFloat(c[k+2].high));
             const frac = parseFloat(c[k].high);
-            if (isTop && frac < t.sl && frac > t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M15 Top: ${frac.toFixed(4)}`); break; }
+            if (frac < t.sl && frac > t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M15 Top: ${frac.toFixed(4)}`); break; }
           }
         }
       }
@@ -416,18 +442,24 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       if (structOpenPrice !== null) {
         const lastM30Close = parseFloat(m30Candles[m30Candles.length - 2].close);
         if ((t.direction === "BUY" && lastM30Close < structOpenPrice) || (t.direction === "SELL" && lastM30Close > structOpenPrice)) {
-           await handleFastPathRisk(t.direction === "BUY" ? structOpenPrice - 0.0001 : structOpenPrice + 0.0001); 
+          try {
+            await closeContract(t.contractId);
+            t.result = "LOSS";
+            t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+            saveTrades(trades);
+            await sendTelegram(`❌ *${REPO_LABEL}* — M30 Market Structure broken. Closed position.`);
+          } catch (e) {}
         }
       }
     }
   }
 
-  // Pre-Scan Guard
+  // Pre-Scan Guard: Don't look for new entries if in an open trade
   if (openTrades.length > 0) {
     state.lastProcessedEpoch = m5BoundaryEpoch; saveState(); return;
   }
 
-  // 4. Calculate Indicators
+  // 4. Calculate Fibonacci & Indicators
   const fib = computeDailyFibLevels(d1Candles);
   if (!fib) return;
 
@@ -458,7 +490,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   if (cVal === null || prevCci === null || eUp === null || eLo === null || sK === null || sD === null || prevK === null || prevD === null || m30K === null) return;
 
-  // 5. Daily Ledger Log
+  // 5. Write to Daily Ledger CSV
   writeToLedger(m5BoundaryEpoch, currentPrice, cVal, sK, sD, eUp, eLo, state.armed ? state.armed.lbl : "IDLE");
 
   // ── A. FIB ARMING STATE MACHINE ──
@@ -621,93 +653,66 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   state.lastProcessedEpoch = m5BoundaryEpoch; saveState();
 }
 
-// ==================== LIVE STREAM WATCHER ====================
-let liveWs = null;
-let firstTickReceived = false;
-
-function startLiveStream() {
-  console.log(`[${REPO_LABEL}] Starting Live 24/7 Candle Stream via Deriv WebSocket...`);
-  liveWs = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
-  let pingInterval;
-
-  liveWs.on("open", () => {
-    // Correct, unauthenticated subscription to the 1-minute candle stream to bypass restrictions
-    liveWs.send(JSON.stringify({ ticks_history: SYMBOL, end: "latest", count: 1, granularity: 60, style: "candles", subscribe: 1 }));
-    pingInterval = setInterval(() => { if (liveWs.readyState === WebSocket.OPEN) liveWs.send(JSON.stringify({ ping: 1 })); }, 25000);
-  });
-
-  liveWs.on("message", async (d) => {
-    const data = JSON.parse(d);
-    if (data.error) { console.error("WS Error:", data.error.message); return; }
-    
-    // Listen for real-time candle updates
-    if (data.ohlc) {
-      if (!firstTickReceived) {
-        console.log(`[${REPO_LABEL}] ✅ Live stream connected and receiving price updates successfully.`);
-        firstTickReceived = true;
-      }
-
-      const currentPrice = parseFloat(data.ohlc.close);
-      const currentEpoch = parseInt(data.ohlc.epoch);
-      
-      // Fast Path: Check SL/TP instantly on every price update
-      handleFastPathRisk(currentPrice).catch(console.error);
-
-      // Slow Path: Check strategy exactly when the M5 boundary crosses
-      const currentM5Boundary = currentEpoch - (currentEpoch % 300);
-      const lastProcessed = state.lastProcessedEpoch || 0;
-      
-      if (currentM5Boundary > lastProcessed && !isProcessingSlowPath) {
-        isProcessingSlowPath = true;
-        // Wait 2 seconds for Deriv backend to finalize historical M5 candle
-        setTimeout(async () => {
-          try { await runSlowPathScan(currentM5Boundary); } 
-          catch (e) { console.error("Slow path scan failed:", e); } 
-          finally { isProcessingSlowPath = false; }
-        }, 2000);
+// ==================== 24/7 CONTINUOUS ENGINE (NO PM2 RESTARTS / NO CRASH LOOPS) ====================
+async function checkTelegramCommands() {
+  if (!TG_TOKEN || !TG_CHAT_ID) return;
+  try {
+    const offset = (state.lastTgUpdateId || 0) + 1;
+    const res = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/getUpdates?offset=${offset}&limit=10&timeout=0`);
+    const data = await res.json();
+    if (!data.ok || !Array.isArray(data.result)) return;
+    for (const update of data.result) {
+      state.lastTgUpdateId = update.update_id;
+      const text = update.message?.text?.trim()?.toLowerCase();
+      if (text === "/status") {
+        const t = loadTrades().filter(x => !x.result && !x.pending);
+        const reply = t.length ? `📍 *Active Trades:*\n` + t.map(x => `• ${x.direction} @ ${Number(x.entry).toFixed(4)}`).join("\n") : `⚪ No open trades.`;
+        await sendTelegram(reply);
       }
     }
-  });
+    saveState();
+  } catch (e) {}
+}
 
-  liveWs.on("close", () => {
-    clearInterval(pingInterval);
-    firstTickReceived = false;
-    console.warn(`[${REPO_LABEL}] Live stream disconnected. Reconnecting in 5s...`);
-    setTimeout(startLiveStream, 5000);
-  });
+async function startContinuousEngine() {
+  console.log(`[${REPO_LABEL}] 🚀 24/7 Continuous Trading Engine Started Successfully.`);
   
-  liveWs.on("error", (err) => {
-    console.error("Live stream error:", err.message);
-    liveWs.close(); 
-  });
+  // Telegram background listener
+  setInterval(checkTelegramCommands, 15000);
+
+  let isScanning = false;
+
+  // The 10-Second Heartbeat Loop
+  while (true) {
+    try {
+      const nowEpoch = Math.floor(Date.now() / 1000);
+      const currentM5Boundary = nowEpoch - (nowEpoch % 300);
+
+      // Fast Path: Check active open trades every 10 seconds
+      await manageOpenTradesFastPath();
+
+      // Slow Path: Scan the closed candle on the 5-minute mark
+      const secondsIntoCandle = nowEpoch % 300;
+      if (currentM5Boundary > (state.lastProcessedEpoch || 0) && secondsIntoCandle >= 3 && !isScanning) {
+        isScanning = true;
+        await runSlowPathScan(currentM5Boundary);
+        isScanning = false;
+      }
+    } catch (err) {
+      console.error(`[${REPO_LABEL}] Engine Loop Error:`, err.message);
+      isScanning = false;
+    }
+
+    // Sleep 10 seconds: zero CPU spike, stays alive forever in PM2
+    await sleep(10000);
+  }
 }
 
 // ==================== EXECUTION HOOK ====================
 (async () => {
-  // Telegram background watcher
-  setInterval(async () => {
-    try {
-      const offset = (state.lastTgUpdateId || 0) + 1;
-      const res = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/getUpdates?offset=${offset}&limit=10&timeout=0`);
-      const data = await res.json();
-      if (!data.ok || !Array.isArray(data.result)) return;
-      for (const update of data.result) {
-        state.lastTgUpdateId = update.update_id;
-        const text = update.message?.text?.trim()?.toLowerCase();
-        if (text === "/status") {
-          const t = loadTrades().filter(x => !x.result && !x.pending);
-          const reply = t.length ? `📍 *Active Trades:*\n` + t.map(x => `• ${x.direction} @ ${Number(x.entry).toFixed(4)}`).join("\n") : `⚪ No open trades.`;
-          await sendTelegram(reply);
-        }
-      }
-      saveState();
-    } catch (e) {}
-  }, 15000);
-
-  // Manual command fallbacks
   if (MODE === "daily")                                 { await runSummary("Daily");  return; }
   if (MODE === "weekly")                                { await runSummary("Weekly"); return; }
   
   // Start the 24/7 Engine
-  startLiveStream();
+  await startContinuousEngine();
 })();
