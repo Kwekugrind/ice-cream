@@ -632,7 +632,7 @@ function startLiveStream() {
 
   liveWs.on("open", () => {
     // Patched to use 1-minute candle stream to completely bypass Deriv API symbol restrictions
-    liveWs.send(JSON.stringify({ ticks_history: SYMBOL, granularity: 60, style: "candles", subscribe: 1 }));
+    liveWs.send(JSON.stringify({ ticks_history: SYMBOL, end: "latest", count: 1, granularity: 60, style: "candles", subscribe: 1 }));
     pingInterval = setInterval(() => { if (liveWs.readyState === WebSocket.OPEN) liveWs.send(JSON.stringify({ ping: 1 })); }, 25000);
   });
 
