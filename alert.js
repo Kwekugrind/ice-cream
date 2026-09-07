@@ -276,7 +276,7 @@ function saveTrades(t) { fs.writeFileSync("trades.json", JSON.stringify(t, null,
 const closingContracts = new Set();
 let isProcessingSlowPath = false;
 
-// ── FAST PATH: Instant SL/TP Checks (~1 Second) ──
+// ── FAST PATH: Instant SL/TP Checks ──
 async function handleFastPathRisk(currentPrice) {
   let trades = loadTrades();
   let openTrades = trades.filter(t => !t.result && !t.pending);
@@ -427,7 +427,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.lastProcessedEpoch = m5BoundaryEpoch; saveState(); return;
   }
 
-  // 4. Calculate Indicators (ORIGINAL LOGIC)
+  // 4. Calculate Indicators
   const fib = computeDailyFibLevels(d1Candles);
   if (!fib) return;
 
@@ -626,13 +626,13 @@ let liveWs = null;
 let firstTickReceived = false;
 
 function startLiveStream() {
-  console.log(`[${REPO_LABEL}] Starting Live 24/7 Tick Stream via Deriv WebSocket...`);
+  console.log(`[${REPO_LABEL}] Starting Live 24/7 Candle Stream via Deriv WebSocket...`);
   liveWs = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
   let pingInterval;
 
   liveWs.on("open", () => {
-    // Patched to use ticks_history for Synthetic compatibility
-    liveWs.send(JSON.stringify({ ticks_history: SYMBOL, end: "latest", count: 1, style: "ticks", subscribe: 1 }));
+    // Patched to use 1-minute candle stream to completely bypass Deriv API symbol restrictions
+    liveWs.send(JSON.stringify({ ticks_history: SYMBOL, granularity: 60, style: "candles", subscribe: 1 }));
     pingInterval = setInterval(() => { if (liveWs.readyState === WebSocket.OPEN) liveWs.send(JSON.stringify({ ping: 1 })); }, 25000);
   });
 
@@ -640,24 +640,26 @@ function startLiveStream() {
     const data = JSON.parse(d);
     if (data.error) { console.error("WS Error:", data.error.message); return; }
     
-    if (data.tick) {
+    // Listen for real-time candle updates instead of raw ticks
+    if (data.ohlc) {
       if (!firstTickReceived) {
-        console.log(`[${REPO_LABEL}] ✅ Live stream connected and receiving ticks successfully.`);
+        console.log(`[${REPO_LABEL}] ✅ Live stream connected and receiving price updates successfully.`);
         firstTickReceived = true;
       }
 
-      const tick = data.tick;
+      const currentPrice = parseFloat(data.ohlc.close);
+      const currentEpoch = parseInt(data.ohlc.epoch);
       
-      // Fast Path: Check SL/TP instantly on every tick
-      handleFastPathRisk(tick.quote).catch(console.error);
+      // Fast Path: Check SL/TP instantly on every price update
+      handleFastPathRisk(currentPrice).catch(console.error);
 
-      // Slow Path: Check strategy only when M5 boundary crosses
-      const currentM5Boundary = tick.epoch - (tick.epoch % 300);
+      // Slow Path: Check strategy exactly when the M5 boundary crosses
+      const currentM5Boundary = currentEpoch - (currentEpoch % 300);
       const lastProcessed = state.lastProcessedEpoch || 0;
       
       if (currentM5Boundary > lastProcessed && !isProcessingSlowPath) {
         isProcessingSlowPath = true;
-        // Wait 2 seconds for Deriv backend to finalize historical candle
+        // Wait 2 seconds for Deriv backend to finalize historical M5 candle
         setTimeout(async () => {
           try { await runSlowPathScan(currentM5Boundary); } 
           catch (e) { console.error("Slow path scan failed:", e); } 
@@ -682,7 +684,7 @@ function startLiveStream() {
 
 // ==================== EXECUTION HOOK ====================
 (async () => {
-  // Telegram background watcher (Polling every 15s instead of blocking main thread)
+  // Telegram background watcher
   setInterval(async () => {
     try {
       const offset = (state.lastTgUpdateId || 0) + 1;
