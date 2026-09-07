@@ -4,6 +4,8 @@ import fs from "fs";
 import "dotenv/config";
 
 // ==================== REPOSITORY CONFIGURATION ====================
+// UNCOMMENT ONLY THE ONE BOT YOU ARE DEPLOYING IN THIS FOLDER:
+
 // --- Server 2 Bots ---
 // const SYMBOL = "R_10"; const SYMBOL_NAME = "Volatility 10 Index"; const REPO_LABEL = "Test Bot (V10 Live)"; const MULTIPLIER = 400; const COMMISSION_USD = 0.16;
 // const SYMBOL = "R_50"; const SYMBOL_NAME = "Volatility 50 Index"; const REPO_LABEL = "OmniSight (V50)"; const MULTIPLIER = 80; const COMMISSION_USD = 0.16;
@@ -14,6 +16,7 @@ const SYMBOL = "1HZ100V"; const SYMBOL_NAME = "Volatility 100 (1s) Index"; const
 // const SYMBOL = "1HZ75V"; const SYMBOL_NAME = "Volatility 75 (1s) Index"; const REPO_LABEL = "Coffee (V75-1s Demo)"; const MULTIPLIER = 50; const COMMISSION_USD = 0.15;
 // const SYMBOL = "R_100"; const SYMBOL_NAME = "Volatility 100 Index"; const REPO_LABEL = "Milk (V100 Demo)"; const MULTIPLIER = 40; const COMMISSION_USD = 0.15;
 // const SYMBOL = "R_25"; const SYMBOL_NAME = "Volatility 25 Index"; const REPO_LABEL = "Tea (V25 Demo)"; const MULTIPLIER = 160; const COMMISSION_USD = 0.15;
+// ==================================================================
 
 const TRADING_SYMBOL = SYMBOL;
 const STAKE_USD = 5;
@@ -23,7 +26,7 @@ const CATASTROPHIC_PNL_FLOOR = -5.50;
 const MARKET_DATA_APP_ID = "1089";
 const TARGET_MIN_PROFIT = 5.00;
 
-const FIB_TOLERANCE = 0.005; // 0.5% tolerance for Reversal zone touches
+const FIB_TOLERANCE = 0.005; 
 const STOCH_MIDLINE_FALLBACK_SYMBOLS = ["R_50", "R_10"];
 
 const GATEWAY_URL = process.env.GATEWAY_URL || "http://127.0.0.1:3000";
@@ -159,7 +162,7 @@ async function fetchAllData() {
   });
 }
 
-// ==================== TECHNICAL ANALYSIS (UNTOUCHED) ====================
+// ==================== TECHNICAL ANALYSIS ====================
 function sma(data, period) {
   return data.map((_, i) => {
     if (i < period - 1) return null;
@@ -178,7 +181,7 @@ function calculateStoch(candles, kPeriod = 18, dPeriod = 12, slowing = 25) {
   }
   const slowK = sma(fastK.map(v => v !== null ? v : 50), slowing).map((v, i) => fastK[i] === null ? null : v);
   const slowD = sma(slowK.map(v => v !== null ? v : 50), dPeriod).map((v, i) => slowK[i] === null ? null : v);
-  return { k: slowK, d: slowD }; // K = Green, D = Red
+  return { k: slowK, d: slowD };
 }
 
 function calculateEnvelopes(candles, period = 50, devPct = 0.05) {
@@ -268,10 +271,9 @@ function saveState() { fs.writeFileSync("state.json", JSON.stringify(state, null
 function loadTrades() { try { return JSON.parse(fs.readFileSync("trades.json")); } catch { return []; } }
 function saveTrades(t) { fs.writeFileSync("trades.json", JSON.stringify(t, null, 2)); }
 
-
 // ==================== CORE DUAL-SPEED ARCHITECTURE ====================
 
-const closingContracts = new Set(); // Prevents multiple close commands simultaneously
+const closingContracts = new Set();
 let isProcessingSlowPath = false;
 
 // ── FAST PATH: Instant SL/TP Checks (~1 Second) ──
@@ -294,9 +296,7 @@ async function handleFastPathRisk(currentPrice) {
       tpHit = isBuy ? currentPrice >= openTrade.fibTpPrice : currentPrice <= openTrade.fibTpPrice;
     }
 
-    let reason = null;
-    let expectedResult = "LOSS";
-
+    let reason = null, expectedResult = "LOSS";
     if (slBreached) { reason = `SL breached in real-time at ${currentPrice.toFixed(4)}`; } 
     else if (pnl <= CATASTROPHIC_PNL_FLOOR) { reason = `Catastrophic floor hit — PnL $${pnl.toFixed(2)}`; } 
     else if (pnl <= SOFTWARE_SL_USD) { reason = `Software SL hit — PnL $${pnl.toFixed(2)}`; } 
@@ -305,9 +305,7 @@ async function handleFastPathRisk(currentPrice) {
     if (reason) {
       closingContracts.add(openTrade.contractId);
       console.log(`[FAST PATH] Triggering close for ${openTrade.contractId}: ${reason}`);
-
-      let serverPnl = pnl;
-      let resultSource = "estimated_fallback";
+      let serverPnl = pnl, resultSource = "estimated_fallback";
       
       try {
         const closeRes = await closeContract(openTrade.contractId);
@@ -329,11 +327,10 @@ async function handleFastPathRisk(currentPrice) {
       
       saveTrades(trades);
       closingContracts.delete(openTrade.contractId);
-
+      
       const icon = finalResult === "WIN" ? "✅" : "❌";
       const pnlStr = serverPnl >= 0 ? `+$${serverPnl.toFixed(2)}` : `-$${Math.abs(serverPnl).toFixed(2)}`;
       const durationMs = new Date(openTrade.closeTime) - new Date(openTrade.openTime);
-      
       await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${finalResult}*\n\nDirection: ${openTrade.direction}\n📍 Entry: ${Number(openTrade.entry).toFixed(4)}\n🏁 Exit: ${currentPrice.toFixed(4)}\n\n💵 P&L: *${pnlStr}* (Net of comm.)\nReason: ${reason}\nDuration: ${formatDuration(durationMs)}\nContract: \`${openTrade.contractId}\``);
     }
   }
@@ -342,17 +339,16 @@ async function handleFastPathRisk(currentPrice) {
 // ── SLOW PATH: Core Strategy Engine (Runs every 5 mins on closed candles) ──
 async function runSlowPathScan(m5BoundaryEpoch) {
   console.log(`[${REPO_LABEL}] Slow Path triggered for closed M5 candle: ${new Date(m5BoundaryEpoch * 1000).toISOString()}`);
-  
   let trades = loadTrades();
   
-  // ── 1. Gateway Portfolio Sync ──
+  // 1. Gateway Portfolio Sync 
   try {
     const allPortfolio = await getOpenPortfolio();
     const liveContracts = allPortfolio.filter(c => getContractSymbol(c) === TRADING_SYMBOL);
     
     for (const live of liveContracts) {
       if (!trades.find(t => String(t.contractId) === String(live.contract_id))) {
-        const entryPrice = live.buy_price ? parseFloat(live.buy_price) : await (await fetchAllData()).m5.slice(-1)[0].close; // fallback
+        const entryPrice = live.buy_price ? parseFloat(live.buy_price) : await (await fetchAllData()).m5.slice(-1)[0].close; 
         const dir = live.contract_type === "MULTUP" ? "BUY" : "SELL";
         trades.push({
           id: `${SYMBOL}-${Date.now()}`, contractId: live.contract_id, pending: false, repo: REPO_LABEL, symbol: SYMBOL,
@@ -378,24 +374,20 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     saveTrades(trades);
   } catch (e) { dbg("Portfolio sync skipped:", e.message); }
 
-  // ── 2. Fetch Historical Data ──
+  // 2. Fetch Historical Data 
   let scanData;
   try { scanData = await fetchAllData(); } catch (e) { console.warn(`Fetch error: ${e.message}`); return; }
-  const candles = scanData.m5;
-  const m15Candles = scanData.m15;
-  const m30Candles = scanData.m30;
-  const d1Candles = scanData.d1;
+  const candles = scanData.m5, m15Candles = scanData.m15, m30Candles = scanData.m30, d1Candles = scanData.d1;
 
   if (!candles || candles.length < 120 || !m15Candles || !m30Candles || !d1Candles) return;
-  const si = candles.length - 2; // Last fully closed M5 candle
+  const si = candles.length - 2; 
   const currentPrice = parseFloat(candles[si].close);
 
-  // ── 3. Manage M15/M30 Structure Upgrades ──
+  // 3. Manage M15/M30 Structure Upgrades
   const openTrades = trades.filter(t => !t.result && !t.pending);
   for (const t of openTrades) {
     if (closingContracts.has(t.contractId)) continue;
     
-    // M15 Fractal Check
     if (!t.m30FractalUpgraded && m15Candles.length >= 5) {
       for (let k = 2; k <= m15Candles.length - 4; k++) {
         if (m15Candles[k + 2].epoch + M15 > t.entryEpoch) {
@@ -413,7 +405,6 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
 
-    // M30 Structure Check (Early Exit)
     if (m30Candles.length >= 4) {
       let structOpenPrice = null;
       for (let k = m30Candles.length - 3; k >= 0; k--) {
@@ -425,29 +416,27 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       if (structOpenPrice !== null) {
         const lastM30Close = parseFloat(m30Candles[m30Candles.length - 2].close);
         if ((t.direction === "BUY" && lastM30Close < structOpenPrice) || (t.direction === "SELL" && lastM30Close > structOpenPrice)) {
-           await handleFastPathRisk(t.direction === "BUY" ? structOpenPrice - 0.0001 : structOpenPrice + 0.0001); // Emulate breach
+           await handleFastPathRisk(t.direction === "BUY" ? structOpenPrice - 0.0001 : structOpenPrice + 0.0001); 
         }
       }
     }
   }
 
-  // Pre-Scan Guard: Don't look for new signals if we are active
+  // Pre-Scan Guard
   if (openTrades.length > 0) {
     state.lastProcessedEpoch = m5BoundaryEpoch; saveState(); return;
   }
 
-  // ── 4. Calculate Indicators (ORIGINAL LOGIC) ──
+  // 4. Calculate Indicators (ORIGINAL LOGIC)
   const fib = computeDailyFibLevels(d1Candles);
   if (!fib) return;
 
-  // Midnight Rollover Reset
   const newBiasPrice = parseFloat(fib.dailyBiasPrice.toFixed(4));
   if (state.dailyBiasPrice !== null && state.dailyBiasPrice !== newBiasPrice) {
     state.armed = null; state.confirm = null;
   }
   state.dailyBiasPrice = newBiasPrice;
 
-  // Dashboard Sync
   state.fibBullish = fib.bullish; state.fib0 = parseFloat(fib.fib0.toFixed(4)); state.fib50 = parseFloat(fib.fib50.toFixed(4));
   state.fib618 = parseFloat(fib.fib1618?.toFixed(4) || 0); state.fib79 = parseFloat(fib.fib79.toFixed(4)); state.fib100 = parseFloat(fib.fib100.toFixed(4));
   state.h1TdiDir = fib.bullish ? "BULL" : "BEAR";
@@ -469,10 +458,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   if (cVal === null || prevCci === null || eUp === null || eLo === null || sK === null || sD === null || prevK === null || prevD === null || m30K === null) return;
 
-  // ── 5. Daily Ledger Log ──
+  // 5. Daily Ledger Log
   writeToLedger(m5BoundaryEpoch, currentPrice, cVal, sK, sD, eUp, eLo, state.armed ? state.armed.lbl : "IDLE");
 
-  // ── A. FIB ARMING STATE MACHINE (ORIGINAL UNTOUCHED LOGIC) ──
+  // ── A. FIB ARMING STATE MACHINE ──
   let newArm = null;
 
   if (fib.bullish) {
@@ -503,11 +492,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   }
   state.nextPhase = state.armed ? state.armed.lbl : null;
 
-  // ── B/C/D. INDEPENDENT INDICATOR CONFIRMATION (ORIGINAL UNTOUCHED LOGIC) ──
+  // ── B/C/D. INDEPENDENT INDICATOR CONFIRMATION ──
   if (state.armed && state.confirm) {
     const { type, dir } = state.armed;
 
-    // --- Indicator 2: CCI(100) ---
     if (dir === "BUY") {
       const freshAlign = type === "CONT" ? (prevCci <= 70.5 && cVal > 70.5) : (prevCci <= -70.5 && cVal > -70.5);
       if (freshAlign) state.confirm.cci.aligned = true;
@@ -515,7 +503,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         if (type === "CONT" && cVal <= 70.5) state.confirm.cci.aligned = false;
         if (type === "REV"  && cVal <= -70.5) state.confirm.cci.aligned = false;
       }
-    } else { // SELL
+    } else { 
       const freshAlign = type === "CONT" ? (prevCci >= -70.5 && cVal < -70.5) : (prevCci >= 70.5 && cVal < 70.5);
       if (freshAlign) state.confirm.cci.aligned = true;
       else if (state.confirm.cci.aligned) {
@@ -524,7 +512,6 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
 
-    // --- Indicator 3: Stochastic ---
     const crossUp         = prevK <= prevD && sK > sD;
     const crossDown       = prevK >= prevD && sK < sD;
     const crossedAbove50  = prevK < 50 && sK >= 50;
@@ -540,7 +527,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
       if (freshAlign) state.confirm.stoch.aligned = true;
       else if (state.confirm.stoch.aligned && crossDown) state.confirm.stoch.aligned = false;
-    } else { // SELL
+    } else { 
       let freshAlign;
       if (type === "REV") {
         freshAlign = (crossDown && sK >= 80) || (midlineFallback && crossDown && crossedBelow50);
@@ -551,7 +538,6 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       else if (state.confirm.stoch.aligned && crossUp) state.confirm.stoch.aligned = false;
     }
 
-    // --- Indicator 4: Envelopes ---
     if (dir === "BUY") {
       if (currentPrice > eUp) state.confirm.env.aligned = true;
       else if (state.confirm.env.aligned && currentPrice <= eUp) state.confirm.env.aligned = false;
@@ -578,7 +564,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.confirm = null;
   }
 
-  // ── 7. EXECUTE & TP OVERRIDE (ORIGINAL UNTOUCHED LOGIC) ──
+  // ── 7. EXECUTE & TP OVERRIDE ──
   if (signalTriggered) {
     const entry = currentPrice;
 
@@ -637,13 +623,16 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
 // ==================== LIVE STREAM WATCHER ====================
 let liveWs = null;
+let firstTickReceived = false;
+
 function startLiveStream() {
   console.log(`[${REPO_LABEL}] Starting Live 24/7 Tick Stream via Deriv WebSocket...`);
   liveWs = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
   let pingInterval;
 
   liveWs.on("open", () => {
-    liveWs.send(JSON.stringify({ ticks: SYMBOL, subscribe: 1 }));
+    // Patched to use ticks_history for Synthetic compatibility
+    liveWs.send(JSON.stringify({ ticks_history: SYMBOL, end: "latest", count: 1, style: "ticks", subscribe: 1 }));
     pingInterval = setInterval(() => { if (liveWs.readyState === WebSocket.OPEN) liveWs.send(JSON.stringify({ ping: 1 })); }, 25000);
   });
 
@@ -652,6 +641,11 @@ function startLiveStream() {
     if (data.error) { console.error("WS Error:", data.error.message); return; }
     
     if (data.tick) {
+      if (!firstTickReceived) {
+        console.log(`[${REPO_LABEL}] ✅ Live stream connected and receiving ticks successfully.`);
+        firstTickReceived = true;
+      }
+
       const tick = data.tick;
       
       // Fast Path: Check SL/TP instantly on every tick
@@ -675,6 +669,7 @@ function startLiveStream() {
 
   liveWs.on("close", () => {
     clearInterval(pingInterval);
+    firstTickReceived = false;
     console.warn(`[${REPO_LABEL}] Live stream disconnected. Reconnecting in 5s...`);
     setTimeout(startLiveStream, 5000);
   });
