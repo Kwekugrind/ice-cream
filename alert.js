@@ -18,7 +18,7 @@ const SYMBOL = "1HZ100V"; const SYMBOL_NAME = "Volatility 100 (1s) Index"; const
 // const SYMBOL = "R_25"; const SYMBOL_NAME = "Volatility 25 Index"; const REPO_LABEL = "Tea (V25 Demo)"; const MULTIPLIER = 160; const COMMISSION_USD = 0.15;
 // ==================================================================
 
-const TRADING_SYMBOL = SYMBOL;
+ const TRADING_SYMBOL = SYMBOL;
 const STAKE_USD = 5;
 const SOFTWARE_SL_USD = -3.60;
 const SERVER_TP_USD = 10.00;
@@ -261,20 +261,15 @@ function crossedBelow(level, prevClose, currClose, currOpen) {
   return (prevClose >= level || currOpen >= level) && currClose < level;
 }
 
-// 4-Hour Pre-Midnight Lookback (Explicitly Gated to Early Trading Hours)
+// 4-Hour Pre-Midnight Lookback for Stochastic (Gated strictly to 00:00 - 04:00 UTC)
 function checkPreMidnightStochCross(candles, stoch, dir, type, midlineFallback) {
   const now = new Date();
-  const currentHourUTC = now.getUTCHours();
-  
-  // Explicit time gate: Only valid during the first 4 hours of the trading day (00:00 - 04:00 UTC)
-  if (currentHourUTC >= 4) return false;
+  if (now.getUTCHours() >= 4) return false;
 
   const todayMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0)).getTime() / 1000;
-  const fourHoursBeforeMidnight = todayMidnight - (4 * 3600); // 20:00 UTC yesterday
+  const fourHoursBeforeMidnight = todayMidnight - (4 * 3600);
 
-  let startIdx = -1;
-  let endIdx = -1;
-
+  let startIdx = -1, endIdx = -1;
   for (let i = 0; i < candles.length; i++) {
     const ep = candles[i].epoch;
     if (ep >= fourHoursBeforeMidnight && startIdx === -1) startIdx = i;
@@ -284,10 +279,8 @@ function checkPreMidnightStochCross(candles, stoch, dir, type, midlineFallback) 
   if (startIdx === -1 || endIdx === -1 || startIdx >= endIdx) return false;
 
   let validCrossIdx = -1;
-
   for (let i = startIdx + 1; i <= endIdx; i++) {
-    const k = stoch.k[i], d = stoch.d[i];
-    const pk = stoch.k[i - 1], pd = stoch.d[i - 1];
+    const k = stoch.k[i], d = stoch.d[i], pk = stoch.k[i - 1], pd = stoch.d[i - 1];
     if (k === null || d === null || pk === null || pd === null) continue;
 
     const crossUp = pk <= pd && k > d;
@@ -296,32 +289,19 @@ function checkPreMidnightStochCross(candles, stoch, dir, type, midlineFallback) 
     const crossedBelow50 = pk > 50 && k <= 50;
 
     if (dir === "BUY") {
-      let isMatch = false;
-      if (type === "REV") {
-        isMatch = (crossUp && k <= 20) || (midlineFallback && crossUp && crossedAbove50);
-      } else {
-        isMatch = crossedAbove50; // Strict midline cross for continuation
-      }
+      let isMatch = type === "REV" ? ((crossUp && k <= 20) || (midlineFallback && crossUp && crossedAbove50)) : crossedAbove50;
       if (isMatch) validCrossIdx = i;
     } else {
-      let isMatch = false;
-      if (type === "REV") {
-        isMatch = (crossDown && k >= 80) || (midlineFallback && crossDown && crossedBelow50);
-      } else {
-        isMatch = crossedBelow50; // Strict midline cross for continuation
-      }
+      let isMatch = type === "REV" ? ((crossDown && k >= 80) || (midlineFallback && crossDown && crossedBelow50)) : crossedBelow50;
       if (isMatch) validCrossIdx = i;
     }
   }
 
   if (validCrossIdx === -1) return false;
 
-  // Must remain intact with no opposite cross up to the present candle
   for (let i = validCrossIdx + 1; i < candles.length - 1; i++) {
-    const k = stoch.k[i], d = stoch.d[i];
-    const pk = stoch.k[i - 1], pd = stoch.d[i - 1];
+    const k = stoch.k[i], d = stoch.d[i], pk = stoch.k[i - 1], pd = stoch.d[i - 1];
     if (k === null || d === null || pk === null || pd === null) continue;
-
     if (dir === "BUY" && (pk >= pd && k < d)) return false; 
     if (dir === "SELL" && (pk <= pd && k > d)) return false; 
   }
@@ -361,7 +341,7 @@ function findRecentFractal(candles, currentIndex, direction) {
 // ==================== STATE MANAGEMENT ====================
 let state = {
   lastProcessedEpoch: null, lastTgUpdateId: 0, armed: null, confirm: null, dailyBiasPrice: null,
-  last50Origin: null, // Persists 0% or 100% origin for 50% TP bounce setups across trades
+  last50Origin: null,
   nextPhase: null, h1TdiDir: null, fibBullish: null, fib0: null, fib50: null, fib618: null, fib79: null, fib100: null,
   cciAligned: false, stochAligned: false, envAligned: false
 };
@@ -535,7 +515,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.lastProcessedEpoch = m5BoundaryEpoch; saveState(); return;
   }
 
-  // 4. Calculate Fibonacci & Indicators
+  // 4. Calculate Fibonacci Levels
   const fib = computeDailyFibLevels(d1Candles);
   if (!fib) return;
 
@@ -571,79 +551,105 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   // 5. Write to Daily Ledger CSV
   writeToLedger(m5BoundaryEpoch, currentPrice, cVal, sK, sD, eUp, eLo, state.armed ? state.armed.lbl : "IDLE");
 
-  // ── A. RULE 1: FIBONACCI M15 CROSSOVER STATE MACHINE ──
+  // ── A. RULE 1: TWO-WAY AND ONE-WAY FIBONACCI M15 STATE MACHINE ──
   let newArm = null;
 
   if (fib.bullish) {
-    // 1. Level 0% (Yesterday's High)
+    // Bullish Day: 0% = High (Ceiling), 100% = Low (Floor)
+
+    // Two-Way Level: 0%
     if (crossedAbove(fib.fib0, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "CONT", dir: "BUY", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_BUY (0%)" };
+      newArm = { type: "CONT", dir: "BUY", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_BUY (0 to -50)" };
     } else if (crossedBelow(fib.fib0, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "SELL", tp: fib.fib50, lvl: fib.fib0, lbl: "REV_SELL (0% Fake)" };
+      newArm = { type: "REV", dir: "SELL", tp: fib.fib50, lvl: fib.fib0, lbl: "REV_SELL (0 to 50)" };
     }
-    // 2. Level 79% (Deep Retracement)
+    // One-Way Level: 79% (Only arms BUY if closed above; closing below is INACTIVE)
     else if (crossedAbove(fib.fib79, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib79, lbl: "REV_BUY (79%)" };
+      newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib79, lbl: "REV_BUY (79 to 0)" };
     }
-    // 3. Level 100% (Yesterday's Low)
+    // Two-Way Level: 100%
     else if (crossedAbove(fib.fib100, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "BUY", tp: fib.fib50, lvl: fib.fib100, lbl: "REV_BUY (100% Fake)" };
+      newArm = { type: "REV", dir: "BUY", tp: fib.fib50, lvl: fib.fib100, lbl: "REV_BUY (100 to 50)" };
     } else if (crossedBelow(fib.fib100, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "CONT", dir: "SELL", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_SELL (100%)" };
+      newArm = { type: "CONT", dir: "SELL", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_SELL (100 to 161.8)" };
     }
-    // 4. Reverse Setups from Outer TP Levels
+    // One-Way Level: -50% (Only arms SELL if closed below; closing above is INACTIVE)
     else if (crossedBelow(fib.fibM50, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fibM50, lbl: "REV_SELL (-50% TP Bounce)" };
-    } else if (crossedAbove(fib.fib1618, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib1618, lbl: "REV_BUY (161.8% TP Bounce)" };
+      newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fibM50, lbl: "REV_SELL (-50 to 0)" };
     }
-    // 5. Reversals from 50% TP level (checks persistent state.last50Origin)
+    // One-Way Level: 161.8% (Only arms BUY if closed above; closing below is INACTIVE)
+    else if (crossedAbove(fib.fib1618, prevM15Close, m15Close, m15Open)) {
+      newArm = { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib1618, lbl: "REV_BUY (161.8 to 100)" };
+    }
+    // 50% Midline Reversal (Requires Origin Context)
     else if (state.last50Origin === fib.fib0 && crossedAbove(fib.fib50, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_BUY (50% TP Bounce)" };
+      newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_BUY (50 to 0)" };
     } else if (state.last50Origin === fib.fib100 && crossedBelow(fib.fib50, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_SELL (50% TP Bounce)" };
+      newArm = { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_SELL (50 to 100)" };
     }
   } else {
-    // 1. Level 0% (Yesterday's Low)
+    // Bearish Day: 0% = Low (Floor), 100% = High (Ceiling)
+
+    // Two-Way Level: 0%
     if (crossedBelow(fib.fib0, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "CONT", dir: "SELL", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_SELL (0%)" };
+      newArm = { type: "CONT", dir: "SELL", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_SELL (0 to -50)" };
     } else if (crossedAbove(fib.fib0, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "BUY", tp: fib.fib50, lvl: fib.fib0, lbl: "REV_BUY (0% Fake)" };
+      newArm = { type: "REV", dir: "BUY", tp: fib.fib50, lvl: fib.fib0, lbl: "REV_BUY (0 to 50)" };
     }
-    // 2. Level 79% (Deep Retracement)
+    // One-Way Level: 79% (Only arms SELL if closed below; closing above is INACTIVE)
     else if (crossedBelow(fib.fib79, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib79, lbl: "REV_SELL (79%)" };
+      newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib79, lbl: "REV_SELL (79 to 0)" };
     }
-    // 3. Level 100% (Yesterday's High)
+    // Two-Way Level: 100%
     else if (crossedAbove(fib.fib100, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "CONT", dir: "BUY", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_BUY (100%)" };
+      newArm = { type: "CONT", dir: "BUY", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_BUY (100 to 161.8)" };
     } else if (crossedBelow(fib.fib100, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "SELL", tp: fib.fib50, lvl: fib.fib100, lbl: "REV_SELL (100% Fake)" };
+      newArm = { type: "REV", dir: "SELL", tp: fib.fib50, lvl: fib.fib100, lbl: "REV_SELL (100 to 50)" };
     }
-    // 4. Reverse Setups from Outer TP Levels
+    // One-Way Level: -50% (Only arms BUY if closed above; closing below is INACTIVE)
     else if (crossedAbove(fib.fibM50, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fibM50, lbl: "REV_BUY (-50% TP Bounce)" };
-    } else if (crossedBelow(fib.fib1618, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib1618, lbl: "REV_SELL (161.8% TP Bounce)" };
+      newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fibM50, lbl: "REV_BUY (-50 to 0)" };
     }
-    // 5. Reversals from 50% TP level (checks persistent state.last50Origin)
+    // One-Way Level: 161.8% (Only arms SELL if closed below; closing above is INACTIVE)
+    else if (crossedBelow(fib.fib1618, prevM15Close, m15Close, m15Open)) {
+      newArm = { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib1618, lbl: "REV_SELL (161.8 to 100)" };
+    }
+    // 50% Midline Reversal (Requires Origin Context)
     else if (state.last50Origin === fib.fib0 && crossedBelow(fib.fib50, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_SELL (50% TP Bounce)" };
+      newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_SELL (50 to 0)" };
     } else if (state.last50Origin === fib.fib100 && crossedAbove(fib.fib50, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_BUY (50% TP Bounce)" };
+      newArm = { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_BUY (50 to 100)" };
     }
   }
 
-  // Record persistent origin if setup targets 50%
-  if (newArm && newArm.tp === fib.fib50) {
-    state.last50Origin = newArm.lvl;
-  } else if (newArm && newArm.lbl.includes("50% TP Bounce")) {
-    state.last50Origin = null; 
+  // Record persistent origin if setup targets 50%, or clear if resolved / overridden
+  if (newArm) {
+    if (newArm.tp === fib.fib50) {
+      state.last50Origin = newArm.lvl;
+    } else if (newArm.lbl.includes("(50 to 0)") || newArm.lbl.includes("(50 to 100)")) {
+      state.last50Origin = null; 
+    } else if (state.last50Origin !== null && newArm.lvl !== state.last50Origin) {
+      state.last50Origin = null; 
+    }
   }
 
-  // Instant Adaptation to Change of Trend: Update arm and reset locks for new direction
+  // ── ACTIVE M15 WRONG-SIDE INVALIDATION ──
+  // If price closes on the wrong side of an armed level, the setup has FAILED -> Disarm immediately
+  if (state.armed) {
+    if (state.armed.dir === "BUY" && m15Close < state.armed.lvl) {
+      dbg(`[INVALIDATION] M15 closed at ${m15Close} BELOW armed BUY level ${state.armed.lvl}. Disarming.`);
+      state.armed = null;
+      state.confirm = null;
+    } else if (state.armed.dir === "SELL" && m15Close > state.armed.lvl) {
+      dbg(`[INVALIDATION] M15 closed at ${m15Close} ABOVE armed SELL level ${state.armed.lvl}. Disarming.`);
+      state.armed = null;
+      state.confirm = null;
+    }
+  }
+
+  // Instant Adaptation: When an M15 crossover occurs, arm the new setup and reset locks
   if (newArm && (!state.armed || state.armed.lbl !== newArm.lbl)) {
-    dbg(`[STATE] Trend Change / New Arm: ${newArm.lbl} — resetting indicator confirmation locks`);
+    dbg(`[STATE] New Arm: ${newArm.lbl} — resetting indicator confirmation locks`);
     state.armed = newArm;
     state.confirm = { label: newArm.lbl, cci: { aligned: false }, stoch: { aligned: false }, env: { aligned: false } };
   }
@@ -652,11 +658,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   // ── B/C/D. INDEPENDENT INDICATOR CONFIRMATION ──
   if (state.armed && state.confirm) {
-    const { type, dir } = state.armed;
+    const { dir } = state.armed;
 
     // --- Indicator 2: CCI (100) on Typical Price (PURE OPTION 1) ---
-    // BUY: Fresh cross above -70.5 (releasing from oversold)
-    // SELL: Fresh cross below +70.5 (releasing from overbought)
+    // BUY: Fresh cross above -70.5
+    // SELL: Fresh cross below +70.5
     if (dir === "BUY") {
       const freshAlign = prevCci <= -70.5 && cVal > -70.5;
       if (freshAlign) state.confirm.cci.aligned = true;
@@ -680,34 +686,30 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     if (dir === "BUY") {
       let freshAlign;
-      if (type === "REV") {
-        // Reversal: Green crosses above Red in oversold (<20) OR fresh 50 midline cross for V50/V10
+      if (state.armed.type === "REV") {
         freshAlign = (crossUp && sK <= 20) || (midlineFallback && crossUp && crossedAbove50);
       } else {
-        // Continuation: Strictly cross above the 50 midline
-        freshAlign = crossedAbove50;
+        freshAlign = crossedAbove50; // Strict midline cross for continuation
       }
 
       // Time-gated 4-hour pre-midnight lookback (only valid 00:00 - 04:00 UTC)
       if (!freshAlign && !state.confirm.stoch.aligned) {
-        freshAlign = checkPreMidnightStochCross(candles, stoch, dir, type, midlineFallback);
+        freshAlign = checkPreMidnightStochCross(candles, stoch, dir, state.armed.type, midlineFallback);
       }
 
       if (freshAlign) state.confirm.stoch.aligned = true;
       else if (state.confirm.stoch.aligned && crossDown) state.confirm.stoch.aligned = false;
     } else { // SELL
       let freshAlign;
-      if (type === "REV") {
-        // Reversal: Green crosses below Red in overbought (>80) OR fresh 50 midline cross for V50/V10
+      if (state.armed.type === "REV") {
         freshAlign = (crossDown && sK >= 80) || (midlineFallback && crossDown && crossedBelow50);
       } else {
-        // Continuation: Strictly cross below the 50 midline
-        freshAlign = crossedBelow50;
+        freshAlign = crossedBelow50; // Strict midline cross for continuation
       }
 
       // Time-gated 4-hour pre-midnight lookback (only valid 00:00 - 04:00 UTC)
       if (!freshAlign && !state.confirm.stoch.aligned) {
-        freshAlign = checkPreMidnightStochCross(candles, stoch, dir, type, midlineFallback);
+        freshAlign = checkPreMidnightStochCross(candles, stoch, dir, state.armed.type, midlineFallback);
       }
 
       if (freshAlign) state.confirm.stoch.aligned = true;
@@ -715,7 +717,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
 
     // --- Indicator 4: Envelopes (50 SMA, 0.05% Dev, Close) ---
-    // APPLIES TO ALL TRADES: Must close above upper band (BUY) or below lower band (SELL)
+    // ALL TRADES: Close outside bands
     if (dir === "BUY") {
       if (currentPrice > eUp) state.confirm.env.aligned = true;
       else if (state.confirm.env.aligned && currentPrice <= eUp) state.confirm.env.aligned = false;
@@ -729,17 +731,28 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   state.stochAligned = state.confirm ? state.confirm.stoch.aligned : false;
   state.envAligned   = state.confirm ? state.confirm.env.aligned   : false;
 
-  // ── 6. TRIGGER LOGIC ──
+  // ── 6. TRIGGER LOGIC (WITH EXECUTION SIDE-GATE) ──
   let signalTriggered = false, direction = "", fibTpPrice = null, entryType = null;
 
   if (state.armed && state.confirm &&
       state.confirm.cci.aligned && state.confirm.stoch.aligned && state.confirm.env.aligned) {
-    signalTriggered = true;
-    direction   = state.armed.dir;
-    entryType   = state.armed.lbl;
-    fibTpPrice  = state.armed.tp;
-    state.armed   = null; 
-    state.confirm = null;
+    
+    // HARD EXECUTION GATE: Price MUST be on the valid side of the level at execution
+    const isPriceValid = (state.armed.dir === "BUY" && currentPrice >= state.armed.lvl) ||
+                         (state.armed.dir === "SELL" && currentPrice <= state.armed.lvl);
+
+    if (isPriceValid) {
+      signalTriggered = true;
+      direction   = state.armed.dir;
+      entryType   = state.armed.lbl;
+      fibTpPrice  = state.armed.tp;
+      state.armed   = null; 
+      state.confirm = null;
+    } else {
+      dbg(`[ABORT TRIGGER] Price ${currentPrice} is on the wrong side of level ${state.armed.lvl} for ${state.armed.dir}. Aborting.`);
+      state.armed = null;
+      state.confirm = null;
+    }
   }
 
   // ── 7. EXECUTE & DYNAMIC TP OVERRIDE ──
@@ -818,21 +831,17 @@ async function checkTelegramCommands() {
 async function startContinuousEngine() {
   console.log(`[${REPO_LABEL}] 🚀 24/7 Continuous Trading Engine Started Successfully.`);
   
-  // Telegram background watcher
   setInterval(checkTelegramCommands, 15000);
 
   let isScanning = false;
 
-  // The 10-Second Heartbeat Loop
   while (true) {
     try {
       const nowEpoch = Math.floor(Date.now() / 1000);
       const currentM5Boundary = nowEpoch - (nowEpoch % 300);
 
-      // Fast Path: Check active open trades every 10 seconds
       await manageOpenTradesFastPath();
 
-      // Slow Path: Scan the closed candle on the 5-minute mark
       const secondsIntoCandle = nowEpoch % 300;
       if (currentM5Boundary > (state.lastProcessedEpoch || 0) && secondsIntoCandle >= 3 && !isScanning) {
         isScanning = true;
@@ -844,7 +853,6 @@ async function startContinuousEngine() {
       isScanning = false;
     }
 
-    // Sleep 10 seconds
     await sleep(10000);
   }
 }
@@ -854,6 +862,5 @@ async function startContinuousEngine() {
   if (MODE === "daily")                                 { await runSummary("Daily");  return; }
   if (MODE === "weekly")                                { await runSummary("Weekly"); return; }
   
-  // Start the 24/7 Engine
   await startContinuousEngine();
 })();
