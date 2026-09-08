@@ -361,7 +361,7 @@ function findRecentFractal(candles, currentIndex, direction) {
 // ==================== STATE MANAGEMENT ====================
 let state = {
   lastProcessedEpoch: null, lastTgUpdateId: 0, armed: null, confirm: null, dailyBiasPrice: null,
-  last50Origin: null, // FIX #1: Persists 0% or 100% origin for 50% TP bounce setups across trades
+  last50Origin: null, // Persists 0% or 100% origin for 50% TP bounce setups across trades
   nextPhase: null, h1TdiDir: null, fibBullish: null, fib0: null, fib50: null, fib618: null, fib79: null, fib100: null,
   cciAligned: false, stochAligned: false, envAligned: false
 };
@@ -544,7 +544,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   if (state.dailyBiasPrice !== null && state.dailyBiasPrice !== newBiasPrice) {
     state.armed = null; 
     state.confirm = null; 
-    state.last50Origin = null; // Clear 50% origin on new day
+    state.last50Origin = null; 
   }
   state.dailyBiasPrice = newBiasPrice;
 
@@ -597,7 +597,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     } else if (crossedAbove(fib.fib1618, prevM15Close, m15Close, m15Open)) {
       newArm = { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib1618, lbl: "REV_BUY (161.8% TP Bounce)" };
     }
-    // 5. FIX #1: Reversals from 50% TP level (checks persistent state.last50Origin)
+    // 5. Reversals from 50% TP level (checks persistent state.last50Origin)
     else if (state.last50Origin === fib.fib0 && crossedAbove(fib.fib50, prevM15Close, m15Close, m15Open)) {
       newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_BUY (50% TP Bounce)" };
     } else if (state.last50Origin === fib.fib100 && crossedBelow(fib.fib50, prevM15Close, m15Close, m15Open)) {
@@ -626,7 +626,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     } else if (crossedBelow(fib.fib1618, prevM15Close, m15Close, m15Open)) {
       newArm = { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib1618, lbl: "REV_SELL (161.8% TP Bounce)" };
     }
-    // 5. FIX #1: Reversals from 50% TP level (checks persistent state.last50Origin)
+    // 5. Reversals from 50% TP level (checks persistent state.last50Origin)
     else if (state.last50Origin === fib.fib0 && crossedBelow(fib.fib50, prevM15Close, m15Close, m15Open)) {
       newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_SELL (50% TP Bounce)" };
     } else if (state.last50Origin === fib.fib100 && crossedAbove(fib.fib50, prevM15Close, m15Close, m15Open)) {
@@ -638,7 +638,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   if (newArm && newArm.tp === fib.fib50) {
     state.last50Origin = newArm.lvl;
   } else if (newArm && newArm.lbl.includes("50% TP Bounce")) {
-    state.last50Origin = null; // Resolved
+    state.last50Origin = null; 
   }
 
   // Instant Adaptation to Change of Trend: Update arm and reset locks for new direction
@@ -654,22 +654,20 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   if (state.armed && state.confirm) {
     const { type, dir } = state.armed;
 
-    // --- Indicator 2: CCI (100) on Typical Price ---
-    // Breakouts (CONT): fresh breakout cross through +/- 70.5
-    // Reversals (REV): was beyond +/- 70.5, fresh hook back inside
+    // --- Indicator 2: CCI (100) on Typical Price (PURE OPTION 1) ---
+    // BUY: Fresh cross above -70.5 (releasing from oversold)
+    // SELL: Fresh cross below +70.5 (releasing from overbought)
     if (dir === "BUY") {
-      const freshAlign = type === "CONT" ? (prevCci <= 70.5 && cVal > 70.5) : (prevCci <= -70.5 && cVal > -70.5);
+      const freshAlign = prevCci <= -70.5 && cVal > -70.5;
       if (freshAlign) state.confirm.cci.aligned = true;
-      else if (state.confirm.cci.aligned) {
-        if (type === "CONT" && cVal <= 70.5) state.confirm.cci.aligned = false;
-        if (type === "REV"  && cVal <= -70.5) state.confirm.cci.aligned = false;
+      else if (state.confirm.cci.aligned && cVal <= -70.5) {
+        state.confirm.cci.aligned = false;
       }
     } else { // SELL
-      const freshAlign = type === "CONT" ? (prevCci >= -70.5 && cVal < -70.5) : (prevCci >= 70.5 && cVal < 70.5);
+      const freshAlign = prevCci >= 70.5 && cVal < 70.5;
       if (freshAlign) state.confirm.cci.aligned = true;
-      else if (state.confirm.cci.aligned) {
-        if (type === "CONT" && cVal >= -70.5) state.confirm.cci.aligned = false;
-        if (type === "REV"  && cVal >= 70.5) state.confirm.cci.aligned = false;
+      else if (state.confirm.cci.aligned && cVal >= 70.5) {
+        state.confirm.cci.aligned = false;
       }
     }
 
@@ -686,11 +684,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         // Reversal: Green crosses above Red in oversold (<20) OR fresh 50 midline cross for V50/V10
         freshAlign = (crossUp && sK <= 20) || (midlineFallback && crossUp && crossedAbove50);
       } else {
-        // FIX #2: Continuation strictly requires crossing above the 50 midline (no ungated tolerance)
+        // Continuation: Strictly cross above the 50 midline
         freshAlign = crossedAbove50;
       }
 
-      // FIX #3: Time-gated 4-hour pre-midnight lookback (only valid 00:00 - 04:00 UTC)
+      // Time-gated 4-hour pre-midnight lookback (only valid 00:00 - 04:00 UTC)
       if (!freshAlign && !state.confirm.stoch.aligned) {
         freshAlign = checkPreMidnightStochCross(candles, stoch, dir, type, midlineFallback);
       }
@@ -703,11 +701,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         // Reversal: Green crosses below Red in overbought (>80) OR fresh 50 midline cross for V50/V10
         freshAlign = (crossDown && sK >= 80) || (midlineFallback && crossDown && crossedBelow50);
       } else {
-        // FIX #2: Continuation strictly requires crossing below the 50 midline (no ungated tolerance)
+        // Continuation: Strictly cross below the 50 midline
         freshAlign = crossedBelow50;
       }
 
-      // FIX #3: Time-gated 4-hour pre-midnight lookback (only valid 00:00 - 04:00 UTC)
+      // Time-gated 4-hour pre-midnight lookback (only valid 00:00 - 04:00 UTC)
       if (!freshAlign && !state.confirm.stoch.aligned) {
         freshAlign = checkPreMidnightStochCross(candles, stoch, dir, type, midlineFallback);
       }
