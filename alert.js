@@ -269,14 +269,6 @@ function computeDailyFibLevels(d1Candles) {
     : { bullish, fibM50: l - 0.5*rng, fib0: l, fib50: l + 0.5*rng, fib79: l + 0.79*rng, fib100: h, fib1618: l + 1.618*rng, dailyBiasPrice };
 }
 
-function crossedAbove(level, prevClose, currClose, currOpen) {
-  return (prevClose <= level || currOpen <= level) && currClose > level;
-}
-
-function crossedBelow(level, prevClose, currClose, currOpen) {
-  return (prevClose >= level || currOpen >= level) && currClose < level;
-}
-
 function checkPreMidnightStochCross(candles, stoch, dir, type, midlineFallback) {
   const now = new Date();
   if (now.getUTCHours() >= 4) return false;
@@ -356,7 +348,7 @@ function findRecentFractal(candles, currentIndex, direction) {
 // ==================== STATE MANAGEMENT ====================
 let state = {
   lastProcessedEpoch: null, lastTgUpdateId: 0, armed: null, confirm: null, dailyBiasPrice: null,
-  last50Origin: null, stochState: null, cciState: null, nextPhase: null, h1TdiDir: null,
+  stochState: null, cciState: null, nextPhase: null, h1TdiDir: null,
   fibBullish: null, fib0: null, fib50: null, fib618: null, fib79: null, fib100: null,
   cciAligned: false, stochAligned: false, envAligned: false
 };
@@ -540,16 +532,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const fib = computeDailyFibLevels(d1Candles);
   if (!fib) return;
 
-  // Day Rollover Reset
+  // Day Rollover Update (Keep active armed traps intact)
   const newBiasPrice = parseFloat(fib.dailyBiasPrice.toFixed(4));
   if (state.dailyBiasPrice !== null && state.dailyBiasPrice !== newBiasPrice) {
-    state.armed = null; 
-    state.confirm = null; 
-    state.last50Origin = null;
-    state.stochState = null;
-    state.cciState = null;
+    dbg(`[ROLLOVER] Updating daily bias to ${newBiasPrice}. Keeping active setups intact.`);
+    state.dailyBiasPrice = newBiasPrice;
+  } else if (state.dailyBiasPrice === null) {
+    state.dailyBiasPrice = newBiasPrice;
   }
-  state.dailyBiasPrice = newBiasPrice;
 
   state.fibBullish = fib.bullish; state.fib0 = parseFloat(fib.fib0.toFixed(4)); state.fib50 = parseFloat(fib.fib50.toFixed(4));
   state.fib618 = parseFloat(fib.fib1618?.toFixed(4) || 0); state.fib79 = parseFloat(fib.fib79.toFixed(4)); state.fib100 = parseFloat(fib.fib100.toFixed(4));
@@ -574,58 +564,83 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   // 5. Write to Daily Ledger CSV
   writeToLedger(m5BoundaryEpoch, currentPrice, cVal, sK, sD, eUp, eLo, state.armed ? state.armed.lbl : "IDLE");
 
-  // ── A. RULE 1: STRICT 6-LEVEL M15 CROSSOVER STATE MACHINE ──
-  let newArm = null;
-
-  if (fib.bullish) {
-    if (crossedAbove(fib.fib0, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "CONT", dir: "BUY", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_BUY (0 to -50)" };
-    } else if (crossedBelow(fib.fib0, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "SELL", tp: fib.fib50, lvl: fib.fib0, lbl: "REV_SELL (0 to 50)" };
-    } else if (crossedAbove(fib.fib79, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib79, lbl: "REV_BUY (79 to 0)" };
-    } else if (crossedAbove(fib.fib100, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "BUY", tp: fib.fib50, lvl: fib.fib100, lbl: "REV_BUY (100 to 50)" };
-    } else if (crossedBelow(fib.fib100, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "CONT", dir: "SELL", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_SELL (100 to 161.8)" };
-    } else if (crossedBelow(fib.fibM50, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fibM50, lbl: "REV_SELL (-50 to 0)" };
-    } else if (crossedAbove(fib.fib1618, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib1618, lbl: "REV_BUY (161.8 to 100)" };
-    } else if (state.last50Origin === fib.fib0 && crossedAbove(fib.fib50, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_BUY (50 to 0)" };
-    } else if (state.last50Origin === fib.fib100 && crossedBelow(fib.fib50, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_SELL (50 to 100)" };
-    }
-  } else {
-    if (crossedBelow(fib.fib0, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "CONT", dir: "SELL", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_SELL (0 to -50)" };
-    } else if (crossedAbove(fib.fib0, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "BUY", tp: fib.fib50, lvl: fib.fib0, lbl: "REV_BUY (0 to 50)" };
-    } else if (crossedBelow(fib.fib79, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib79, lbl: "REV_SELL (79 to 0)" };
-    } else if (crossedAbove(fib.fib100, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "CONT", dir: "BUY", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_BUY (100 to 161.8)" };
-    } else if (crossedBelow(fib.fib100, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "SELL", tp: fib.fib50, lvl: fib.fib100, lbl: "REV_SELL (100 to 50)" };
-    } else if (crossedAbove(fib.fibM50, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fibM50, lbl: "REV_BUY (-50 to 0)" };
-    } else if (crossedBelow(fib.fib1618, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib1618, lbl: "REV_SELL (161.8 to 100)" };
-    } else if (state.last50Origin === fib.fib0 && crossedBelow(fib.fib50, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_SELL (50 to 0)" };
-    } else if (state.last50Origin === fib.fib100 && crossedAbove(fib.fib50, prevM15Close, m15Close, m15Open)) {
-      newArm = { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_BUY (50 to 100)" };
-    }
+  // ── A. RULE 1: UNIVERSAL KEY LEVEL TOUCH & CLOSE-SIDE ARMING ──
+  function isLevelTouched(level, candle) {
+    if (!level) return false;
+    const h = parseFloat(candle.high);
+    const l = parseFloat(candle.low);
+    const buf = (h - l) * 0.05; // 5% wick proximity tolerance
+    return (l <= level + buf && h >= level - buf);
   }
 
-  if (newArm) {
-    if (newArm.tp === fib.fib50) {
-      state.last50Origin = newArm.lvl;
-    } else if (newArm.lbl.includes("(50 to 0)") || newArm.lbl.includes("(50 to 100)")) {
-      state.last50Origin = null; 
-    } else if (state.last50Origin !== null && newArm.lvl !== state.last50Origin) {
-      state.last50Origin = null; 
+  function checkCrossover(level, prevC, currC, currO) {
+    if (!level) return false;
+    const crossedUp = (prevC <= level || currO <= level) && currC > level;
+    const crossedDn = (prevC >= level || currO >= level) && currC < level;
+    return crossedUp || crossedDn;
+  }
+
+  let newArm = null;
+
+  // Ordered list of key levels to check
+  const keyLevels = [
+    { lvl: fib.fib0,    name: "0%" },
+    { lvl: fib.fib50,   name: "50%" },
+    { lvl: fib.fib79,   name: "79%" },
+    { lvl: fib.fib100,  name: "100%" },
+    { lvl: fib.fibM50,  name: "-50%" },
+    { lvl: fib.fib1618, name: "161.8%" }
+  ];
+
+  for (const item of keyLevels) {
+    if (!item.lvl) continue;
+    const touched = isLevelTouched(item.lvl, currM15);
+    const crossed = checkCrossover(item.lvl, prevM15Close, m15Close, m15Open);
+
+    if (touched || crossed) {
+      const closedAbove = m15Close >= item.lvl;
+      const closedBelow = m15Close <= item.lvl;
+
+      if (fib.bullish) {
+        // Bullish Day Architecture
+        if (item.lvl === fib.fib0) {
+          if (closedAbove) newArm = { type: "CONT", dir: "BUY", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_BUY (0 to -50)" };
+          else if (closedBelow) newArm = { type: "REV", dir: "SELL", tp: fib.fib50, lvl: fib.fib0, lbl: "REV_SELL (0 to 50)" };
+        } else if (item.lvl === fib.fib50) {
+          if (closedAbove) newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_BUY (50 to 0)" };
+          else if (closedBelow) newArm = { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_SELL (50 to 100)" };
+        } else if (item.lvl === fib.fib79) {
+          if (closedAbove) newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib79, lbl: "REV_BUY (79 to 0)" };
+          else if (closedBelow) newArm = { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib79, lbl: "REV_SELL (79 to 100)" };
+        } else if (item.lvl === fib.fib100) {
+          if (closedAbove) newArm = { type: "REV", dir: "BUY", tp: fib.fib50, lvl: fib.fib100, lbl: "REV_BUY (100 to 50)" };
+          else if (closedBelow) newArm = { type: "CONT", dir: "SELL", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_SELL (100 to 161.8)" };
+        } else if (item.lvl === fib.fibM50 && closedBelow) {
+          newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fibM50, lbl: "REV_SELL (-50 to 0)" };
+        } else if (item.lvl === fib.fib1618 && closedAbove) {
+          newArm = { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib1618, lbl: "REV_BUY (161.8 to 100)" };
+        }
+      } else {
+        // Bearish Day Architecture
+        if (item.lvl === fib.fib0) {
+          if (closedBelow) newArm = { type: "CONT", dir: "SELL", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_SELL (0 to -50)" };
+          else if (closedAbove) newArm = { type: "REV", dir: "BUY", tp: fib.fib50, lvl: fib.fib0, lbl: "REV_BUY (0 to 50)" };
+        } else if (item.lvl === fib.fib50) {
+          if (closedBelow) newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_SELL (50 to 0)" };
+          else if (closedAbove) newArm = { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_BUY (50 to 100)" };
+        } else if (item.lvl === fib.fib79) {
+          if (closedBelow) newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib79, lbl: "REV_SELL (79 to 0)" };
+          else if (closedAbove) newArm = { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib79, lbl: "REV_BUY (79 to 100)" };
+        } else if (item.lvl === fib.fib100) {
+          if (closedAbove) newArm = { type: "CONT", dir: "BUY", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_BUY (100 to 161.8)" };
+          else if (closedBelow) newArm = { type: "REV", dir: "SELL", tp: fib.fib50, lvl: fib.fib100, lbl: "REV_SELL (100 to 50)" };
+        } else if (item.lvl === fib.fibM50 && closedAbove) {
+          newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fibM50, lbl: "REV_BUY (-50 to 0)" };
+        } else if (item.lvl === fib.fib1618 && closedBelow) {
+          newArm = { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib1618, lbl: "REV_SELL (161.8 to 100)" };
+        }
+      }
+      if (newArm) break; // Armed decisively on the touched level
     }
   }
 
@@ -642,8 +657,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
   }
 
+  // Instant Adaptation: Whenever M15 interacts with a line, update arm
   if (newArm && (!state.armed || state.armed.lbl !== newArm.lbl)) {
-    dbg(`[STATE] New Arm: ${newArm.lbl}`);
+    dbg(`[STATE] New Arm: ${newArm.lbl} (Level: ${newArm.lvl}, TP: ${newArm.tp})`);
     state.armed = newArm;
     state.confirm = { label: newArm.lbl, cci: { aligned: false }, stoch: { aligned: false }, env: { aligned: false } };
   }
@@ -819,7 +835,6 @@ async function runSummary(period = "Daily") {
 
   const completedTrades = trades.filter(t => t.result && t.closeTime && new Date(t.closeTime) >= cutoff);
 
-  // Sync with official profit_table if any serverPnl is missing
   let totalPnl = 0, wins = 0, losses = 0;
   for (const t of completedTrades) {
     const pnl = typeof t.serverPnl === "number" ? t.serverPnl : (t.result === "WIN" ? 5.0 : -3.6);
