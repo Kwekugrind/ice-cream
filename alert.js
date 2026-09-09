@@ -261,7 +261,7 @@ function crossedBelow(level, prevClose, currClose, currOpen) {
   return (prevClose >= level || currOpen >= level) && currClose < level;
 }
 
-// 4-Hour Pre-Midnight Lookback for Stochastic (Gated strictly to 00:00 - 04:00 UTC)
+// 4-Hour Pre-Midnight Lookback for Stochastic (Gated strictly to 00:00 - 04:00 UTC, with 25/75/50 levels)
 function checkPreMidnightStochCross(candles, stoch, dir, type, midlineFallback) {
   const now = new Date();
   if (now.getUTCHours() >= 4) return false;
@@ -289,10 +289,10 @@ function checkPreMidnightStochCross(candles, stoch, dir, type, midlineFallback) 
     const crossedBelow50 = pk > 50 && k <= 50;
 
     if (dir === "BUY") {
-      let isMatch = type === "REV" ? ((crossUp && k <= 20) || (midlineFallback && crossUp && crossedAbove50)) : crossedAbove50;
+      let isMatch = type === "REV" ? ((crossUp && k <= 25) || (midlineFallback && crossUp && crossedAbove50)) : crossedAbove50;
       if (isMatch) validCrossIdx = i;
     } else {
-      let isMatch = type === "REV" ? ((crossDown && k >= 80) || (midlineFallback && crossDown && crossedBelow50)) : crossedBelow50;
+      let isMatch = type === "REV" ? ((crossDown && k >= 75) || (midlineFallback && crossDown && crossedBelow50)) : crossedBelow50;
       if (isMatch) validCrossIdx = i;
     }
   }
@@ -637,7 +637,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   // ── B/C/D. PERSISTENT STATE CONFLUENCE ENGINE (SUPPORTS 40-MIN CONSOLIDATION) ──
   
-  // 1. Stochastic State Evaluation
+  // 1. Stochastic State Evaluation (UPDATED TO 25 / 75 / 50)
   const crossUp         = prevK <= prevD && sK > sD;
   const crossDown       = prevK >= prevD && sK < sD;
   const crossedAbove50  = prevK < 50 && sK >= 50;
@@ -646,7 +646,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   // Update persistent Stochastic State
   if (crossUp) {
-    if (sK <= 20 || (midlineFallback && crossedAbove50)) {
+    if (sK <= 25 || (midlineFallback && crossedAbove50)) {
       state.stochState = { dir: "BUY", type: "REV" };
     } else if (crossedAbove50) {
       state.stochState = { dir: "BUY", type: "CONT" };
@@ -654,7 +654,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.stochState = null; // Invalid/ungated cross
     }
   } else if (crossDown) {
-    if (sK >= 80 || (midlineFallback && crossedBelow50)) {
+    if (sK >= 75 || (midlineFallback && crossedBelow50)) {
       state.stochState = { dir: "SELL", type: "REV" };
     } else if (crossedBelow50) {
       state.stochState = { dir: "SELL", type: "CONT" };
