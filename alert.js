@@ -378,16 +378,16 @@ async function manageOpenTradesFastPath() {
     const isBuy = openTrade.direction === "BUY";
     const pnl = calcUnrealizedPnL(openTrade, currentPrice);
     const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction);
-    const activeSl = openTrade.sl || hardStopPrice;
 
-    const slBreached = isBuy ? currentPrice <= activeSl : currentPrice >= activeSl;
+    // Hard emergency floor: triggers if market blows through the hard calculated loss limit
+    const hardStopBreached = isBuy ? currentPrice <= hardStopPrice : currentPrice >= hardStopPrice;
     let tpHit = false;
     if (openTrade.fibTpPrice) {
       tpHit = isBuy ? currentPrice >= openTrade.fibTpPrice : currentPrice <= openTrade.fibTpPrice;
     }
 
     let reason = null;
-    if (slBreached) { reason = `SL breached at ${currentPrice.toFixed(4)}`; } 
+    if (hardStopBreached) { reason = `Hard SL breached at ${currentPrice.toFixed(4)}`; } 
     else if (pnl <= CATASTROPHIC_PNL_FLOOR) { reason = `Catastrophic floor hit — PnL $${pnl.toFixed(2)}`; } 
     else if (pnl <= SOFTWARE_SL_USD) { reason = `Software SL hit — PnL $${pnl.toFixed(2)}`; } 
     else if (tpHit) { reason = `Fib TP reached at ${currentPrice.toFixed(4)}`; }
@@ -481,6 +481,36 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   for (const t of openTrades) {
     if (closingContracts.has(t.contractId)) continue;
     
+    // 3A. Fractal SL Market Structure Break (Evaluated strictly on M5 Candle Close)
+    const m5ClosePrice = currentPrice; // candles[si].close
+    if (t.sl) {
+      const isBuy = t.direction === "BUY";
+      // In a BUY: candle must close BELOW the fractal low to break structure.
+      // In a SELL: candle must close ABOVE the fractal high to break structure.
+      const structureBroken = isBuy ? m5ClosePrice < t.sl : m5ClosePrice > t.sl;
+      if (structureBroken) {
+        closingContracts.add(t.contractId);
+        console.log(`[STRUCTURE] M5 candle closed at ${m5ClosePrice.toFixed(4)} breaking ${t.fractalTimeframe || "M5"} fractal SL ${t.sl.toFixed(4)}. Exiting.`);
+        try {
+          await closeContract(t.contractId);
+          const settled = await fetchSettledDerivProfit(t.contractId, t.entryEpoch);
+          const pnl = calcUnrealizedPnL(t, m5ClosePrice);
+          t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
+          t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
+          t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
+          t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+          saveTrades(trades);
+          const icon = t.result === "WIN" ? "✅" : "❌";
+          const pnlStr = t.serverPnl >= 0 ? `+$${t.serverPnl.toFixed(2)}` : `-$${Math.abs(t.serverPnl).toFixed(2)}`;
+          await sendTelegram(`${icon} *${REPO_LABEL} — ${t.fractalTimeframe || "M5"} Structure Break*\n\nM5 Candle closed at *${m5ClosePrice.toFixed(4)}* breaking fractal SL *${t.sl.toFixed(4)}*.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+        } catch (e) {
+          console.error(`[STRUCTURE] Failed to close contract ${t.contractId}:`, e.message);
+        }
+        closingContracts.delete(t.contractId);
+        continue;
+      }
+    }
+
     if (!t.m30FractalUpgraded && m15Candles.length >= 5) {
       for (let k = 2; k <= m15Candles.length - 4; k++) {
         if (m15Candles[k + 2].epoch + M15 > t.entryEpoch) {
