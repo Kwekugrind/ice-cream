@@ -9,10 +9,11 @@ import "dotenv/config";
 // --- Server 2 Bots ---
 // const SYMBOL = "R_10"; const SYMBOL_NAME = "Volatility 10 Index"; const REPO_LABEL = "Test Bot (V10 Live)"; const MULTIPLIER = 400; const COMMISSION_USD = 0.16;
 // const SYMBOL = "R_50"; const SYMBOL_NAME = "Volatility 50 Index"; const REPO_LABEL = "OmniSight (V50)"; const MULTIPLIER = 80; const COMMISSION_USD = 0.16;
-const SYMBOL = "1HZ100V"; const SYMBOL_NAME = "Volatility 100 (1s) Index"; const REPO_LABEL = "Ice Cream Machine"; const MULTIPLIER = 40; const COMMISSION_USD = 0.15;
+// const SYMBOL = "1HZ100V"; const SYMBOL_NAME = "Volatility 100 (1s) Index"; const REPO_LABEL = "Ice Cream Machine"; const MULTIPLIER = 40; const COMMISSION_USD = 0.15;
 
 // --- Server 1 Bots ---
-// const SYMBOL = "R_75"; const SYMBOL_NAME = "Volatility 75 Index"; const REPO_LABEL = "Lery's Alerts (V75 Demo)"; const MULTIPLIER = 50; const COMMISSION_USD = 0.15;
+// (Replaced dynamically)
+const SYMBOL = "1HZ100V"; const SYMBOL_NAME = "Volatility 100 (1s) Index"; const REPO_LABEL = "Ice Cream Machine"; const MULTIPLIER = 40; const COMMISSION_USD = 0.15;
 // const SYMBOL = "1HZ75V"; const SYMBOL_NAME = "Volatility 75 (1s) Index"; const REPO_LABEL = "Coffee (V75-1s Demo)"; const MULTIPLIER = 50; const COMMISSION_USD = 0.15;
 // const SYMBOL = "R_100"; const SYMBOL_NAME = "Volatility 100 Index"; const REPO_LABEL = "Milk (V100 Demo)"; const MULTIPLIER = 40; const COMMISSION_USD = 0.15;
 // const SYMBOL = "R_25"; const SYMBOL_NAME = "Volatility 25 Index"; const REPO_LABEL = "Tea (V25 Demo)"; const MULTIPLIER = 160; const COMMISSION_USD = 0.15;
@@ -511,43 +512,84 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
 
-    if (!t.m30FractalUpgraded && m15Candles.length >= 5) {
-      for (let k = 2; k <= m15Candles.length - 4; k++) {
-        if (m15Candles[k + 2].epoch + M15 > t.entryEpoch) {
-          const c = m15Candles;
+    // 3B. Upgrade SL to most recent M30 or M15 fractals
+    let upgraded = false;
+
+    // Check M30 Fractals First
+    if (m30Candles.length >= 5) {
+      // Iterate backwards to find the most recent completed fractal
+      for (let k = m30Candles.length - 3; k >= 2; k--) {
+        // Ensure fractal completed after our entry
+        if (m30Candles[k + 2].epoch + M30 > t.entryEpoch) {
           if (t.direction === "BUY") {
-            const isBottom = parseFloat(c[k].low) === Math.min(parseFloat(c[k-2].low), parseFloat(c[k-1].low), parseFloat(c[k].low), parseFloat(c[k+1].low), parseFloat(c[k+2].low));
-            const frac = parseFloat(c[k].low);
-            if (frac > t.sl && frac < t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M15 Bottom: ${frac.toFixed(4)}`); break; }
+            const isBottom = parseFloat(m30Candles[k].low) === Math.min(
+              parseFloat(m30Candles[k-2].low), parseFloat(m30Candles[k-1].low),
+              parseFloat(m30Candles[k].low),
+              parseFloat(m30Candles[k+1].low), parseFloat(m30Candles[k+2].low)
+            );
+            const frac = parseFloat(m30Candles[k].low);
+            // Must be a valid fractal, better than current SL, but not above entry
+            if (isBottom && frac > t.sl && frac < t.entry) {
+              t.sl = frac;
+              t.fractalTimeframe = "M30";
+              saveTrades(trades);
+              await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M30 Bottom: ${frac.toFixed(4)}`);
+              upgraded = true;
+              break; // found the most recent one
+            }
           } else if (t.direction === "SELL") {
-            const isTop = parseFloat(c[k].high) === Math.max(parseFloat(c[k-2].high), parseFloat(c[k-1].high), parseFloat(c[k].high), parseFloat(c[k+1].high), parseFloat(c[k+2].high));
-            const frac = parseFloat(c[k].high);
-            if (frac < t.sl && frac > t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M15 Top: ${frac.toFixed(4)}`); break; }
+            const isTop = parseFloat(m30Candles[k].high) === Math.max(
+              parseFloat(m30Candles[k-2].high), parseFloat(m30Candles[k-1].high),
+              parseFloat(m30Candles[k].high),
+              parseFloat(m30Candles[k+1].high), parseFloat(m30Candles[k+2].high)
+            );
+            const frac = parseFloat(m30Candles[k].high);
+            if (isTop && frac < t.sl && frac > t.entry) {
+              t.sl = frac;
+              t.fractalTimeframe = "M30";
+              saveTrades(trades);
+              await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M30 Top: ${frac.toFixed(4)}`);
+              upgraded = true;
+              break;
+            }
           }
         }
       }
     }
 
-    if (m30Candles.length >= 4) {
-      let structOpenPrice = null;
-      for (let k = m30Candles.length - 3; k >= 0; k--) {
-        if (m30Candles[k].epoch + M30 <= t.entryEpoch) break;
-        const o = parseFloat(m30Candles[k].open), c = parseFloat(m30Candles[k].close);
-        if (t.direction === "BUY" && c > o) { structOpenPrice = o; break; }
-        else if (t.direction === "SELL" && c < o) { structOpenPrice = o; break; }
-      }
-      if (structOpenPrice !== null) {
-        const lastM30Close = parseFloat(m30Candles[m30Candles.length - 2].close);
-        if ((t.direction === "BUY" && lastM30Close < structOpenPrice) || (t.direction === "SELL" && lastM30Close > structOpenPrice)) {
-          try {
-            await closeContract(t.contractId);
-            const settled = await fetchSettledDerivProfit(t.contractId, t.entryEpoch);
-            t.serverPnl = settled ? settled.profit : -1.0;
-            t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
-            t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
-            saveTrades(trades);
-            await sendTelegram(`❌ *${REPO_LABEL}* — M30 Market Structure broken. Closed position.`);
-          } catch (e) {}
+    // Check M15 Fractals if M30 didn't upgrade
+    if (!upgraded && m15Candles.length >= 5) {
+      for (let k = m15Candles.length - 3; k >= 2; k--) {
+        if (m15Candles[k + 2].epoch + M15 > t.entryEpoch) {
+          if (t.direction === "BUY") {
+            const isBottom = parseFloat(m15Candles[k].low) === Math.min(
+              parseFloat(m15Candles[k-2].low), parseFloat(m15Candles[k-1].low),
+              parseFloat(m15Candles[k].low),
+              parseFloat(m15Candles[k+1].low), parseFloat(m15Candles[k+2].low)
+            );
+            const frac = parseFloat(m15Candles[k].low);
+            if (isBottom && frac > t.sl && frac < t.entry) {
+              t.sl = frac;
+              t.fractalTimeframe = "M15";
+              saveTrades(trades);
+              await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M15 Bottom: ${frac.toFixed(4)}`);
+              break;
+            }
+          } else if (t.direction === "SELL") {
+            const isTop = parseFloat(m15Candles[k].high) === Math.max(
+              parseFloat(m15Candles[k-2].high), parseFloat(m15Candles[k-1].high),
+              parseFloat(m15Candles[k].high),
+              parseFloat(m15Candles[k+1].high), parseFloat(m15Candles[k+2].high)
+            );
+            const frac = parseFloat(m15Candles[k].high);
+            if (isTop && frac < t.sl && frac > t.entry) {
+              t.sl = frac;
+              t.fractalTimeframe = "M15";
+              saveTrades(trades);
+              await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M15 Top: ${frac.toFixed(4)}`);
+              break;
+            }
+          }
         }
       }
     }
