@@ -271,49 +271,30 @@ function computeDailyFibLevels(d1Candles) {
 }
 
 function checkPreMidnightStochCross(candles, stoch, dir, type, midlineFallback) {
-  const now = new Date();
-  if (now.getUTCHours() >= 4) return false;
-
-  const todayMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0)).getTime() / 1000;
-  const fourHoursBeforeMidnight = todayMidnight - (4 * 3600);
-
-  let startIdx = -1, endIdx = -1;
-  for (let i = 0; i < candles.length; i++) {
-    const ep = candles[i].epoch;
-    if (ep >= fourHoursBeforeMidnight && startIdx === -1) startIdx = i;
-    if (ep < todayMidnight) endIdx = i;
-  }
-
-  if (startIdx === -1 || endIdx === -1 || startIdx >= endIdx) return false;
-
   let validCrossIdx = -1;
-  for (let i = startIdx + 1; i <= endIdx; i++) {
+  const startIdx = Math.max(0, candles.length - 96); // Last 8 hours
+  for (let i = startIdx + 1; i < candles.length - 1; i++) {
     const k = stoch.k[i], d = stoch.d[i], pk = stoch.k[i - 1], pd = stoch.d[i - 1];
     if (k === null || d === null || pk === null || pd === null) continue;
-
     const crossUp = pk <= pd && k > d;
     const crossDown = pk >= pd && k < d;
     const crossedAbove50 = pk < 50 && k >= 50;
     const crossedBelow50 = pk > 50 && k <= 50;
-
     if (dir === "BUY") {
-      let isMatch = type === "REV" ? ((crossUp && k <= 25) || (midlineFallback && crossUp && crossedAbove50)) : crossedAbove50;
+      let isMatch = type === "REV" ? ((crossUp && k <= 25) || (midlineFallback && crossedAbove50)) : crossedAbove50;
       if (isMatch) validCrossIdx = i;
     } else {
-      let isMatch = type === "REV" ? ((crossDown && k >= 75) || (midlineFallback && crossDown && crossedBelow50)) : crossedBelow50;
+      let isMatch = type === "REV" ? ((crossDown && k >= 75) || (midlineFallback && crossedBelow50)) : crossedBelow50;
       if (isMatch) validCrossIdx = i;
     }
   }
-
   if (validCrossIdx === -1) return false;
-
   for (let i = validCrossIdx + 1; i < candles.length - 1; i++) {
     const k = stoch.k[i], d = stoch.d[i], pk = stoch.k[i - 1], pd = stoch.d[i - 1];
     if (k === null || d === null || pk === null || pd === null) continue;
     if (dir === "BUY" && (pk >= pd && k < d)) return false; 
     if (dir === "SELL" && (pk <= pd && k > d)) return false; 
   }
-
   return true;
 }
 
@@ -745,22 +726,21 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const crossedBelow50  = prevK > 50 && sK <= 50;
   const midlineFallback = STOCH_MIDLINE_FALLBACK_SYMBOLS.includes(SYMBOL);
 
-  if (crossUp) {
-    if (sK <= 25 || (midlineFallback && crossedAbove50)) {
-      state.stochState = { dir: "BUY", type: "REV" };
-    } else if (crossedAbove50) {
-      state.stochState = { dir: "BUY", type: "CONT" };
-    } else {
-      state.stochState = null;
-    }
-  } else if (crossDown) {
-    if (sK >= 75 || (midlineFallback && crossedBelow50)) {
-      state.stochState = { dir: "SELL", type: "REV" };
-    } else if (crossedBelow50) {
-      state.stochState = { dir: "SELL", type: "CONT" };
-    } else {
-      state.stochState = null;
-    }
+  if (crossUp && sK <= 25) {
+    state.stochState = { dir: "BUY", type: "REV" };
+  } else if (crossDown && sK >= 75) {
+    state.stochState = { dir: "SELL", type: "REV" };
+  }
+
+  if (crossedAbove50) {
+    state.stochState = { dir: "BUY", type: state.armed && state.armed.type === "REV" && midlineFallback ? "REV" : "CONT" };
+  } else if (crossedBelow50) {
+    state.stochState = { dir: "SELL", type: state.armed && state.armed.type === "REV" && midlineFallback ? "REV" : "CONT" };
+  }
+
+  if (state.stochState) {
+    if (state.stochState.dir === "BUY" && crossDown) state.stochState = null;
+    if (state.stochState.dir === "SELL" && crossUp) state.stochState = null;
   }
 
   if (!state.stochState && state.armed) {
