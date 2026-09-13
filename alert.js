@@ -488,6 +488,31 @@ async function manageOpenTradesFastPath() {
     
     const isBuy = openTrade.direction === "BUY";
     const pnl = calcUnrealizedPnL(openTrade, currentPrice);
+
+    // =========================================================================
+    // 🛡️ TIERED PROFIT-LOCK SCALE (Dynamic Dollar-Based Trailing Stop)
+    // =========================================================================
+    if (pnl >= 4.50) {
+      if (openTrade.lockedPnlFloor !== 3.50) {
+        openTrade.lockedPnlFloor = 3.50;
+        saveTrades(trades);
+        console.log(`[PROFIT-LOCK] ${openTrade.contractId} reached +$4.50. Locking in +$3.50.`);
+      }
+    } else if (pnl >= 3.00) {
+      if (openTrade.lockedPnlFloor !== 1.50 && openTrade.lockedPnlFloor !== 3.50) {
+        openTrade.lockedPnlFloor = 1.50;
+        saveTrades(trades);
+        console.log(`[PROFIT-LOCK] ${openTrade.contractId} reached +$3.00. Locking in +$1.50.`);
+      }
+    } else if (pnl >= 1.50) {
+      if (!openTrade.lockedPnlFloor) {
+        openTrade.lockedPnlFloor = 0.20; // BE + Commission
+        saveTrades(trades);
+        console.log(`[PROFIT-LOCK] ${openTrade.contractId} reached +$1.50. Locking Break-Even (+$0.20).`);
+      }
+    }
+    // =========================================================================
+
     const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction);
 
     const hardStopBreached = isBuy ? currentPrice <= hardStopPrice : currentPrice >= hardStopPrice;
@@ -497,7 +522,10 @@ async function manageOpenTradesFastPath() {
     }
 
     let reason = null;
-    if (hardStopBreached) { reason = `Hard SL breached at ${currentPrice.toFixed(4)}`; } 
+    if (openTrade.lockedPnlFloor && pnl <= openTrade.lockedPnlFloor) { 
+      reason = `Profit-Lock hit — Secured +$${openTrade.lockedPnlFloor.toFixed(2)}`; 
+    }
+    else if (hardStopBreached) { reason = `Hard SL breached at ${currentPrice.toFixed(4)}`; } 
     else if (pnl <= CATASTROPHIC_PNL_FLOOR) { reason = `Catastrophic floor hit — PnL $${pnl.toFixed(2)}`; } 
     else if (pnl <= SOFTWARE_SL_USD) { reason = `Software SL hit — PnL $${pnl.toFixed(2)}`; } 
     else if (tpHit) { reason = `Fib TP reached at ${currentPrice.toFixed(4)}`; }
@@ -647,47 +675,6 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
         closingContracts.delete(t.contractId);
         continue;
-      }
-    }
-
-    // M5 CCI Zero-Line Momentum Trailing Exit (Evaluated on M5 Candle Close)
-    // Once trade momentum reaches the trade's side (>= 0 for BUY, <= 0 for SELL),
-    // mark t.cciCrossedZero = true. Only then, if momentum reverses back across zero, exit to lock gains/prevent bleed.
-    const m5CciSeries = calculateCCI(candles, 100);
-    const m5CciVal = m5CciSeries[si];
-    if (m5CciVal !== null) {
-      const isBuy = t.direction === "BUY";
-      if (!t.cciCrossedZero) {
-        if ((isBuy && m5CciVal >= 0) || (!isBuy && m5CciVal <= 0)) {
-          t.cciCrossedZero = true;
-          saveTrades(trades);
-          console.log(`[CCI-MOMENTUM] Position ${t.contractId} (${t.direction}) achieved momentum beyond zero line (${m5CciVal.toFixed(2)}). Trailing exit is now armed.`);
-        }
-      } else {
-        const cciReversedAgainst = isBuy ? m5CciVal < 0 : m5CciVal > 0;
-        if (cciReversedAgainst) {
-          closingContracts.add(t.contractId);
-          console.log(`[CCI-EXIT] M5 candle closed with CCI ${m5CciVal.toFixed(2)} falling back across zero against ${t.direction}. Exiting.`);
-          try {
-            await closeContract(t.contractId);
-            const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
-            const pnl = calcUnrealizedPnL(t, m5ClosePrice);
-            t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
-            t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
-            t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
-            t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
-            state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
-            saveTrades(trades);
-            saveState();
-            const icon = t.result === "WIN" ? "✅" : "❌";
-            const pnlStr = t.serverPnl >= 0 ? `+$${t.serverPnl.toFixed(2)}` : `-$${Math.abs(t.serverPnl).toFixed(2)}`;
-            await sendTelegram(`${icon} *${REPO_LABEL} — M5 CCI Momentum Exit*\n\nM5 Candle closed with CCI *${m5CciVal.toFixed(2)}* crossing zero line against ${t.direction}.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
-          } catch (e) {
-            console.error(`[CCI-EXIT] Failed to close contract ${t.contractId}:`, e.message);
-          }
-          closingContracts.delete(t.contractId);
-          continue;
-        }
       }
     }
 
