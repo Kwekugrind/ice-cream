@@ -735,7 +735,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   if (cVal === null || prevCci === null || eUp === null || eLo === null || sK === null || sD === null || prevK === null || prevD === null) return;
 
   // 5. Write to Daily Ledger CSV
-  writeToLedger(m5BoundaryEpoch, currentPrice, cVal, sK, sD, eUp, eLo, state.armed ? state.armed.lbl : "IDLE");
+  writeToLedger(m5BoundaryEpoch, currentPrice, cVal, sK, sD, eUp, eLo, (state.armed && state.armed.lbl) ? state.armed.lbl : "IDLE");
 
   // ── A. RULE 1: UNIVERSAL KEY LEVEL TOUCH & CLOSE-SIDE ARMING ──
   function isLevelTouched(level, candle) {
@@ -821,16 +821,40 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
   }
 
-  // Active M15 Wrong-Side Invalidation
+  // Active M15 Wrong-Side Invalidation & Target Expiration
   if (state.armed) {
     if (state.armed.dir === "BUY" && m15Close < state.armed.lvl) {
       dbg(`[INVALIDATION] M15 closed at ${m15Close} BELOW armed BUY level ${state.armed.lvl}. Disarming.`);
       state.armed = null;
       state.confirm = null;
+      state.nextPhase = null;
+      state.cciAligned = false;
+      state.stochAligned = false;
+      state.envAligned = false;
     } else if (state.armed.dir === "SELL" && m15Close > state.armed.lvl) {
       dbg(`[INVALIDATION] M15 closed at ${m15Close} ABOVE armed SELL level ${state.armed.lvl}. Disarming.`);
       state.armed = null;
       state.confirm = null;
+      state.nextPhase = null;
+      state.cciAligned = false;
+      state.stochAligned = false;
+      state.envAligned = false;
+    } else if (state.armed.dir === "BUY" && state.armed.tp && m15Close >= state.armed.tp) {
+      dbg(`[EXPIRED] M15 closed at ${m15Close} at/above armed BUY target ${state.armed.tp} without confluence trigger. Disarming.`);
+      state.armed = null;
+      state.confirm = null;
+      state.nextPhase = null;
+      state.cciAligned = false;
+      state.stochAligned = false;
+      state.envAligned = false;
+    } else if (state.armed.dir === "SELL" && state.armed.tp && m15Close <= state.armed.tp) {
+      dbg(`[EXPIRED] M15 closed at ${m15Close} at/below armed SELL target ${state.armed.tp} without confluence trigger. Disarming.`);
+      state.armed = null;
+      state.confirm = null;
+      state.nextPhase = null;
+      state.cciAligned = false;
+      state.stochAligned = false;
+      state.envAligned = false;
     }
   }
 
@@ -922,12 +946,20 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       fibTpPrice  = state.armed.tp;
       state.armed   = null; 
       state.confirm = null;
+      state.nextPhase = null;
       state.stochState = null;
       state.cciState = null;
+      state.cciAligned = false;
+      state.stochAligned = false;
+      state.envAligned = false;
     } else {
       dbg(`[ABORT TRIGGER] Price ${currentPrice} is on the wrong side of level ${state.armed.lvl} for ${state.armed.dir}. Aborting.`);
       state.armed = null;
       state.confirm = null;
+      state.nextPhase = null;
+      state.cciAligned = false;
+      state.stochAligned = false;
+      state.envAligned = false;
     }
   }
 
@@ -938,7 +970,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     trades = loadTrades();
     const activeTrade = trades.find(t => !t.result && !t.pending);
     if (activeTrade) {
-      console.log(`[EXECUTION GATED] Signal ${entryType} confirmed, but position ${activeTrade.contractId} (${activeTrade.direction}) is currently active. Blocking new contract.`);
+      console.log(`[EXECUTION GATED] Signal ${entryType} confirmed, but position ${activeTrade.contractId} (${activeTrade.direction}) is currently active. Blocking new contract. Resetting armed state.`);
+      state.armed = null;
+      state.confirm = null;
+      state.nextPhase = null;
+      state.stochState = null;
+      state.cciState = null;
+      state.cciAligned = false;
+      state.stochAligned = false;
+      state.envAligned = false;
       state.lastProcessedEpoch = m5BoundaryEpoch;
       saveState();
       return;
