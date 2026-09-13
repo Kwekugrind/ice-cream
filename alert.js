@@ -15,6 +15,7 @@ const INSTRUMENT_PROFILES = {
     multiplier: 50,
     commissionUsd: 0.15,
     stochSeparation: 3.5,
+    cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 98.0,
     maxHardStopPoints: 85.0,
     modesAllowed: ["CONT", "REV"],
@@ -28,6 +29,7 @@ const INSTRUMENT_PROFILES = {
     multiplier: 50,
     commissionUsd: 0.15,
     stochSeparation: 3.0,
+    cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 13.0,
     maxHardStopPoints: 11.5,
     modesAllowed: ["CONT", "REV"],
@@ -41,6 +43,7 @@ const INSTRUMENT_PROFILES = {
     multiplier: 40,
     commissionUsd: 0.15,
     stochSeparation: 1.5,
+    cciContinuationThreshold: 40.0,
     minTakeProfitPoints: 1.50,
     maxHardStopPoints: 1.00,
     modesAllowed: ["CONT", "REV"],
@@ -54,6 +57,7 @@ const INSTRUMENT_PROFILES = {
     multiplier: 160,
     commissionUsd: 0.15,
     stochSeparation: 1.5,
+    cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 6.0,
     maxHardStopPoints: 4.9,
     modesAllowed: ["CONT"],
@@ -67,6 +71,7 @@ const INSTRUMENT_PROFILES = {
     multiplier: 40,
     commissionUsd: 0.15,
     stochSeparation: 2.0,
+    cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 2.20,
     maxHardStopPoints: 1.65,
     modesAllowed: ["CONT", "REV"],
@@ -80,6 +85,7 @@ const INSTRUMENT_PROFILES = {
     multiplier: 80,
     commissionUsd: 0.16,
     stochSeparation: 1.5,
+    cciContinuationThreshold: 40.0,
     minTakeProfitPoints: 0.25,
     maxHardStopPoints: 0.18,
     modesAllowed: ["CONT", "REV"],
@@ -93,6 +99,7 @@ const INSTRUMENT_PROFILES = {
     multiplier: 400,
     commissionUsd: 0.16,
     stochSeparation: 1.5,
+    cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 14.0,
     maxHardStopPoints: 10.8,
     modesAllowed: ["CONT"],
@@ -866,7 +873,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   state.nextPhase = state.armed ? state.armed.lbl : null;
 
-  // ── B/C/D. PERSISTENT STATE CONFLUENCE ENGINE ──
+  // ── B/C/D. PERSISTENT STATE CONFLUENCE ENGINE (DUAL-GATE: REVERSAL & PINNED TREND) ──
   const crossUp         = prevK <= prevD && sK > sD;
   const crossDown       = prevK >= prevD && sK < sD;
   const crossedAbove50  = prevK < 50 && sK >= 50;
@@ -877,10 +884,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const stochSeparation = Math.abs(sK - sD);
   const separationValid = stochSeparation >= STOCH_SEPARATION_MIN;
 
+  // 1. Stochastic State Evaluation
   if (crossUp && separationValid) {
     if (sK <= 25 || (midlineFallback && crossedAbove50)) {
       state.stochState = { dir: "BUY", type: "REV" };
-    } else if (crossedAbove50) {
+    } else if (crossedAbove50 || prevK <= 55) {
+      // Continuation: Micro-pullback cross in trend
       state.stochState = { dir: "BUY", type: "CONT" };
     } else {
       state.stochState = null;
@@ -888,7 +897,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   } else if (crossDown && separationValid) {
     if (sK >= 75 || (midlineFallback && crossedBelow50)) {
       state.stochState = { dir: "SELL", type: "REV" };
-    } else if (crossedBelow50) {
+    } else if (crossedBelow50 || prevK >= 45) {
+      // Continuation: Micro-pullback cross in trend
       state.stochState = { dir: "SELL", type: "CONT" };
     } else {
       state.stochState = null;
@@ -902,7 +912,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
   }
 
-  // CCI State Evaluation
+  // 2. CCI State Evaluation (Reversal Bounds)
   if (prevCci <= -70.5 && cVal > -70.5) {
     state.cciState = "BUY";
   } else if (state.cciState === "BUY" && cVal <= -70.5) {
@@ -915,16 +925,30 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.cciState = null;
   }
 
-  // Envelopes State
+  // 3. Envelopes State Evaluation
   let envState = null;
   if (currentPrice > eUp) envState = "BUY";
   if (currentPrice < eLo) envState = "SELL";
 
+  // 4. Confluence Alignment (Dual-Gate: Reversal vs. Continuation Pinned Momentum)
   if (state.armed) {
     const requiredDir = state.armed.dir;
     const requiredType = state.armed.type;
-    state.cciAligned = (state.cciState === requiredDir);
-    state.stochAligned = (state.stochState && state.stochState.dir === requiredDir && state.stochState.type === requiredType);
+
+    if (requiredType === "REV") {
+      // Reversal: requires CCI recovery from extreme zone
+      state.cciAligned = (state.cciState === requiredDir);
+      state.stochAligned = (state.stochState && state.stochState.dir === requiredDir && state.stochState.type === "REV");
+    } else if (requiredType === "CONT") {
+      // Continuation: Ledger-proven pinned momentum gate
+      // Allows trade if CCI is strongly directional (>= threshold) AND stochastic gave cycle hook with trend
+      const cciThreshold = PROFILE.cciContinuationThreshold || 50.0;
+      const cciDirectionalPin = (requiredDir === "BUY" && cVal >= cciThreshold) ||
+                                (requiredDir === "SELL" && cVal <= -cciThreshold);
+      state.cciAligned = cciDirectionalPin || (state.cciState === requiredDir);
+      state.stochAligned = (state.stochState && state.stochState.dir === requiredDir);
+    }
+
     state.envAligned = (envState === requiredDir);
   } else {
     state.cciAligned = false;
