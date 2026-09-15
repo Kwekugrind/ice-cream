@@ -1,7 +1,30 @@
 import WebSocket from "ws";
 import fetch from "node-fetch";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import "dotenv/config";
+
+// ==================== AUTO-RELOAD ON CODE UPDATE ====================
+// Automatically monitors alert.js on disk. When git pull or a sync script updates the file,
+// this watcher detects the timestamp change and gracefully exits (code 0) so PM2
+// immediately respawns the daemon with the updated code in RAM.
+const SCRIPT_PATH = fileURLToPath(import.meta.url);
+let reloadTimer = null;
+try {
+  fs.watchFile(SCRIPT_PATH, { interval: 2000 }, (curr, prev) => {
+    if (curr.mtimeMs !== prev.mtimeMs) {
+      if (reloadTimer) clearTimeout(reloadTimer);
+      console.log(`[AUTO-RELOAD] Code update detected on disk for ${path.basename(SCRIPT_PATH)}. Scheduling clean PM2 restart in 2s...`);
+      reloadTimer = setTimeout(() => {
+        console.log(`[AUTO-RELOAD] Exiting process cleanly now. PM2 will immediately respawn with updated code.`);
+        process.exit(0);
+      }, 2000);
+    }
+  });
+} catch (e) {
+  console.error("[AUTO-RELOAD] Watcher initialization error:", e.message);
+}
 
 // ==================== INSTRUMENT PROFILES (CALIBRATED EMPIRICAL MATRIX) ====================
 // Pure empirical optimization based on 5-day flight recorder ledger data (Sept 7-11, 2026).
@@ -695,11 +718,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           if (t.direction === "BUY") {
             const isBottom = parseFloat(c[k].low) === Math.min(parseFloat(c[k-2].low), parseFloat(c[k-1].low), parseFloat(c[k].low), parseFloat(c[k+1].low), parseFloat(c[k+2].low));
             const frac = parseFloat(c[k].low);
-            if (frac > t.sl && frac < t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`🔍 *${REPO_LABEL}* — SL Upgraded to M15 Bottom: ${frac.toFixed(4)}`); break; }
+            if (frac > t.sl && frac < t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M15 Bottom: ${frac.toFixed(4)}`); break; }
           } else if (t.direction === "SELL") {
             const isTop = parseFloat(c[k].high) === Math.max(parseFloat(c[k-2].high), parseFloat(c[k-1].high), parseFloat(c[k].high), parseFloat(c[k+1].high), parseFloat(c[k+2].high));
             const frac = parseFloat(c[k].high);
-            if (frac < t.sl && frac > t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`🔍 *${REPO_LABEL}* — SL Upgraded to M15 Top: ${frac.toFixed(4)}`); break; }
+            if (frac < t.sl && frac > t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M15 Top: ${frac.toFixed(4)}`); break; }
           }
         }
       }
