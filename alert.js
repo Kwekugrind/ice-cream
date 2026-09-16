@@ -27,8 +27,8 @@ try {
 }
 
 // ==================== INSTRUMENT PROFILES (CALIBRATED EMPIRICAL MATRIX) ====================
-// Pure empirical optimization based on 5-day flight recorder ledger data (Sept 7-11, 2026).
-// Enforces calibrated Stochastic separation, dynamic Take Profit floors, and hard loss barriers.
+// Pure empirical optimization based on multi-day flight recorder ledger data across 77 CSVs.
+// Enforces calibrated Stochastic separation, dynamic Take Profit floors, and noise-wick resilient hard stops.
 const INSTRUMENT_PROFILES = {
   "R_75": {
     symbol: "R_75",
@@ -41,7 +41,7 @@ const INSTRUMENT_PROFILES = {
     gateType: "OPTION_B",
     cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 350.0,
-    maxHardStopPoints: 150.0,
+    maxHardStopPoints: 180.0, // Calibrated from 150.0 to 180.0 (covers 90th % M5 noise bar at safe $1.14 risk)
     modesAllowed: ["CONT", "REV"],
     notes: "Heavyweight index; Option B Stoch-Only (Sep >= 3.5); 350 pt TP yields +$1.84 net."
   },
@@ -56,9 +56,9 @@ const INSTRUMENT_PROFILES = {
     gateType: "OPTION_C2",
     cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 16.0,
-    maxHardStopPoints: 6.0,
+    maxHardStopPoints: 18.0, // Calibrated from 6.0 to 18.0 (clears 75th % 16.56 pt noise at safe $1.72 risk)
     modesAllowed: ["CONT", "REV"],
-    notes: "1-second tick speed; 100x multiplier ($1.27 pts/$1); Option C2; 16.0 pt TP hits +$6.20 net."
+    notes: "1-second tick speed; 100x multiplier ($1.27 pts/$1); Option C2; 18.0 pt SL accommodates 1s noise wicks."
   },
   "R_100": {
     symbol: "R_100",
@@ -71,7 +71,7 @@ const INSTRUMENT_PROFILES = {
     gateType: "OPTION_C2",
     cciContinuationThreshold: 40.0,
     minTakeProfitPoints: 3.50,
-    maxHardStopPoints: 2.50,
+    maxHardStopPoints: 3.00, // Calibrated from 2.50 to 3.00 (clears 75th % 1.96 pt noise at $2.57 risk)
     modesAllowed: ["CONT"],
     notes: "100x multiplier ($1.07 pts/$1); Option C2; eliminates reversal bleed; 3.5 pt TP."
   },
@@ -86,7 +86,7 @@ const INSTRUMENT_PROFILES = {
     gateType: "OPTION_B",
     cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 15.0,
-    maxHardStopPoints: 3.5,
+    maxHardStopPoints: 3.5, // Retained: empirically proven optimal 2.12x avg M5 bar ($2.72 risk)
     modesAllowed: ["REV"],
     notes: "400x multiplier ($1.38 pts/$1); Option B Stoch-Only Reversals hit +$8.00 to +$10.00 net."
   },
@@ -101,9 +101,9 @@ const INSTRUMENT_PROFILES = {
     gateType: "OPTION_C2",
     cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 4.50,
-    maxHardStopPoints: 1.65,
+    maxHardStopPoints: 5.50, // Calibrated from 1.65 to 5.50 (clears 75th % 3.00 pt noise at safe $1.36 risk)
     modesAllowed: ["CONT", "REV"],
-    notes: "High velocity; Option C2; 2.0 separation filter; 4.50 pt TP captures 1.00+ USD expansions."
+    notes: "High velocity 1s ticks; Option C2; 5.50 pt SL gives 2.60x avg M5 bar room; prevents premature wick-outs."
   },
   "R_50": {
     symbol: "R_50",
@@ -116,7 +116,7 @@ const INSTRUMENT_PROFILES = {
     gateType: "DUAL_HYBRID",
     cciContinuationThreshold: 40.0,
     minTakeProfitPoints: 0.30,
-    maxHardStopPoints: 0.18,
+    maxHardStopPoints: 0.20, // Calibrated from 0.18 to 0.20 (clears 75th % 0.17 pt bar at $1.80 risk)
     modesAllowed: ["CONT", "REV"],
     notes: "150x multiplier ($0.124 pts/$1); Dual-Hybrid Engine; CONT: Stoch Only (TP 0.80 pt); REV: Zero-CCI + Stoch (TP 0.30 pt)."
   },
@@ -131,7 +131,7 @@ const INSTRUMENT_PROFILES = {
     gateType: "OPTION_C2",
     cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 24.0,
-    maxHardStopPoints: 8.0,
+    maxHardStopPoints: 8.0, // Retained: fleet champion (+ $13.57 net, 2.08 PF, protected by Fakeout engine)
     modesAllowed: ["CONT", "REV"],
     notes: "400x multiplier ($2.40 pts/$1); Option C2; 24.0 pt TP delivers up to +$10.00 daily cap."
   }
@@ -454,7 +454,7 @@ function checkPreMidnightStochCross(candles, stoch, dir, type, midlineFallback) 
 function deriveHardStopPrice(entry, direction, setupType = null) {
   let hardStopPts = MAX_HARD_SL_POINTS;
   if (SYMBOL === "R_50" && setupType) {
-    hardStopPts = setupType === "REV" ? 0.12 : 0.18;
+    hardStopPts = setupType === "REV" ? 0.15 : 0.20;
   }
   const pointsSlPrice = direction === "BUY" ? entry - hardStopPts : entry + hardStopPts;
 
@@ -464,6 +464,36 @@ function deriveHardStopPrice(entry, direction, setupType = null) {
   const dollarSlPrice = direction === "BUY" ? entry * (1 + priceMoveFraction) : entry * (1 - priceMoveFraction);
 
   return direction === "BUY" ? Math.max(pointsSlPrice, dollarSlPrice) : Math.min(pointsSlPrice, dollarSlPrice);
+}
+
+// ==================== HIGHER-TIMEFRAME TREND SHIELD ====================
+// Evaluates M15 and M30 Stochastic momentum to shield trades from micro-wick noise.
+// When HTF momentum strongly aligns with position direction, structure-based M5 candle closes
+// take precedence over instantaneous sub-bar spikes.
+function checkHtfTrendShield(direction, m15Candles, m30Candles) {
+  if (!m15Candles || m15Candles.length < 30 || !m30Candles || m30Candles.length < 30) return false;
+  try {
+    const stochM15 = calculateStoch(m15Candles);
+    const stochM30 = calculateStoch(m30Candles);
+    const i15 = m15Candles.length - 2;
+    const i30 = m30Candles.length - 2;
+    const k15 = stochM15.k[i15], d15 = stochM15.d[i15];
+    const k30 = stochM30.k[i30], d30 = stochM30.d[i30];
+    if (k15 === null || d15 === null || k30 === null || d30 === null) return false;
+
+    if (direction === "BUY") {
+      const m15Bullish = (k15 >= d15) || (k15 > 35 && stochM15.k[i15] >= stochM15.k[i15 - 1]);
+      const m30Bullish = (k30 >= d30) || (k30 >= 40);
+      return Boolean(m15Bullish && m30Bullish);
+    } else if (direction === "SELL") {
+      const m15Bearish = (k15 <= d15) || (k15 < 65 && stochM15.k[i15] <= stochM15.k[i15 - 1]);
+      const m30Bearish = (k30 <= d30) || (k30 <= 60);
+      return Boolean(m15Bearish && m30Bearish);
+    }
+  } catch (e) {
+    return false;
+  }
+  return false;
 }
 
 function calcUnrealizedPnL(trade, currentPrice) {
@@ -571,22 +601,40 @@ async function manageOpenTradesFastPath() {
     const pnl = calcUnrealizedPnL(openTrade, currentPrice);
 
     // =========================================================================
-    // 🛡️ TIERED PROFIT-LOCK SCALE (Dynamic Dollar-Based Trailing Stop)
+    // ðŸ›¡ï¸ TIERED PROFIT-LOCK SCALE (Dynamic Dollar-Based Trailing Stop)
     // =========================================================================
-    if (pnl >= 4.50) {
-      if (openTrade.lockedPnlFloor !== 3.50) {
+    if (pnl >= 9.00) {
+      if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 7.80) {
+        openTrade.lockedPnlFloor = 7.80;
+        saveTrades(trades);
+        console.log(`[PROFIT-LOCK] ${openTrade.contractId} reached +$9.00. Locking in +$7.80.`);
+      }
+    } else if (pnl >= 7.50) {
+      if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 6.00) {
+        openTrade.lockedPnlFloor = 6.00;
+        saveTrades(trades);
+        console.log(`[PROFIT-LOCK] ${openTrade.contractId} reached +$7.50. Locking in +$6.00.`);
+      }
+    } else if (pnl >= 6.00) {
+      if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 4.80) {
+        openTrade.lockedPnlFloor = 4.80;
+        saveTrades(trades);
+        console.log(`[PROFIT-LOCK] ${openTrade.contractId} reached +$6.00. Locking in +$4.80.`);
+      }
+    } else if (pnl >= 4.50) {
+      if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 3.50) {
         openTrade.lockedPnlFloor = 3.50;
         saveTrades(trades);
         console.log(`[PROFIT-LOCK] ${openTrade.contractId} reached +$4.50. Locking in +$3.50.`);
       }
     } else if (pnl >= 3.00) {
-      if (openTrade.lockedPnlFloor !== 1.50 && openTrade.lockedPnlFloor !== 3.50) {
+      if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 1.50) {
         openTrade.lockedPnlFloor = 1.50;
         saveTrades(trades);
         console.log(`[PROFIT-LOCK] ${openTrade.contractId} reached +$3.00. Locking in +$1.50.`);
       }
     } else if (pnl >= 1.50) {
-      if (!openTrade.lockedPnlFloor) {
+      if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 0.20) {
         openTrade.lockedPnlFloor = 0.20; // BE + Commission
         saveTrades(trades);
         console.log(`[PROFIT-LOCK] ${openTrade.contractId} reached +$1.50. Locking Break-Even (+$0.20).`);
@@ -604,11 +652,11 @@ async function manageOpenTradesFastPath() {
 
     let reason = null;
     if (openTrade.lockedPnlFloor && pnl <= openTrade.lockedPnlFloor) { 
-      reason = `Profit-Lock hit — Secured +$${openTrade.lockedPnlFloor.toFixed(2)}`; 
+      reason = `Profit-Lock hit â€” Secured +$${openTrade.lockedPnlFloor.toFixed(2)}`; 
     }
     else if (hardStopBreached) { reason = `Hard SL breached at ${currentPrice.toFixed(4)}`; } 
-    else if (pnl <= CATASTROPHIC_PNL_FLOOR) { reason = `Catastrophic floor hit — PnL $${pnl.toFixed(2)}`; } 
-    else if (pnl <= SOFTWARE_SL_USD) { reason = `Software SL hit — PnL $${pnl.toFixed(2)}`; } 
+    else if (pnl <= CATASTROPHIC_PNL_FLOOR) { reason = `Catastrophic floor hit â€” PnL $${pnl.toFixed(2)}`; } 
+    else if (pnl <= SOFTWARE_SL_USD) { reason = `Software SL hit â€” PnL $${pnl.toFixed(2)}`; } 
     else if (tpHit) { reason = `Fib TP reached at ${currentPrice.toFixed(4)}`; }
 
     if (reason) {
@@ -639,17 +687,17 @@ async function manageOpenTradesFastPath() {
         state.dailyTargetReached = true;
         state.dailyTargetDate = new Date().toISOString().split("T")[0];
         console.log(`[DAILY TARGET] +$10.00 Daily Goal Achieved ($${state.dailyNetPnl.toFixed(2)}). Switching to IDLE_DAILY_TARGET_REACHED.`);
-        await sendTelegram(`🎯 *${REPO_LABEL} — DAILY TARGET ACHIEVED!* 🎯\n\nDaily Net Profit: *+$${state.dailyNetPnl.toFixed(2)}*\nBot is now locked in profit protection until 00:00 UTC rollover.`);
+        await sendTelegram(`ðŸŽ¯ *${REPO_LABEL} â€” DAILY TARGET ACHIEVED!* ðŸŽ¯\n\nDaily Net Profit: *+$${state.dailyNetPnl.toFixed(2)}*\nBot is now locked in profit protection until 00:00 UTC rollover.`);
       }
 
       saveTrades(trades);
       saveState();
       closingContracts.delete(openTrade.contractId);
       
-      const icon = finalResult === "WIN" ? "✅" : "❌";
+      const icon = finalResult === "WIN" ? "âœ…" : "âŒ";
       const pnlStr = serverPnl >= 0 ? `+$${serverPnl.toFixed(2)}` : `-$${Math.abs(serverPnl).toFixed(2)}`;
       const durationMs = new Date(openTrade.closeTime) - new Date(openTrade.openTime);
-      await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${finalResult}*\n\nDirection: ${openTrade.direction}\n📍 Entry: ${Number(openTrade.entry).toFixed(4)}\n🏁 Exit: ${currentPrice.toFixed(4)}\n\n💵 P&L: *${pnlStr}* (Net of comm.)\nReason: ${reason}\nDuration: ${formatDuration(durationMs)}\nDaily Net Total: $${state.dailyNetPnl.toFixed(2)}\nContract: \`${openTrade.contractId}\``);
+      await sendTelegram(`${icon} *${REPO_LABEL} â€” Trade ${finalResult}*\n\nDirection: ${openTrade.direction}\nðŸ“ Entry: ${Number(openTrade.entry).toFixed(4)}\nðŸ Exit: ${currentPrice.toFixed(4)}\n\nðŸ’µ P&L: *${pnlStr}* (Net of comm.)\nReason: ${reason}\nDuration: ${formatDuration(durationMs)}\nDaily Net Total: $${state.dailyNetPnl.toFixed(2)}\nContract: \`${openTrade.contractId}\``);
     }
   }
 }
@@ -691,7 +739,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           entryEpoch: live.date_start, fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false, fibTpPrice: null, keyLevel: null,
           openTime: new Date(live.date_start * 1000).toISOString().replace("T", " ").substring(0, 19), closeTime: null, result: null
         });
-        await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted unmanaged live contract \`${live.contract_id}\` (${dir}).`);
+        await sendTelegram(`âš ï¸ *${REPO_LABEL}* â€” Adopted unmanaged live contract \`${live.contract_id}\` (${dir}).`);
       }
     }
     
@@ -707,7 +755,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             state.dailyTargetReached = true;
             state.dailyTargetDate = todayStr;
           }
-          await sendTelegram(`${t.result === "WIN" ? "✅" : "❌"} *${REPO_LABEL} — Trade ${t.result} (Broker Native Exit)*\n\n💵 P&L: *${rec.profit >= 0 ? `+$${rec.profit.toFixed(2)}` : `-$${Math.abs(rec.profit).toFixed(2)}`}*`);
+          await sendTelegram(`${t.result === "WIN" ? "âœ…" : "âŒ"} *${REPO_LABEL} â€” Trade ${t.result} (Broker Native Exit)*\n\nðŸ’µ P&L: *${rec.profit >= 0 ? `+$${rec.profit.toFixed(2)}` : `-$${Math.abs(rec.profit).toFixed(2)}`}*`);
         }
       }
     }
@@ -755,10 +803,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     if (closingContracts.has(t.contractId)) continue;
 
     // =========================================================================
-    // 🛡️ FAKEOUT EARLY-EXIT PROTECTION ENGINE (2-OF-3 CONFLUENCE FAILURE)
+    // ðŸ›¡ï¸ FAKEOUT EARLY-EXIT PROTECTION ENGINE (2-OF-3 CONFLUENCE FAILURE)
     // =========================================================================
     const isBuy = t.direction === "BUY";
     const pnl = calcUnrealizedPnL(t, currentPrice);
+    const htfShield = checkHtfTrendShield(t.direction, m15Candles, m30Candles);
+    t.htfShield = htfShield;
 
     if (pnl < 0) {
       let fakeoutVotes = 0;
@@ -772,9 +822,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
 
       // Condition 2: M15 closed in opposite direction against key Fib level
+      let m15Broken = false;
       const keyLvl = getTradeKeyLevel(t, fib);
       if (keyLvl !== null) {
-        const m15Broken = isBuy ? (m15Close < keyLvl) : (m15Close > keyLvl);
+        m15Broken = isBuy ? (m15Close < keyLvl) : (m15Close > keyLvl);
         if (m15Broken) {
           fakeoutVotes++;
           fakeoutReasons.push(isBuy ? `M15 closed (${m15Close.toFixed(4)}) below entry Fib level (${keyLvl.toFixed(4)})` : `M15 closed (${m15Close.toFixed(4)}) above entry Fib level (${keyLvl.toFixed(4)})`);
@@ -792,8 +843,18 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
       }
 
-      // If ANY 2 of 3 conditions are met: Exit trade immediately as Fakeout
-      if (fakeoutVotes >= 2) {
+      // Higher-Timeframe Trend Shield Protection:
+      // If HTF trend momentum (M15 + M30 Stochastic) strongly aligns with the trade direction
+      // and M15 has not closed beyond the key Fib level, do not allow micro-fractals and
+      // shallow 5m consolidation noise to cut a winning macro trend trade.
+      const shouldExitFakeout = fakeoutVotes >= 2 && (!htfShield || m15Broken);
+
+      if (fakeoutVotes >= 2 && htfShield && !m15Broken) {
+        console.log(`[HTF SHIELD] Active ${t.direction} contract ${t.contractId}: M15/M30 momentum aligned. Absorbing M5 pullback noise without breaking Fib key level. Shielding trade from premature exit.`);
+      }
+
+      // If exit condition is confirmed: Exit trade immediately as Fakeout
+      if (shouldExitFakeout) {
         closingContracts.add(t.contractId);
         const reason = `Fakeout Early-Exit (${fakeoutVotes}/3 conditions: ${fakeoutReasons.join(" | ")})`;
         console.log(`[FAKEOUT EXIT] Active ${t.direction} contract ${t.contractId}: ${reason}`);
@@ -811,9 +872,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           saveTrades(trades);
           saveState();
 
-          const icon = t.result === "WIN" ? "✅" : "❌";
+          const icon = t.result === "WIN" ? "âœ…" : "âŒ";
           const pnlStr = t.serverPnl >= 0 ? `+$${t.serverPnl.toFixed(2)}` : `-$${Math.abs(t.serverPnl).toFixed(2)}`;
-          await sendTelegram(`🛡️ *${REPO_LABEL} — Fakeout Early-Exit Liquidated*\n\nDirection: *${t.direction}*\n📍 Entry: *${Number(t.entry).toFixed(4)}*\n🏁 Exit Spot: *${currentPrice.toFixed(4)}*\n💵 P&L: *${pnlStr}* (Early loss mitigation)\n\n⚠️ *Adverse Structural Failure (${fakeoutVotes}/3):*\n• ${fakeoutReasons.join("\n• ")}\n\nPosition cleared immediately to protect capital & unblock reverse setups.\nContract: \`${t.contractId}\``);
+          await sendTelegram(`ðŸ›¡ï¸ *${REPO_LABEL} â€” Fakeout Early-Exit Liquidated*\n\nDirection: *${t.direction}*\nðŸ“ Entry: *${Number(t.entry).toFixed(4)}*\nðŸ Exit Spot: *${currentPrice.toFixed(4)}*\nðŸ’µ P&L: *${pnlStr}* (Early loss mitigation)\n\nâš ï¸ *Adverse Structural Failure (${fakeoutVotes}/3):*\nâ€¢ ${fakeoutReasons.join("\nâ€¢ ")}\n\nPosition cleared immediately to protect capital & unblock reverse setups.\nContract: \`${t.contractId}\``);
         } catch (e) {
           console.error(`[FAKEOUT EXIT] Failed to close contract ${t.contractId}:`, e.message);
         }
@@ -841,9 +902,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
           saveTrades(trades);
           saveState();
-          const icon = t.result === "WIN" ? "✅" : "❌";
+          const icon = t.result === "WIN" ? "âœ…" : "âŒ";
           const pnlStr = t.serverPnl >= 0 ? `+$${t.serverPnl.toFixed(2)}` : `-$${Math.abs(t.serverPnl).toFixed(2)}`;
-          await sendTelegram(`${icon} *${REPO_LABEL} — ${t.fractalTimeframe || "M5"} Structure Break*\n\nM5 Candle closed at *${m5ClosePrice.toFixed(4)}* breaking fractal SL *${t.sl.toFixed(4)}*.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+          await sendTelegram(`${icon} *${REPO_LABEL} â€” ${t.fractalTimeframe || "M5"} Structure Break*\n\nM5 Candle closed at *${m5ClosePrice.toFixed(4)}* breaking fractal SL *${t.sl.toFixed(4)}*.\nðŸ’µ P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
         } catch (e) {
           console.error(`[STRUCTURE] Failed to close contract ${t.contractId}:`, e.message);
         }
@@ -859,11 +920,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           if (t.direction === "BUY") {
             const isBottom = parseFloat(c[k].low) === Math.min(parseFloat(c[k-2].low), parseFloat(c[k-1].low), parseFloat(c[k].low), parseFloat(c[k+1].low), parseFloat(c[k+2].low));
             const frac = parseFloat(c[k].low);
-            if (frac > t.sl && frac < t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M15 Bottom: ${frac.toFixed(4)}`); break; }
+            if (frac > t.sl && frac < t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`ðŸ”Ž *${REPO_LABEL}* â€” SL Upgraded to M15 Bottom: ${frac.toFixed(4)}`); break; }
           } else if (t.direction === "SELL") {
             const isTop = parseFloat(c[k].high) === Math.max(parseFloat(c[k-2].high), parseFloat(c[k-1].high), parseFloat(c[k].high), parseFloat(c[k+1].high), parseFloat(c[k+2].high));
             const frac = parseFloat(c[k].high);
-            if (frac < t.sl && frac > t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M15 Top: ${frac.toFixed(4)}`); break; }
+            if (frac < t.sl && frac > t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`ðŸ”Ž *${REPO_LABEL}* â€” SL Upgraded to M15 Top: ${frac.toFixed(4)}`); break; }
           }
         }
       }
@@ -883,7 +944,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   writeToLedger(m5BoundaryEpoch, currentPrice, cVal, sK, sD, eUp, eLo, (state.armed && state.armed.lbl) ? state.armed.lbl : "IDLE");
 
-  // ── A. RULE 1: UNIVERSAL KEY LEVEL TOUCH & CLOSE-SIDE ARMING ──
+  // â”€â”€ A. RULE 1: UNIVERSAL KEY LEVEL TOUCH & CLOSE-SIDE ARMING â”€â”€
   function isLevelTouched(level, candle) {
     if (!level) return false;
     const h = parseFloat(candle.high);
@@ -1012,7 +1073,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   state.nextPhase = state.armed ? state.armed.lbl : null;
 
-  // ── B/C/D. PERSISTENT STATE CONFLUENCE ENGINE (DUAL-GATE: REVERSAL & PINNED TREND) ──
+  // â”€â”€ B/C/D. PERSISTENT STATE CONFLUENCE ENGINE (DUAL-GATE: REVERSAL & PINNED TREND) â”€â”€
   const crossUp         = prevK <= prevD && sK > sD;
   const crossDown       = prevK >= prevD && sK < sD;
   const crossedAbove50  = prevK < 50 && sK >= 50;
@@ -1125,7 +1186,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.envAligned = false;
   }
 
-  // ── 6. TRIGGER LOGIC (WITH EXECUTION SIDE-GATE) ──
+  // â”€â”€ 6. TRIGGER LOGIC (WITH EXECUTION SIDE-GATE) â”€â”€
   let signalTriggered = false, direction = "", fibTpPrice = null, entryType = null, entryKeyLevel = null;
 
   let indicatorsSatisfied = false;
@@ -1177,7 +1238,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
   }
 
-  // ── 7. EXECUTE & TELEGRAM DIAGNOSTIC CONFIRMATION CARD ──
+  // â”€â”€ 7. EXECUTE & TELEGRAM DIAGNOSTIC CONFIRMATION CARD â”€â”€
   if (signalTriggered) {
     // Just-In-Time Execution Gate: If another trade is still open, block new execution.
     // If the old trade closed moments before this check, trades has no open positions and new trade executes instantly.
@@ -1230,32 +1291,35 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
 
     const timeFormatted = new Date(m5BoundaryEpoch * 1000).toISOString().replace("T", " ").substring(0, 19);
-    const dirEmoji = direction === "BUY" ? "🟢 ⬆️ BUY" : "🔴 ⬇️ SELL";
+    const dirEmoji = direction === "BUY" ? "ðŸŸ¢ â¬†ï¸ BUY" : "ðŸ”´ â¬‡ï¸ SELL";
     const envStatus = direction === "BUY" ? `Close ${currentPrice.toFixed(4)} > Upper ${eUp.toFixed(4)}` : `Close ${currentPrice.toFixed(4)} < Lower ${eLo.toFixed(4)}`;
 
+    const entryHtfShield = checkHtfTrendShield(direction, m15Candles, m30Candles);
+
     const message = 
-      `🚨 *${SYMBOL_NAME.toUpperCase()} SIGNAL* 🚨\n\n` +
+      `ðŸš¨ *${SYMBOL_NAME.toUpperCase()} SIGNAL* ðŸš¨\n\n` +
       `Direction: *${dirEmoji}*\n` +
       `Setup: *${escapeMarkdown(entryType)}*\n` +
-      `📍 Entry: *${entry.toFixed(4)}*\n` +
-      `🛑 Initial SL: *${sl.toFixed(4)}* (${initialFractal ? "M5 Fractal" : "Hard Stop"})\n` +
-      `🎯 Fib TP: *${fibTpPrice.toFixed(4)}*\n\n` +
-      `💰 Stake: $${STAKE_USD} | Multiplier: ${MULTIPLIER}x\n\n` +
-      `📐 *Confluence & Profile Verified*\n` +
-      `• Key Level Trigger: *${entryType}*\n` +
-      `• Gate Engine: *${gate}*\n` +
-      `• M5 CCI(100): *${cVal.toFixed(2)}* (${state.cciAligned ? "Aligned" : "Bypassed / Off"})\n` +
-      `• M5 Stoch(18,12,25): *%K ${sK.toFixed(1)}* | *%D ${sD.toFixed(1)}* (Δ ${stochSeparation.toFixed(1)} ≥ ${STOCH_SEPARATION_MIN})\n` +
-      `• M5 Envelopes(50, 0.05%): *${envStatus}*\n` +
-      `• Daily Target Progress: *$${(state.dailyNetPnl || 0).toFixed(2)} / $10.00*\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `⏰ Time (UTC): ${timeFormatted}\n\n` +
-      `💡 To close manually: send \`/close win\` or \`/close loss\``;
+      `ðŸ“ Entry: *${entry.toFixed(4)}*\n` +
+      `ðŸ›‘ Initial SL: *${sl.toFixed(4)}* (${initialFractal ? "M5 Fractal" : "Hard Stop"})\n` +
+      `ðŸŽ¯ Fib TP: *${fibTpPrice.toFixed(4)}*\n\n` +
+      `ðŸ’° Stake: $${STAKE_USD} | Multiplier: ${MULTIPLIER}x\n\n` +
+      `ðŸ“ *Confluence & Profile Verified*\n` +
+      `â€¢ Key Level Trigger: *${entryType}*\n` +
+      `â€¢ Gate Engine: *${gate}*\n` +
+      `â€¢ HTF Trend Shield (M15/M30): *${entryHtfShield ? "ðŸ›¡ï¸ ACTIVE (Trend Aligned)" : "âšª NEUTRAL"}*\n` +
+      `â€¢ M5 CCI(100): *${cVal.toFixed(2)}* (${state.cciAligned ? "Aligned" : "Bypassed / Off"})\n` +
+      `â€¢ M5 Stoch(18,12,25): *%K ${sK.toFixed(1)}* | *%D ${sD.toFixed(1)}* (Î” ${stochSeparation.toFixed(1)} â‰¥ ${STOCH_SEPARATION_MIN})\n` +
+      `â€¢ M5 Envelopes(50, 0.05%): *${envStatus}*\n` +
+      `â€¢ Daily Target Progress: *$${(state.dailyNetPnl || 0).toFixed(2)} / $10.00*\n` +
+      `â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n` +
+      `â° Time (UTC): ${timeFormatted}\n\n` +
+      `ðŸ’¡ To close manually: send \`/close win\` or \`/close loss\``;
 
     const pendingTradeRecord = {
       id: `${SYMBOL}-${Date.now()}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, rr: null, entryType, brokerSlAmount: STAKE_USD,
       entryEpoch: m5BoundaryEpoch, fractalSl: initialFractal, fractalEpoch: null, fractalTimeframe: initialFractal ? "M5" : null, m30FractalUpgraded: false, fibTpPrice,
-      keyLevel: entryKeyLevel,
+      keyLevel: entryKeyLevel, htfShield: entryHtfShield,
       openTime: timeFormatted, closeTime: null, result: null
     };
     trades.push(pendingTradeRecord);
@@ -1265,7 +1329,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const contractId = await executeTrade(direction);
       if (!contractId) {
         trades.splice(trades.findIndex(t => t.id === pendingTradeRecord.id), 1); saveTrades(trades);
-        await sendTelegram(`❌ *${REPO_LABEL}* — Signal triggered, but broker returned no contract ID. Aborted.`);
+        await sendTelegram(`âŒ *${REPO_LABEL}* â€” Signal triggered, but broker returned no contract ID. Aborted.`);
         return;
       }
       pendingTradeRecord.contractId = contractId;
@@ -1274,7 +1338,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       await sendTelegram(message);
     } catch (execErr) {
       trades.splice(trades.findIndex(t => t.id === pendingTradeRecord.id), 1); saveTrades(trades);
-      await sendTelegram(`❌ *${REPO_LABEL}* — Live execution failed: ${execErr.message}`);
+      await sendTelegram(`âŒ *${REPO_LABEL}* â€” Live execution failed: ${execErr.message}`);
     }
   }
 
@@ -1294,7 +1358,7 @@ async function checkTelegramCommands() {
       const text = update.message?.text?.trim()?.toLowerCase();
       if (text === "/status") {
         const t = loadTrades().filter(x => !x.result && !x.pending);
-        const reply = t.length ? `📍 *Active Trades:*\n` + t.map(x => `• ${x.direction} @ ${Number(x.entry).toFixed(4)}`).join("\n") : `⚪ No open trades.`;
+        const reply = t.length ? `ðŸ“ *Active Trades:*\n` + t.map(x => `â€¢ ${x.direction} @ ${Number(x.entry).toFixed(4)}`).join("\n") : `âšª No open trades.`;
         await sendTelegram(reply);
       }
     }
@@ -1303,8 +1367,8 @@ async function checkTelegramCommands() {
 }
 
 async function startContinuousEngine() {
-  console.log(`[${REPO_LABEL}] 🚀 24/7 Continuous Trading Engine Started Successfully.`);
-  console.log(`[${REPO_LABEL}] ⚙️ Profile: Multiplier ${MULTIPLIER}x | Stoch Sep: ≥${STOCH_SEPARATION_MIN} | Modes: ${MODES_ALLOWED.join(",")}`);
+  console.log(`[${REPO_LABEL}] ðŸš€ 24/7 Continuous Trading Engine Started Successfully.`);
+  console.log(`[${REPO_LABEL}] âš™ï¸ Profile: Multiplier ${MULTIPLIER}x | Stoch Sep: â‰¥${STOCH_SEPARATION_MIN} | Modes: ${MODES_ALLOWED.join(",")}`);
   
   setInterval(checkTelegramCommands, 15000);
 
