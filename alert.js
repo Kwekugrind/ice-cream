@@ -38,53 +38,57 @@ const INSTRUMENT_PROFILES = {
     multiplier: 50,
     commissionUsd: 0.15,
     stochSeparation: 3.5,
+    gateType: "OPTION_B",
     cciContinuationThreshold: 50.0,
-    minTakeProfitPoints: 98.0,
-    maxHardStopPoints: 85.0,
+    minTakeProfitPoints: 350.0,
+    maxHardStopPoints: 150.0,
     modesAllowed: ["CONT", "REV"],
-    notes: "Heavyweight index; wide point swings require 3.5 stoch separation."
+    notes: "Heavyweight index; Option B Stoch-Only (Sep >= 3.5); 350 pt TP yields +$1.84 net."
   },
   "1HZ75V": {
     symbol: "1HZ75V",
     symbolName: "Volatility 75 (1s) Index",
     repoLabel: "Coffee (V75-1s Demo)",
     server: "S1",
-    multiplier: 50,
+    multiplier: 100,
     commissionUsd: 0.15,
-    stochSeparation: 3.0,
+    stochSeparation: 2.0,
+    gateType: "OPTION_C2",
     cciContinuationThreshold: 50.0,
-    minTakeProfitPoints: 13.0,
-    maxHardStopPoints: 11.5,
+    minTakeProfitPoints: 16.0,
+    maxHardStopPoints: 6.0,
     modesAllowed: ["CONT", "REV"],
-    notes: "1-second tick speed; strict 3.0 stoch separation prevents micro-whipsaws."
+    notes: "1-second tick speed; 100x multiplier ($1.27 pts/$1); Option C2; 16.0 pt TP hits +$6.20 net."
   },
   "R_100": {
     symbol: "R_100",
     symbolName: "Volatility 100 Index",
     repoLabel: "Milk (V100 Demo)",
     server: "S1",
-    multiplier: 40,
+    multiplier: 100,
     commissionUsd: 0.15,
     stochSeparation: 1.5,
+    gateType: "OPTION_C2",
     cciContinuationThreshold: 40.0,
-    minTakeProfitPoints: 1.50,
-    maxHardStopPoints: 1.00,
-    modesAllowed: ["CONT", "REV"],
-    notes: "Steady mean-reverter; quick cycles hit targets in 1.5 to 2.3 points."
+    minTakeProfitPoints: 3.50,
+    maxHardStopPoints: 2.50,
+    modesAllowed: ["CONT"],
+    notes: "100x multiplier ($1.07 pts/$1); Option C2; eliminates reversal bleed; 3.5 pt TP."
   },
   "R_25": {
     symbol: "R_25",
     symbolName: "Volatility 25 Index",
     repoLabel: "Tea (V25 Demo)",
     server: "S1",
-    multiplier: 160,
+    multiplier: 400,
     commissionUsd: 0.32,
-    stochSeparation: 1.5,
+    stochSeparation: 2.5,
+    gateType: "OPTION_B",
     cciContinuationThreshold: 50.0,
-    minTakeProfitPoints: 6.0,
-    maxHardStopPoints: 4.9,
-    modesAllowed: ["CONT"],
-    notes: "Mega-trend runner; continuation mode dominates with multi-hour waves."
+    minTakeProfitPoints: 15.0,
+    maxHardStopPoints: 3.5,
+    modesAllowed: ["REV"],
+    notes: "400x multiplier ($1.38 pts/$1); Option B Stoch-Only Reversals hit +$8.00 to +$10.00 net."
   },
   "1HZ100V": {
     symbol: "1HZ100V",
@@ -94,25 +98,27 @@ const INSTRUMENT_PROFILES = {
     multiplier: 40,
     commissionUsd: 0.15,
     stochSeparation: 2.0,
+    gateType: "OPTION_C2",
     cciContinuationThreshold: 50.0,
-    minTakeProfitPoints: 2.20,
+    minTakeProfitPoints: 4.50,
     maxHardStopPoints: 1.65,
     modesAllowed: ["CONT", "REV"],
-    notes: "High velocity; 2.0 separation filter captures explosive 3.8+ point expansions."
+    notes: "High velocity; Option C2; 2.0 separation filter; 4.50 pt TP captures 1.00+ USD expansions."
   },
   "R_50": {
     symbol: "R_50",
     symbolName: "Volatility 50 Index",
     repoLabel: "OmniSight (V50)",
     server: "S2",
-    multiplier: 80,
+    multiplier: 150,
     commissionUsd: 0.16,
-    stochSeparation: 1.5,
+    stochSeparation: 1.0,
+    gateType: "DUAL_HYBRID",
     cciContinuationThreshold: 40.0,
-    minTakeProfitPoints: 0.25,
+    minTakeProfitPoints: 0.30,
     maxHardStopPoints: 0.18,
     modesAllowed: ["CONT", "REV"],
-    notes: "Fastest target achiever; 0.38 points delivers full +$10.00 daily goal."
+    notes: "150x multiplier ($0.124 pts/$1); Dual-Hybrid Engine; CONT: Stoch Only (TP 0.80 pt); REV: Zero-CCI + Stoch (TP 0.30 pt)."
   },
   "R_10": {
     symbol: "R_10",
@@ -122,11 +128,12 @@ const INSTRUMENT_PROFILES = {
     multiplier: 400,
     commissionUsd: 0.80,
     stochSeparation: 1.5,
+    gateType: "OPTION_C2",
     cciContinuationThreshold: 50.0,
-    minTakeProfitPoints: 14.0,
-    maxHardStopPoints: 10.8,
-    modesAllowed: ["CONT"],
-    notes: "400x multiplier; 14.0 points hits +$5.00 net, 26.0 points delivers entire daily cap."
+    minTakeProfitPoints: 24.0,
+    maxHardStopPoints: 8.0,
+    modesAllowed: ["CONT", "REV"],
+    notes: "400x multiplier ($2.40 pts/$1); Option C2; 24.0 pt TP delivers up to +$10.00 daily cap."
   }
 };
 
@@ -144,6 +151,7 @@ const STOCH_SEPARATION_MIN = PROFILE.stochSeparation;
 const MIN_TP_POINTS_FLOOR = PROFILE.minTakeProfitPoints;
 const MAX_HARD_SL_POINTS = PROFILE.maxHardStopPoints;
 const MODES_ALLOWED = PROFILE.modesAllowed;
+const GATE_TYPE = PROFILE.gateType || "BASELINE";
 
 const TRADING_SYMBOL = SYMBOL;
 const STAKE_USD = 5;
@@ -443,11 +451,19 @@ function checkPreMidnightStochCross(candles, stoch, dir, type, midlineFallback) 
   return true;
 }
 
-function deriveHardStopPrice(entry, direction) {
+function deriveHardStopPrice(entry, direction, setupType = null) {
+  let hardStopPts = MAX_HARD_SL_POINTS;
+  if (SYMBOL === "R_50" && setupType) {
+    hardStopPts = setupType === "REV" ? 0.12 : 0.18;
+  }
+  const pointsSlPrice = direction === "BUY" ? entry - hardStopPts : entry + hardStopPts;
+
   const targetLoss = -5.00;
   const requiredRawPnl = targetLoss + COMMISSION_USD;
   const priceMoveFraction = requiredRawPnl / (STAKE_USD * MULTIPLIER);
-  return direction === "BUY" ? entry * (1 + priceMoveFraction) : entry * (1 - priceMoveFraction);
+  const dollarSlPrice = direction === "BUY" ? entry * (1 + priceMoveFraction) : entry * (1 - priceMoveFraction);
+
+  return direction === "BUY" ? Math.max(pointsSlPrice, dollarSlPrice) : Math.min(pointsSlPrice, dollarSlPrice);
 }
 
 function calcUnrealizedPnL(trade, currentPrice) {
@@ -469,6 +485,41 @@ function findRecentFractal(candles, currentIndex, direction) {
           high > parseFloat(candles[k + 1].high) && high > parseFloat(candles[k + 2].high)) return high;
     }
   }
+  return null;
+}
+
+function findAdverseFractalAfterEntry(candles, entryEpoch, direction) {
+  // For BUY: look for Top (high/resistance) fractal formed after entryEpoch
+  // For SELL: look for Bottom (low/support) fractal formed after entryEpoch
+  for (let k = candles.length - 3; k >= 2; k--) {
+    if (candles[k].epoch < entryEpoch) break;
+    if (direction === "BUY") {
+      const high = parseFloat(candles[k].high);
+      if (high > parseFloat(candles[k - 1].high) && high > parseFloat(candles[k - 2].high) &&
+          high > parseFloat(candles[k + 1].high) && high > parseFloat(candles[k + 2].high)) {
+        return { price: high, epoch: candles[k].epoch };
+      }
+    } else {
+      const low = parseFloat(candles[k].low);
+      if (low < parseFloat(candles[k - 1].low) && low < parseFloat(candles[k - 2].low) &&
+          low < parseFloat(candles[k + 1].low) && low < parseFloat(candles[k + 2].low)) {
+        return { price: low, epoch: candles[k].epoch };
+      }
+    }
+  }
+  return null;
+}
+
+function getTradeKeyLevel(trade, fib) {
+  if (trade && typeof trade.keyLevel === "number") return trade.keyLevel;
+  if (!fib) return null;
+  const et = (trade && trade.entryType) ? trade.entryType : "";
+  if (et.includes("0 to -50") || et.includes("0 to 50")) return fib.fib0;
+  if (et.includes("50 to 0") || et.includes("50 to 100")) return fib.fib50;
+  if (et.includes("79 to 0") || et.includes("79 to 100")) return fib.fib79;
+  if (et.includes("100 to 161.8") || et.includes("100 to 50")) return fib.fib100;
+  if (et.includes("-50 to 0")) return fib.fibM50;
+  if (et.includes("161.8 to 100")) return fib.fib1618;
   return null;
 }
 
@@ -543,7 +594,7 @@ async function manageOpenTradesFastPath() {
     }
     // =========================================================================
 
-    const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction);
+    const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction, openTrade.entryType?.includes("REV") ? "REV" : "CONT");
 
     const hardStopBreached = isBuy ? currentPrice <= hardStopPrice : currentPrice >= hardStopPrice;
     let tpHit = false;
@@ -637,7 +688,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         trades.push({
           id: `${SYMBOL}-${Date.now()}`, contractId: live.contract_id, pending: false, repo: REPO_LABEL, symbol: SYMBOL,
           direction: dir, entry: entryPrice, sl: deriveHardStopPrice(entryPrice, dir), rr: null, entryType: "RECOVERED_LIVE", brokerSlAmount: STAKE_USD,
-          entryEpoch: live.date_start, fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false, fibTpPrice: null,
+          entryEpoch: live.date_start, fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false, fibTpPrice: null, keyLevel: null,
           openTime: new Date(live.date_start * 1000).toISOString().replace("T", " ").substring(0, 19), closeTime: null, result: null
         });
         await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted unmanaged live contract \`${live.contract_id}\` (${dir}).`);
@@ -676,11 +727,101 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   state.currentPrice = currentPrice;
   state.lastPriceUpdate = new Date().toISOString();
 
-  // 3. Manage Structure Upgrades on Active Trades
+  // 3. Calculate Fibonacci Levels & Key M15 Candle Close First
+  const fib = computeDailyFibLevels(d1Candles);
+  if (!fib) return;
+
+  const newBiasPrice = parseFloat(fib.dailyBiasPrice.toFixed(4));
+  if (state.dailyBiasPrice !== null && state.dailyBiasPrice !== newBiasPrice) {
+    dbg(`[ROLLOVER] Updating daily bias to ${newBiasPrice}. Keeping active setups intact.`);
+    state.dailyBiasPrice = newBiasPrice;
+  } else if (state.dailyBiasPrice === null) {
+    state.dailyBiasPrice = newBiasPrice;
+  }
+
+  state.fibBullish = fib.bullish; state.fib0 = parseFloat(fib.fib0.toFixed(4)); state.fib50 = parseFloat(fib.fib50.toFixed(4));
+  state.fib618 = parseFloat(fib.fib1618?.toFixed(4) || 0); state.fib79 = parseFloat(fib.fib79.toFixed(4)); state.fib100 = parseFloat(fib.fib100.toFixed(4));
+  state.h1TdiDir = fib.bullish ? "BULL" : "BEAR";
+
+  const prevM15 = m15Candles[m15Candles.length - 3];
+  const currM15 = m15Candles[m15Candles.length - 2];
+  const prevM15Close = parseFloat(prevM15.close);
+  const m15Close     = parseFloat(currM15.close);
+  const m15Open      = parseFloat(currM15.open);
+
+  // 4. Manage Structure & Fakeout Early-Exit Protection on Active Trades
   const openTrades = trades.filter(t => !t.result && !t.pending);
   for (const t of openTrades) {
     if (closingContracts.has(t.contractId)) continue;
-    
+
+    // =========================================================================
+    // 🛡️ FAKEOUT EARLY-EXIT PROTECTION ENGINE (2-OF-3 CONFLUENCE FAILURE)
+    // =========================================================================
+    const isBuy = t.direction === "BUY";
+    const pnl = calcUnrealizedPnL(t, currentPrice);
+
+    if (pnl < 0) {
+      let fakeoutVotes = 0;
+      const fakeoutReasons = [];
+
+      // Condition 1: Fresh adverse fractal formed against position in loss
+      const advFractal = findAdverseFractalAfterEntry(candles, t.entryEpoch, t.direction);
+      if (advFractal) {
+        fakeoutVotes++;
+        fakeoutReasons.push(isBuy ? `Adverse Top Fractal formed at ${advFractal.price.toFixed(4)}` : `Adverse Bottom Fractal formed at ${advFractal.price.toFixed(4)}`);
+      }
+
+      // Condition 2: M15 closed in opposite direction against key Fib level
+      const keyLvl = getTradeKeyLevel(t, fib);
+      if (keyLvl !== null) {
+        const m15Broken = isBuy ? (m15Close < keyLvl) : (m15Close > keyLvl);
+        if (m15Broken) {
+          fakeoutVotes++;
+          fakeoutReasons.push(isBuy ? `M15 closed (${m15Close.toFixed(4)}) below entry Fib level (${keyLvl.toFixed(4)})` : `M15 closed (${m15Close.toFixed(4)}) above entry Fib level (${keyLvl.toFixed(4)})`);
+        }
+      }
+
+      // Condition 3: Two consecutive closed M5 candles against trade direction
+      if (candles.length >= 4) {
+        const c1 = parseFloat(candles[si].close);
+        const c2 = parseFloat(candles[si - 1].close);
+        const twoAdverse = isBuy ? (c1 < t.entry && c2 < t.entry) : (c1 > t.entry && c2 > t.entry);
+        if (twoAdverse) {
+          fakeoutVotes++;
+          fakeoutReasons.push(isBuy ? `2 consecutive M5 candles closed below entry (${t.entry.toFixed(4)})` : `2 consecutive M5 candles closed above entry (${t.entry.toFixed(4)})`);
+        }
+      }
+
+      // If ANY 2 of 3 conditions are met: Exit trade immediately as Fakeout
+      if (fakeoutVotes >= 2) {
+        closingContracts.add(t.contractId);
+        const reason = `Fakeout Early-Exit (${fakeoutVotes}/3 conditions: ${fakeoutReasons.join(" | ")})`;
+        console.log(`[FAKEOUT EXIT] Active ${t.direction} contract ${t.contractId}: ${reason}`);
+
+        try {
+          await closeContract(t.contractId);
+          const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
+          t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
+          t.resultSource = settled !== null ? "deriv_settled_official" : "fakeout_early_exit";
+          t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
+          t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+          t.exitReason = reason;
+
+          state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+          saveTrades(trades);
+          saveState();
+
+          const icon = t.result === "WIN" ? "✅" : "❌";
+          const pnlStr = t.serverPnl >= 0 ? `+$${t.serverPnl.toFixed(2)}` : `-$${Math.abs(t.serverPnl).toFixed(2)}`;
+          await sendTelegram(`🛡️ *${REPO_LABEL} — Fakeout Early-Exit Liquidated*\n\nDirection: *${t.direction}*\n📍 Entry: *${Number(t.entry).toFixed(4)}*\n🏁 Exit Spot: *${currentPrice.toFixed(4)}*\n💵 P&L: *${pnlStr}* (Early loss mitigation)\n\n⚠️ *Adverse Structural Failure (${fakeoutVotes}/3):*\n• ${fakeoutReasons.join("\n• ")}\n\nPosition cleared immediately to protect capital & unblock reverse setups.\nContract: \`${t.contractId}\``);
+        } catch (e) {
+          console.error(`[FAKEOUT EXIT] Failed to close contract ${t.contractId}:`, e.message);
+        }
+        closingContracts.delete(t.contractId);
+        continue;
+      }
+    }
+
     // Fractal SL Market Structure Break (Evaluated strictly on M5 Candle Close)
     const m5ClosePrice = currentPrice;
     if (t.sl) {
@@ -729,28 +870,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
   }
 
-  // 4. Calculate Fibonacci Levels
-  const fib = computeDailyFibLevels(d1Candles);
-  if (!fib) return;
-
-  const newBiasPrice = parseFloat(fib.dailyBiasPrice.toFixed(4));
-  if (state.dailyBiasPrice !== null && state.dailyBiasPrice !== newBiasPrice) {
-    dbg(`[ROLLOVER] Updating daily bias to ${newBiasPrice}. Keeping active setups intact.`);
-    state.dailyBiasPrice = newBiasPrice;
-  } else if (state.dailyBiasPrice === null) {
-    state.dailyBiasPrice = newBiasPrice;
-  }
-
-  state.fibBullish = fib.bullish; state.fib0 = parseFloat(fib.fib0.toFixed(4)); state.fib50 = parseFloat(fib.fib50.toFixed(4));
-  state.fib618 = parseFloat(fib.fib1618?.toFixed(4) || 0); state.fib79 = parseFloat(fib.fib79.toFixed(4)); state.fib100 = parseFloat(fib.fib100.toFixed(4));
-  state.h1TdiDir = fib.bullish ? "BULL" : "BEAR";
-
-  const prevM15 = m15Candles[m15Candles.length - 3];
-  const currM15 = m15Candles[m15Candles.length - 2];
-  const prevM15Close = parseFloat(prevM15.close);
-  const m15Close     = parseFloat(currM15.close);
-  const m15Open      = parseFloat(currM15.open);
-
+  // 5. Calculate Indicators & Write to Daily Ledger CSV
   const cci = calculateCCI(candles, 100);
   const env = calculateEnvelopes(candles, 50, 0.05);
   const stoch = calculateStoch(candles, 18, 12, 25);
@@ -761,7 +881,6 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   if (cVal === null || prevCci === null || eUp === null || eLo === null || sK === null || sD === null || prevK === null || prevD === null) return;
 
-  // 5. Write to Daily Ledger CSV
   writeToLedger(m5BoundaryEpoch, currentPrice, cVal, sK, sD, eUp, eLo, (state.armed && state.armed.lbl) ? state.armed.lbl : "IDLE");
 
   // ── A. RULE 1: UNIVERSAL KEY LEVEL TOUCH & CLOSE-SIDE ARMING ──
@@ -888,7 +1007,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   if (newArm && (!state.armed || state.armed.lbl !== newArm.lbl)) {
     dbg(`[STATE] New Arm: ${newArm.lbl} (Level: ${newArm.lvl}, TP: ${newArm.tp})`);
     state.armed = newArm;
-    state.confirm = { label: newArm.lbl, cci: { aligned: false }, stoch: { aligned: false }, env: { aligned: false } };
+    state.confirm = { label: newArm.lbl, cci: { aligned: false }, stoch: { aligned: false }, env: { aligned: false }, gate: GATE_TYPE };
   }
 
   state.nextPhase = state.armed ? state.armed.lbl : null;
@@ -950,26 +1069,56 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   if (currentPrice > eUp) envState = "BUY";
   if (currentPrice < eLo) envState = "SELL";
 
-  // 4. Confluence Alignment (Dual-Gate: Reversal vs. Continuation Pinned Momentum)
+  // 4. Confluence Alignment (Calibrated Instrument Gate Engine)
+  const gate = GATE_TYPE;
+
   if (state.armed) {
     const requiredDir = state.armed.dir;
     const requiredType = state.armed.type;
 
-    if (requiredType === "REV") {
-      // Reversal: requires CCI recovery from extreme zone
-      state.cciAligned = (state.cciState === requiredDir);
-      state.stochAligned = (state.stochState && state.stochState.dir === requiredDir && state.stochState.type === "REV");
-    } else if (requiredType === "CONT") {
-      // Continuation: Ledger-proven pinned momentum gate
-      // Allows trade if CCI is strongly directional (>= threshold) AND stochastic gave cycle hook with trend
-      const cciThreshold = PROFILE.cciContinuationThreshold || 50.0;
-      const cciDirectionalPin = (requiredDir === "BUY" && cVal >= cciThreshold) ||
-                                (requiredDir === "SELL" && cVal <= -cciThreshold);
-      state.cciAligned = cciDirectionalPin || (state.cciState === requiredDir);
-      state.stochAligned = (state.stochState && state.stochState.dir === requiredDir);
-    }
-
+    // Envelope Band Requirement (Closed candle outside Envelopes in setup direction)
     state.envAligned = (envState === requiredDir);
+
+    // Stochastic Alignment with separation lead filter
+    const stochDirAligned = Boolean(state.stochState && state.stochState.dir === requiredDir);
+    const stochRevAligned = Boolean(stochDirAligned && state.stochState.type === "REV");
+    state.stochAligned = requiredType === "REV" ? (stochRevAligned || stochDirAligned) : stochDirAligned;
+
+    // Strict Zero-Line CCI Alignment (BUY > 0 / SELL < 0)
+    const zeroLineCciAligned = (requiredDir === "BUY" && cVal > 0) ||
+                               (requiredDir === "SELL" && cVal < 0);
+
+    // Extreme Zone Recovery CCI Alignment
+    const zoneRecoveryCciAligned = (state.cciState === requiredDir);
+
+    // Pinned Momentum CCI Alignment (for CONT)
+    const cciThreshold = PROFILE.cciContinuationThreshold || 50.0;
+    const pinnedCciAligned = (requiredDir === "BUY" && cVal >= cciThreshold) ||
+                             (requiredDir === "SELL" && cVal <= -cciThreshold);
+
+    if (gate === "OPTION_B") {
+      // Option B (R_75, R_25): Stochastic Only outside Envelopes. CCI is completely bypassed.
+      state.cciAligned = true;
+    } else if (gate === "OPTION_C2") {
+      // Option C2 (1HZ75V, R_100, 1HZ100V, R_10): Either Strict Zero-Line CCI OR Stochastic
+      state.cciAligned = zeroLineCciAligned || zoneRecoveryCciAligned || pinnedCciAligned;
+    } else if (gate === "DUAL_HYBRID") {
+      // Dual-Hybrid (R_50):
+      // On CONT: Stochastic Only outside Envelope (CCI bypassed)
+      // On REV: Strict Zero-Line CCI (BUY > 0 / SELL < 0) + Stochastic cross
+      if (requiredType === "CONT") {
+        state.cciAligned = true;
+      } else {
+        state.cciAligned = zeroLineCciAligned || zoneRecoveryCciAligned;
+      }
+    } else {
+      // Baseline Dual Confluence
+      if (requiredType === "REV") {
+        state.cciAligned = zoneRecoveryCciAligned;
+      } else {
+        state.cciAligned = pinnedCciAligned || zoneRecoveryCciAligned;
+      }
+    }
   } else {
     state.cciAligned = false;
     state.stochAligned = false;
@@ -977,9 +1126,29 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   }
 
   // ── 6. TRIGGER LOGIC (WITH EXECUTION SIDE-GATE) ──
-  let signalTriggered = false, direction = "", fibTpPrice = null, entryType = null;
+  let signalTriggered = false, direction = "", fibTpPrice = null, entryType = null, entryKeyLevel = null;
 
-  if (state.armed && state.cciAligned && state.stochAligned && state.envAligned) {
+  let indicatorsSatisfied = false;
+  if (state.armed && state.envAligned) {
+    if (gate === "OPTION_B") {
+      // Stochastic Only required
+      indicatorsSatisfied = Boolean(state.stochAligned);
+    } else if (gate === "OPTION_C2") {
+      // Either Strict Zero-Line CCI OR Stochastic crossover required
+      indicatorsSatisfied = Boolean(state.cciAligned || state.stochAligned);
+    } else if (gate === "DUAL_HYBRID") {
+      // CONT: Stoch Only; REV: Both Zero-Line CCI and Stoch required
+      if (state.armed.type === "CONT") {
+        indicatorsSatisfied = Boolean(state.stochAligned);
+      } else {
+        indicatorsSatisfied = Boolean(state.cciAligned && state.stochAligned);
+      }
+    } else {
+      indicatorsSatisfied = Boolean(state.cciAligned && state.stochAligned);
+    }
+  }
+
+  if (indicatorsSatisfied) {
     const isPriceValid = (state.armed.dir === "BUY" && currentPrice >= state.armed.lvl) ||
                          (state.armed.dir === "SELL" && currentPrice <= state.armed.lvl);
 
@@ -988,6 +1157,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       direction   = state.armed.dir;
       entryType   = state.armed.lbl;
       fibTpPrice  = state.armed.tp;
+      entryKeyLevel = state.armed.lvl;
       state.armed   = null; 
       state.confirm = null;
       state.nextPhase = null;
@@ -1029,19 +1199,28 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
     const entry = currentPrice;
 
-    // Minimum Take Profit Dynamic Extension (Protects $5.00 min net profit per trade)
+    // Calibrated Minimum Take Profit Engine (Points Floor + $5.00 Dynamic Extension)
+    let calibratedMinPts = MIN_TP_POINTS_FLOOR;
+    if (SYMBOL === "R_50") {
+      calibratedMinPts = (entryType && entryType.includes("CONT")) ? 0.80 : 0.30;
+    }
+
+    const pointsTpPrice = direction === "BUY" ? entry + calibratedMinPts : entry - calibratedMinPts;
+
     const requiredRawPnl = TARGET_MIN_PROFIT + COMMISSION_USD;
     const priceMoveFraction = requiredRawPnl / (STAKE_USD * MULTIPLIER);
-    const minTpPrice = direction === "BUY" ? entry * (1 + priceMoveFraction) : entry * (1 - priceMoveFraction);
+    const dollarTpPrice = direction === "BUY" ? entry * (1 + priceMoveFraction) : entry * (1 - priceMoveFraction);
 
-    if (direction === "BUY" && minTpPrice > fibTpPrice) {
-      fibTpPrice = minTpPrice; entryType = entryType + " ($5 Ext)";
-    } else if (direction === "SELL" && minTpPrice < fibTpPrice) {
-      fibTpPrice = minTpPrice; entryType = entryType + " ($5 Ext)";
+    const minRequiredTp = direction === "BUY" ? Math.max(pointsTpPrice, dollarTpPrice) : Math.min(pointsTpPrice, dollarTpPrice);
+
+    if (direction === "BUY" && minRequiredTp > fibTpPrice) {
+      fibTpPrice = minRequiredTp; entryType = entryType + " (Calibrated TP Ext)";
+    } else if (direction === "SELL" && minRequiredTp < fibTpPrice) {
+      fibTpPrice = minRequiredTp; entryType = entryType + " (Calibrated TP Ext)";
     }
 
     let initialFractal = findRecentFractal(candles, si, direction);
-    const hardStopPrice = deriveHardStopPrice(entry, direction);
+    const hardStopPrice = deriveHardStopPrice(entry, direction, entryType && entryType.includes("REV") ? "REV" : "CONT");
 
     let sl;
     if (direction === "BUY") {
@@ -1064,7 +1243,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       `💰 Stake: $${STAKE_USD} | Multiplier: ${MULTIPLIER}x\n\n` +
       `📐 *Confluence & Profile Verified*\n` +
       `• Key Level Trigger: *${entryType}*\n` +
-      `• M5 CCI(100): *${cVal.toFixed(2)}*\n` +
+      `• Gate Engine: *${gate}*\n` +
+      `• M5 CCI(100): *${cVal.toFixed(2)}* (${state.cciAligned ? "Aligned" : "Bypassed / Off"})\n` +
       `• M5 Stoch(18,12,25): *%K ${sK.toFixed(1)}* | *%D ${sD.toFixed(1)}* (Δ ${stochSeparation.toFixed(1)} ≥ ${STOCH_SEPARATION_MIN})\n` +
       `• M5 Envelopes(50, 0.05%): *${envStatus}*\n` +
       `• Daily Target Progress: *$${(state.dailyNetPnl || 0).toFixed(2)} / $10.00*\n` +
@@ -1075,6 +1255,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const pendingTradeRecord = {
       id: `${SYMBOL}-${Date.now()}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, rr: null, entryType, brokerSlAmount: STAKE_USD,
       entryEpoch: m5BoundaryEpoch, fractalSl: initialFractal, fractalEpoch: null, fractalTimeframe: initialFractal ? "M5" : null, m30FractalUpgraded: false, fibTpPrice,
+      keyLevel: entryKeyLevel,
       openTime: timeFormatted, closeTime: null, result: null
     };
     trades.push(pendingTradeRecord);
