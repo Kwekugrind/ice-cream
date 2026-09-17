@@ -804,7 +804,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     if (closingContracts.has(t.contractId)) continue;
 
     // =========================================================================
-    // ðŸ›¡ï¸ FAKEOUT EARLY-EXIT PROTECTION ENGINE (2-OF-3 CONFLUENCE FAILURE + M15 CONFIRMATION)
+    // 🛡️ FAKEOUT EARLY-EXIT PROTECTION ENGINE (2-OF-3 CONFLUENCE FAILURE + M15 CONFIRMATION)
     // =========================================================================
     const isBuy = t.direction === "BUY";
     const pnl = calcUnrealizedPnL(t, currentPrice);
@@ -874,9 +874,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
           saveTrades(trades);
           saveState();
-          const icon = t.result === "WIN" ? "âœ…" : "âŒ";
+          const icon = t.result === "WIN" ? "✅" : "❌";
           const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
-          await sendTelegram(`ðŸ›¡ï¸ *${REPO_LABEL} â€” Fakeout Early-Exit Liquidated*\n\nDirection: *${t.direction}*\nðŸ“ Entry: *${Number(t.entry).toFixed(4)}*\nðŸ Exit Spot: *${currentPrice.toFixed(4)}*\nðŸ’µ P&L: *${pnlStr}* (Early loss mitigation)\n\nâš ï¸ *Adverse Structural Failure (${fakeoutVotes}/3 + M15 Adverse Close):*\nâ€¢ ${fakeoutReasons.join("\nâ€¢ ")}\n\nPosition cleared immediately to protect capital & unblock reverse setups.\nContract: \`${t.contractId}\``);
+          await sendTelegram(`🛡️ *${REPO_LABEL} — Fakeout Early-Exit Liquidated*\n\nDirection: *${t.direction}*\n📍 Entry: *${Number(t.entry).toFixed(4)}*\n🏁 Exit Spot: *${currentPrice.toFixed(4)}*\n💵 P&L: *${pnlStr}* (Early loss mitigation)\n\n⚠️ *Adverse Structural Failure (${fakeoutVotes}/3 + M15 Adverse Close):*\n• ${fakeoutReasons.join("\n• ")}\n\nPosition cleared immediately to protect capital & unblock reverse setups.\nContract: \`${t.contractId}\``);
         } catch (e) {
           console.error(`[FAKEOUT EXIT] Failed to close contract ${t.contractId}:`, e.message);
         }
@@ -904,9 +904,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
           saveTrades(trades);
           saveState();
-          const icon = t.result === "WIN" ? "âœ…" : "âŒ";
+          const icon = t.result === "WIN" ? "✅" : "❌";
           const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
-          await sendTelegram(`${icon} *${REPO_LABEL} â€” ${t.fractalTimeframe || "M5"} Structure Break*\n\nM5 Candle closed at *${m5ClosePrice.toFixed(4)}* breaking fractal SL *${t.sl.toFixed(4)}*.\nðŸ’µ P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+          await sendTelegram(`${icon} *${REPO_LABEL} — ${t.fractalTimeframe || "M5"} Structure Break*\n\nM5 Candle closed at *${m5ClosePrice.toFixed(4)}* breaking fractal SL *${t.sl.toFixed(4)}*.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
         } catch (e) {
           console.error(`[STRUCTURE] Failed to close contract ${t.contractId}:`, e.message);
         }
@@ -922,11 +922,34 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           if (t.direction === "BUY") {
             const isBottom = parseFloat(c[k].low) === Math.min(parseFloat(c[k-2].low), parseFloat(c[k-1].low), parseFloat(c[k].low), parseFloat(c[k+1].low), parseFloat(c[k+2].low));
             const frac = parseFloat(c[k].low);
-            if (isBottom && frac > t.sl && frac < t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`ðŸ”Ž *${REPO_LABEL}* â€” SL Upgraded to M15 Bottom: ${frac.toFixed(4)}`); break; }
+            if (isBottom && frac > t.sl && frac < t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M15 Bottom: ${frac.toFixed(4)}`); break; }
           } else if (t.direction === "SELL") {
             const isTop = parseFloat(c[k].high) === Math.max(parseFloat(c[k-2].high), parseFloat(c[k-1].high), parseFloat(c[k].high), parseFloat(c[k+1].high), parseFloat(c[k+2].high));
             const frac = parseFloat(c[k].high);
-            if (isTop && frac < t.sl && frac > t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`ðŸ”Ž *${REPO_LABEL}* â€” SL Upgraded to M15 Top: ${frac.toFixed(4)}`); break; }
+            if (isTop && frac < t.sl && frac > t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M15 Top: ${frac.toFixed(4)}`); break; }
+          }
+        }
+      }
+    }
+
+    if (candles.length >= 5) {
+      for (let k = 2; k <= candles.length - 4; k++) {
+        if (candles[k + 2].epoch > t.entryEpoch) {
+          const c = candles;
+          if (t.direction === "BUY") {
+            const isBottom = parseFloat(c[k].low) === Math.min(parseFloat(c[k-2].low), parseFloat(c[k-1].low), parseFloat(c[k].low), parseFloat(c[k+1].low), parseFloat(c[k+2].low));
+            const frac = parseFloat(c[k].low);
+            if (isBottom && frac > t.sl) { 
+              t.sl = frac; t.fractalTimeframe = "M5_Trail"; saveTrades(trades); 
+              console.log(`[TRAIL SL] Trailed BUY SL to M5 Bottom: ${frac.toFixed(4)}`); 
+            }
+          } else if (t.direction === "SELL") {
+            const isTop = parseFloat(c[k].high) === Math.max(parseFloat(c[k-2].high), parseFloat(c[k-1].high), parseFloat(c[k].high), parseFloat(c[k+1].high), parseFloat(c[k+2].high));
+            const frac = parseFloat(c[k].high);
+            if (isTop && frac < t.sl) { 
+              t.sl = frac; t.fractalTimeframe = "M5_Trail"; saveTrades(trades); 
+              console.log(`[TRAIL SL] Trailed SELL SL to M5 Top: ${frac.toFixed(4)}`); 
+            }
           }
         }
       }
