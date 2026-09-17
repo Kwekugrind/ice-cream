@@ -65,7 +65,7 @@ const INSTRUMENT_PROFILES = {
     symbolName: "Volatility 100 Index",
     repoLabel: "Milk (V100 Demo)",
     server: "S1",
-    multiplier: 100,
+    multiplier: 40,
     commissionUsd: 0.15,
     stochSeparation: 1.5,
     gateType: "OPTION_C2",
