@@ -28,7 +28,7 @@ try {
 
 // ==================== INSTRUMENT PROFILES (CALIBRATED EMPIRICAL MATRIX) ====================
 // Pure empirical optimization based on multi-day flight recorder ledger data across 77 CSVs.
-// Enforces calibrated Stochastic separation, dynamic Take Profit floors, and noise-wick resilient hard stops.
+// Enforces clean directional Stochastic crossover gates, dynamic Take Profit floors, and noise-wick resilient hard stops.
 const INSTRUMENT_PROFILES = {
   "R_75": {
     symbol: "R_75",
@@ -37,13 +37,12 @@ const INSTRUMENT_PROFILES = {
     server: "S1",
     multiplier: 50,
     commissionUsd: 0.15,
-    stochSeparation: 3.5,
     gateType: "OPTION_B",
     cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 350.0,
     maxHardStopPoints: 180.0, // Calibrated from 150.0 to 180.0 (covers 90th % M5 noise bar at safe $1.14 risk)
     modesAllowed: ["CONT", "REV"],
-    notes: "Heavyweight index; Option B Stoch-Only (Sep >= 3.5); 350 pt TP yields +$1.84 net."
+    notes: "Heavyweight index; Option B Stoch-Only; 350 pt TP yields +$1.84 net."
   },
   "1HZ75V": {
     symbol: "1HZ75V",
@@ -52,7 +51,6 @@ const INSTRUMENT_PROFILES = {
     server: "S1",
     multiplier: 100,
     commissionUsd: 0.15,
-    stochSeparation: 2.0,
     gateType: "OPTION_C2",
     cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 16.0,
@@ -67,7 +65,6 @@ const INSTRUMENT_PROFILES = {
     server: "S1",
     multiplier: 40,
     commissionUsd: 0.15,
-    stochSeparation: 1.5,
     gateType: "OPTION_C2",
     cciContinuationThreshold: 40.0,
     minTakeProfitPoints: 3.50,
@@ -82,7 +79,6 @@ const INSTRUMENT_PROFILES = {
     server: "S1",
     multiplier: 400,
     commissionUsd: 0.32,
-    stochSeparation: 2.5,
     gateType: "OPTION_B",
     cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 15.0,
@@ -97,7 +93,6 @@ const INSTRUMENT_PROFILES = {
     server: "S2",
     multiplier: 40,
     commissionUsd: 0.15,
-    stochSeparation: 2.0,
     gateType: "OPTION_C2",
     cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 4.50,
@@ -112,7 +107,6 @@ const INSTRUMENT_PROFILES = {
     server: "S2",
     multiplier: 80,
     commissionUsd: 0.16,
-    stochSeparation: 1.0,
     gateType: "DUAL_HYBRID",
     cciContinuationThreshold: 40.0,
     minTakeProfitPoints: 0.30,
@@ -127,7 +121,6 @@ const INSTRUMENT_PROFILES = {
     server: "S2",
     multiplier: 400,
     commissionUsd: 0.80,
-    stochSeparation: 1.5,
     gateType: "OPTION_C2",
     cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 24.0,
@@ -147,7 +140,7 @@ const SYMBOL_NAME = PROFILE.symbolName;
 const REPO_LABEL = PROFILE.repoLabel;
 const MULTIPLIER = PROFILE.multiplier;
 const COMMISSION_USD = PROFILE.commissionUsd;
-const STOCH_SEPARATION_MIN = PROFILE.stochSeparation;
+const STOCH_SEPARATION_MIN = 0; // Pure directional crossover (zero separation barrier)
 const MIN_TP_POINTS_FLOOR = PROFILE.minTakeProfitPoints;
 const MAX_HARD_SL_POINTS = PROFILE.maxHardStopPoints;
 const MODES_ALLOWED = PROFILE.modesAllowed;
@@ -1118,12 +1111,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const crossedBelow50  = prevK > 50 && sK <= 50;
   const midlineFallback = STOCH_MIDLINE_FALLBACK_SYMBOLS.includes(SYMBOL);
 
-  // Stochastic Separation Lead Filter (Calibrated per instrument)
+  // 1. Stochastic State Evaluation (Clean Directional Crossover - Zero Separation Barrier)
   const stochSeparation = Math.abs(sK - sD);
-  const separationValid = stochSeparation >= STOCH_SEPARATION_MIN;
 
-  // 1. Stochastic State Evaluation
-  if (crossUp && separationValid) {
+  if (crossUp) {
     if (sK <= 25 || (midlineFallback && crossedAbove50)) {
       state.stochState = { dir: "BUY", type: "REV" };
     } else if (crossedAbove50 || prevK <= 55) {
@@ -1132,7 +1123,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     } else {
       state.stochState = null;
     }
-  } else if (crossDown && separationValid) {
+  } else if (crossDown) {
     if (sK >= 75 || (midlineFallback && crossedBelow50)) {
       state.stochState = { dir: "SELL", type: "REV" };
     } else if (crossedBelow50 || prevK >= 45) {
@@ -1145,7 +1136,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   if (!state.stochState && state.armed) {
     const preMidnightValid = checkPreMidnightStochCross(candles, stoch, state.armed.dir, state.armed.type, midlineFallback);
-    if (preMidnightValid && separationValid) {
+    if (preMidnightValid) {
       state.stochState = { dir: state.armed.dir, type: state.armed.type };
     }
   }
@@ -1349,7 +1340,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       `\u2022 Gate Engine: *${gate}*\n` +
       `\u2022 HTF Trend Shield (M15/M30): *${entryHtfShield ? "\ud83d\udee1\ufe0f ACTIVE (Trend Aligned)" : "\u26aa NEUTRAL"}*\n` +
       `\u2022 M5 CCI(100): *${cVal.toFixed(2)}* (${state.cciAligned ? "Aligned" : "Bypassed / Off"})\n` +
-      `\u2022 M5 Stoch(18,12,25): *%K ${sK.toFixed(1)}* | *%D ${sD.toFixed(1)}* (\u0394 ${stochSeparation.toFixed(1)} \u2265 ${STOCH_SEPARATION_MIN})\n` +
+      `\u2022 M5 Stoch(18,12,25): *%K ${sK.toFixed(1)}* | *%D ${sD.toFixed(1)}* (Directional Cross Verified)\n` +
       `\u2022 M5 Envelopes(50, 0.05%): *${envStatus}*\n` +
       `\u2022 Daily Target Progress: *$${(state.dailyNetPnl || 0).toFixed(2)} / $10.00*\n` +
       `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n` +
@@ -1408,7 +1399,7 @@ async function checkTelegramCommands() {
 
 async function startContinuousEngine() {
   console.log(`[${REPO_LABEL}] \ud83d\ude80 24/7 Continuous Trading Engine Started Successfully.`);
-  console.log(`[${REPO_LABEL}] \u2699\ufe0f Profile: Multiplier ${MULTIPLIER}x | Stoch Sep: \u2265${STOCH_SEPARATION_MIN} | Modes: ${MODES_ALLOWED.join(",")}`);
+  console.log(`[${REPO_LABEL}] \u2699\ufe0f Profile: Multiplier ${MULTIPLIER}x | Modes: ${MODES_ALLOWED.join(",")}`);
   
   setInterval(checkTelegramCommands, 15000);
 
