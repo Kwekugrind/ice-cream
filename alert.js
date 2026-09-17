@@ -118,7 +118,7 @@ const INSTRUMENT_PROFILES = {
     minTakeProfitPoints: 0.30,
     maxHardStopPoints: 0.20, // Calibrated from 0.18 to 0.20 (clears 75th % 0.17 pt bar at $1.80 risk)
     modesAllowed: ["CONT", "REV"],
-    notes: "150x multiplier ($0.124 pts/$1); Dual-Hybrid Engine; CONT: Stoch Only (TP 0.80 pt); REV: Zero-CCI + Stoch (TP 0.30 pt)."
+    notes: "80x multiplier ($0.124 pts/$1); Dual-Hybrid Engine; CONT: Stoch Only (TP 0.80 pt); REV: Zero-CCI + Stoch (TP 0.30 pt)."
   },
   "R_10": {
     symbol: "R_10",
@@ -797,13 +797,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const m15Close     = parseFloat(currM15.close);
   const m15Open      = parseFloat(currM15.open);
 
+  
   // 4. Manage Structure & Fakeout Early-Exit Protection on Active Trades
   const openTrades = trades.filter(t => !t.result && !t.pending);
   for (const t of openTrades) {
     if (closingContracts.has(t.contractId)) continue;
 
     // =========================================================================
-    // \ud83d\udee1\ufe0f FAKEOUT EARLY-EXIT PROTECTION ENGINE (2-OF-3 CONFLUENCE FAILURE)
+    // ðŸ›¡ï¸ FAKEOUT EARLY-EXIT PROTECTION ENGINE (2-OF-3 CONFLUENCE FAILURE + M15 CONFIRMATION)
     // =========================================================================
     const isBuy = t.direction === "BUY";
     const pnl = calcUnrealizedPnL(t, currentPrice);
@@ -843,20 +844,23 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
       }
 
-      // Higher-Timeframe Trend Shield Protection:
-      // If HTF trend momentum (M15 + M30 Stochastic) strongly aligns with the trade direction
-      // and M15 has not closed beyond the key Fib level, do not allow micro-fractals and
-      // shallow 5m consolidation noise to cut a winning macro trend trade.
-      const shouldExitFakeout = fakeoutVotes >= 2 && (!htfShield || m15Broken);
+      // NEW CONDITION: M15 candle has to close bearish for buy and bullish for sell.
+      const m15AdverseClose = isBuy ? (m15Close < m15Open) : (m15Close > m15Open);
+      if (!m15AdverseClose && fakeoutVotes >= 2) {
+         console.log(`[FAKEOUT REJECTED] ${t.contractId}: 2/3 conditions met, BUT M15 did not close adversely. Holding trade.`);
+      }
 
-      if (fakeoutVotes >= 2 && htfShield && !m15Broken) {
-        console.log(`[HTF SHIELD] Active ${t.direction} contract ${t.contractId}: M15/M30 momentum aligned. Absorbing M5 pullback noise without breaking Fib key level. Shielding trade from premature exit.`);
+      // Higher-Timeframe Trend Shield Protection:
+      const shouldExitFakeout = fakeoutVotes >= 2 && m15AdverseClose && (!htfShield || m15Broken);
+
+      if (fakeoutVotes >= 2 && m15AdverseClose && htfShield && !m15Broken) {
+        console.log(`[HTF SHIELD] Active ${t.direction} contract ${t.contractId}: M15/M30 momentum aligned. Absorbing M5 pullback noise. Shielding trade.`);
       }
 
       // If exit condition is confirmed: Exit trade immediately as Fakeout
       if (shouldExitFakeout) {
         closingContracts.add(t.contractId);
-        const reason = `Fakeout Early-Exit (${fakeoutVotes}/3 conditions: ${fakeoutReasons.join(" | ")})`;
+        const reason = `Fakeout Early-Exit (${fakeoutVotes}/3 conditions + M15 Adverse Close: ${fakeoutReasons.join(" | ")})`;
         console.log(`[FAKEOUT EXIT] Active ${t.direction} contract ${t.contractId}: ${reason}`);
 
         try {
@@ -867,14 +871,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
           t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
           t.exitReason = reason;
-
           state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
           saveTrades(trades);
           saveState();
-
-          const icon = t.result === "WIN" ? "\u2705" : "\u274c";
-          const pnlStr = t.serverPnl >= 0 ? `+$${t.serverPnl.toFixed(2)}` : `-$${Math.abs(t.serverPnl).toFixed(2)}`;
-          await sendTelegram(`\ud83d\udee1\ufe0f *${REPO_LABEL} \u2014 Fakeout Early-Exit Liquidated*\n\nDirection: *${t.direction}*\n\ud83d\udccd Entry: *${Number(t.entry).toFixed(4)}*\n\ud83c\udfc1 Exit Spot: *${currentPrice.toFixed(4)}*\n\ud83d\udcb5 P&L: *${pnlStr}* (Early loss mitigation)\n\n\u26a0\ufe0f *Adverse Structural Failure (${fakeoutVotes}/3):*\n\u2022 ${fakeoutReasons.join("\n\u2022 ")}\n\nPosition cleared immediately to protect capital & unblock reverse setups.\nContract: \`${t.contractId}\``);
+          const icon = t.result === "WIN" ? "âœ…" : "âŒ";
+          const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
+          await sendTelegram(`ðŸ›¡ï¸ *${REPO_LABEL} â€” Fakeout Early-Exit Liquidated*\n\nDirection: *${t.direction}*\nðŸ“ Entry: *${Number(t.entry).toFixed(4)}*\nðŸ Exit Spot: *${currentPrice.toFixed(4)}*\nðŸ’µ P&L: *${pnlStr}* (Early loss mitigation)\n\nâš ï¸ *Adverse Structural Failure (${fakeoutVotes}/3 + M15 Adverse Close):*\nâ€¢ ${fakeoutReasons.join("\nâ€¢ ")}\n\nPosition cleared immediately to protect capital & unblock reverse setups.\nContract: \`${t.contractId}\``);
         } catch (e) {
           console.error(`[FAKEOUT EXIT] Failed to close contract ${t.contractId}:`, e.message);
         }
@@ -902,9 +904,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
           saveTrades(trades);
           saveState();
-          const icon = t.result === "WIN" ? "\u2705" : "\u274c";
-          const pnlStr = t.serverPnl >= 0 ? `+$${t.serverPnl.toFixed(2)}` : `-$${Math.abs(t.serverPnl).toFixed(2)}`;
-          await sendTelegram(`${icon} *${REPO_LABEL} \u2014 ${t.fractalTimeframe || "M5"} Structure Break*\n\nM5 Candle closed at *${m5ClosePrice.toFixed(4)}* breaking fractal SL *${t.sl.toFixed(4)}*.\n\ud83d\udcb5 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+          const icon = t.result === "WIN" ? "âœ…" : "âŒ";
+          const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
+          await sendTelegram(`${icon} *${REPO_LABEL} â€” ${t.fractalTimeframe || "M5"} Structure Break*\n\nM5 Candle closed at *${m5ClosePrice.toFixed(4)}* breaking fractal SL *${t.sl.toFixed(4)}*.\nðŸ’µ P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
         } catch (e) {
           console.error(`[STRUCTURE] Failed to close contract ${t.contractId}:`, e.message);
         }
@@ -920,16 +922,17 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           if (t.direction === "BUY") {
             const isBottom = parseFloat(c[k].low) === Math.min(parseFloat(c[k-2].low), parseFloat(c[k-1].low), parseFloat(c[k].low), parseFloat(c[k+1].low), parseFloat(c[k+2].low));
             const frac = parseFloat(c[k].low);
-            if (frac > t.sl && frac < t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`\ud83d\udd0e *${REPO_LABEL}* \u2014 SL Upgraded to M15 Bottom: ${frac.toFixed(4)}`); break; }
+            if (isBottom && frac > t.sl && frac < t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`ðŸ”Ž *${REPO_LABEL}* â€” SL Upgraded to M15 Bottom: ${frac.toFixed(4)}`); break; }
           } else if (t.direction === "SELL") {
             const isTop = parseFloat(c[k].high) === Math.max(parseFloat(c[k-2].high), parseFloat(c[k-1].high), parseFloat(c[k].high), parseFloat(c[k+1].high), parseFloat(c[k+2].high));
             const frac = parseFloat(c[k].high);
-            if (frac < t.sl && frac > t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`\ud83d\udd0e *${REPO_LABEL}* \u2014 SL Upgraded to M15 Top: ${frac.toFixed(4)}`); break; }
+            if (isTop && frac < t.sl && frac > t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`ðŸ”Ž *${REPO_LABEL}* â€” SL Upgraded to M15 Top: ${frac.toFixed(4)}`); break; }
           }
         }
       }
     }
   }
+
 
   // 5. Calculate Indicators & Write to Daily Ledger CSV
   const cci = calculateCCI(candles, 100);
