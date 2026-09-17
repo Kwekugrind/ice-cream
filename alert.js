@@ -561,6 +561,8 @@ let state = {
   lastPriceUpdate: null,
   lastProcessedEpoch: null, lastTgUpdateId: 0, armed: null, confirm: null, dailyBiasPrice: null,
   last50Origin: null,
+  lastTriggeredSetup: null,
+  lastTriggeredEpoch: null,
   dailyNetPnl: 0,
   dailyTargetReached: false,
   dailyTargetDate: null,
@@ -998,12 +1000,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     { lvl: fib.fib1618, name: "161.8%" }
   ];
 
+  // Track 50% Origin Memory from 0% and 100% touches
+  if (isLevelTouched(fib.fib0, currM15)) state.last50Origin = "fib0";
+  if (isLevelTouched(fib.fib100, currM15)) state.last50Origin = "fib100";
+
   for (const item of keyLevels) {
     if (!item.lvl) continue;
-    const touched = isLevelTouched(item.lvl, currM15);
     const crossed = checkCrossover(item.lvl, prevM15Close, m15Close, m15Open);
 
-    if (touched || crossed) {
+    if (crossed) {
       const closedAbove = m15Close >= item.lvl;
       const closedBelow = m15Close <= item.lvl;
 
@@ -1012,11 +1017,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           if (closedAbove) newArm = { type: "CONT", dir: "BUY", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_BUY (0 to -50)" };
           else if (closedBelow) newArm = { type: "REV", dir: "SELL", tp: fib.fib50, lvl: fib.fib0, lbl: "REV_SELL (0 to 50)" };
         } else if (item.lvl === fib.fib50) {
-          if (closedAbove) newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_BUY (50 to 0)" };
-          else if (closedBelow) newArm = { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_SELL (50 to 100)" };
+          if (closedAbove && state.last50Origin === "fib0") newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_BUY (50 to 0)" };
+          else if (closedBelow && state.last50Origin === "fib100") newArm = { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_SELL (50 to 100)" };
         } else if (item.lvl === fib.fib79) {
           if (closedAbove) newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib79, lbl: "REV_BUY (79 to 0)" };
-          else if (closedBelow) newArm = { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib79, lbl: "REV_SELL (79 to 100)" };
+          // Closed below 79% on bullish day is strictly INACTIVE per Handbook Section 4
         } else if (item.lvl === fib.fib100) {
           if (closedAbove) newArm = { type: "REV", dir: "BUY", tp: fib.fib50, lvl: fib.fib100, lbl: "REV_BUY (100 to 50)" };
           else if (closedBelow) newArm = { type: "CONT", dir: "SELL", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_SELL (100 to 161.8)" };
@@ -1030,11 +1035,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           if (closedBelow) newArm = { type: "CONT", dir: "SELL", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_SELL (0 to -50)" };
           else if (closedAbove) newArm = { type: "REV", dir: "BUY", tp: fib.fib50, lvl: fib.fib0, lbl: "REV_BUY (0 to 50)" };
         } else if (item.lvl === fib.fib50) {
-          if (closedBelow) newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_SELL (50 to 0)" };
-          else if (closedAbove) newArm = { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_BUY (50 to 100)" };
+          if (closedBelow && state.last50Origin === "fib0") newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_SELL (50 to 0)" };
+          else if (closedAbove && state.last50Origin === "fib100") newArm = { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_BUY (50 to 100)" };
         } else if (item.lvl === fib.fib79) {
           if (closedBelow) newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib79, lbl: "REV_SELL (79 to 0)" };
-          else if (closedAbove) newArm = { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib79, lbl: "REV_BUY (79 to 100)" };
+          // Closed above 79% on bearish day is strictly INACTIVE per Handbook Section 4
         } else if (item.lvl === fib.fib100) {
           if (closedAbove) newArm = { type: "CONT", dir: "BUY", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_BUY (100 to 161.8)" };
           else if (closedBelow) newArm = { type: "REV", dir: "SELL", tp: fib.fib50, lvl: fib.fib100, lbl: "REV_SELL (100 to 50)" };
@@ -1048,6 +1053,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       // Check if setup mode is allowed by this instrument's profile
       if (newArm && !MODES_ALLOWED.includes(newArm.type)) {
         dbg(`[PROFILE FILTER] Setup ${newArm.lbl} ignored; instrument allows only: ${MODES_ALLOWED.join(",")}`);
+        newArm = null;
+      }
+
+      // 30-Minute Execution Latch: Prevent re-arming the exact same setup if recently executed
+      if (newArm && state.lastTriggeredSetup === newArm.lbl && (m5BoundaryEpoch - (state.lastTriggeredEpoch || 0)) < 1800) {
+        dbg(`[COOLDOWN LATCH] Setup ${newArm.lbl} was executed within the last 30 minutes. Suppressing duplicate re-arm.`);
         newArm = null;
       }
 
@@ -1172,24 +1183,24 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const stochRevAligned = Boolean(stochDirAligned && state.stochState.type === "REV");
     state.stochAligned = requiredType === "REV" ? (stochRevAligned || stochDirAligned) : stochDirAligned;
 
-    // Strict Zero-Line CCI Alignment (BUY > 0 / SELL < 0)
-    const zeroLineCciAligned = (requiredDir === "BUY" && cVal > 0) ||
-                               (requiredDir === "SELL" && cVal < 0);
+    // Strict Zero-Line CCI Momentum Crossover (Fresh momentum thrust through 0.0)
+    const zeroLineCciCrossed = (requiredDir === "BUY" && prevCci <= 0 && cVal > 0) ||
+                               (requiredDir === "SELL" && prevCci >= 0 && cVal < 0);
 
     // Extreme Zone Recovery CCI Alignment
     const zoneRecoveryCciAligned = (state.cciState === requiredDir);
 
     // Pinned Momentum CCI Alignment (for CONT)
     const cciThreshold = PROFILE.cciContinuationThreshold || 50.0;
-    const pinnedCciAligned = (requiredDir === "BUY" && cVal >= cciThreshold) ||
-                             (requiredDir === "SELL" && cVal <= -cciThreshold);
+    const pinnedCciCrossed = (requiredDir === "BUY" && prevCci < cciThreshold && cVal >= cciThreshold) ||
+                             (requiredDir === "SELL" && prevCci > -cciThreshold && cVal <= -cciThreshold);
 
     if (gate === "OPTION_B") {
       // Option B (R_75, R_25): Stochastic Only outside Envelopes. CCI is completely bypassed.
       state.cciAligned = true;
     } else if (gate === "OPTION_C2") {
-      // Option C2 (1HZ75V, R_100, 1HZ100V, R_10): Either Strict Zero-Line CCI OR Stochastic
-      state.cciAligned = zeroLineCciAligned || zoneRecoveryCciAligned || pinnedCciAligned;
+      // Option C2 (1HZ75V, R_100, 1HZ100V, R_10): Requires fresh momentum event (Zero-line cross, Zone recovery, or Pinned cross)
+      state.cciAligned = zeroLineCciCrossed || zoneRecoveryCciAligned || pinnedCciCrossed;
     } else if (gate === "DUAL_HYBRID") {
       // Dual-Hybrid (R_50):
       // On CONT: Stochastic Only outside Envelope (CCI bypassed)
@@ -1246,6 +1257,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       entryType   = state.armed.lbl;
       fibTpPrice  = state.armed.tp;
       entryKeyLevel = state.armed.lvl;
+      state.lastTriggeredSetup = entryType;
+      state.lastTriggeredEpoch = m5BoundaryEpoch;
       state.armed   = null; 
       state.confirm = null;
       state.nextPhase = null;
