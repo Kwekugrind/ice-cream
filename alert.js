@@ -403,25 +403,17 @@ function computeDailyFibLevels(d1Candles) {
     : { bullish, fibM50: l - 0.5*rng, fib0: l, fib50: l + 0.5*rng, fib79: l + 0.79*rng, fib100: h, fib1618: l + 1.618*rng, dailyBiasPrice };
 }
 
-// 4-Hour Pre-Midnight Lookback for Stochastic (Gated strictly to 00:00 - 04:00 UTC)
-function checkPreMidnightStochCross(candles, stoch, dir, type, midlineFallback) {
-  const now = new Date();
-  if (now.getUTCHours() >= 4) return false;
-
-  const todayMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0)).getTime() / 1000;
-  const fourHoursBeforeMidnight = todayMidnight - (4 * 3600);
-
-  let startIdx = -1, endIdx = -1;
-  for (let i = 0; i < candles.length; i++) {
-    const ep = candles[i].epoch;
-    if (ep >= fourHoursBeforeMidnight && startIdx === -1) startIdx = i;
-    if (ep < todayMidnight) endIdx = i;
-  }
-
-  if (startIdx === -1 || endIdx === -1 || startIdx >= endIdx) return false;
+// 8-Hour Historical Stochastic Lookback (Current Session + Pre-Midnight Rollover)
+// Resolves massive entry lag by recovering valid stochastic crosses lost during invalidation/restarts
+function checkHistoricalStochCross(candles, stoch, dir, type, midlineFallback) {
+  const scanLimit = 96;
+  let startIdx = Math.max(1, candles.length - scanLimit - 1);
+  const endIdx = candles.length - 2;
+  
+  if (startIdx >= endIdx) return false;
 
   let validCrossIdx = -1;
-  for (let i = startIdx + 1; i <= endIdx; i++) {
+  for (let i = startIdx; i <= endIdx; i++) {
     const k = stoch.k[i], d = stoch.d[i], pk = stoch.k[i - 1], pd = stoch.d[i - 1];
     if (k === null || d === null || pk === null || pd === null) continue;
 
@@ -429,14 +421,26 @@ function checkPreMidnightStochCross(candles, stoch, dir, type, midlineFallback) 
     const crossDown = pk >= pd && k < d;
     const crossedAbove50 = pk < 50 && k >= 50;
     const crossedBelow50 = pk > 50 && k <= 50;
+    
+    // Evaluate separation on the historical candle
+    const separationValid = Math.abs(k - d) >= STOCH_SEPARATION_MIN;
 
-    if (dir === "BUY") {
-      let isMatch = type === "REV" ? ((crossUp && k <= 25) || (midlineFallback && crossUp && crossedAbove50)) : crossedAbove50;
-      if (isMatch) validCrossIdx = i;
-    } else {
-      let isMatch = type === "REV" ? ((crossDown && k >= 75) || (midlineFallback && crossDown && crossedBelow50)) : crossedBelow50;
-      if (isMatch) validCrossIdx = i;
+    let isMatch = false;
+    if (dir === "BUY" && crossUp && separationValid) {
+      if (type === "REV") {
+        isMatch = (k <= 25 || (midlineFallback && crossedAbove50));
+      } else if (type === "CONT") {
+        isMatch = (crossedAbove50 || pk <= 55);
+      }
+    } else if (dir === "SELL" && crossDown && separationValid) {
+      if (type === "REV") {
+        isMatch = (k >= 75 || (midlineFallback && crossedBelow50));
+      } else if (type === "CONT") {
+        isMatch = (crossedBelow50 || pk >= 45);
+      }
     }
+
+    if (isMatch) validCrossIdx = i;
   }
 
   if (validCrossIdx === -1) return false;
@@ -444,10 +448,11 @@ function checkPreMidnightStochCross(candles, stoch, dir, type, midlineFallback) 
   for (let i = validCrossIdx + 1; i < candles.length - 1; i++) {
     const k = stoch.k[i], d = stoch.d[i], pk = stoch.k[i - 1], pd = stoch.d[i - 1];
     if (k === null || d === null || pk === null || pd === null) continue;
+    
     if (dir === "BUY" && (pk >= pd && k < d)) return false; 
     if (dir === "SELL" && (pk <= pd && k > d)) return false; 
   }
-
+  
   return true;
 }
 
@@ -1132,7 +1137,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   }
 
   if (!state.stochState && state.armed) {
-    const preMidnightValid = checkPreMidnightStochCross(candles, stoch, state.armed.dir, state.armed.type, midlineFallback);
+    const preMidnightValid = checkHistoricalStochCross(candles, stoch, state.armed.dir, state.armed.type, midlineFallback);
     if (preMidnightValid && separationValid) {
       state.stochState = { dir: state.armed.dir, type: state.armed.type };
     }
