@@ -155,6 +155,11 @@ const DAILY_PROFIT_TARGET_USD = 10.00;
 const MARKET_DATA_APP_ID = "1089";
 const TARGET_MIN_PROFIT = 5.00;
 
+// Continuous Dollar Trailing Stop Settings
+const TRAIL_ACTIVATION_USD = 1.50; // Activate trailing once profit reaches +$1.50
+const TRAIL_BUFFER_USD = 1.00;     // Trail $1.00 behind peak unrealized profit
+const TRAIL_INITIAL_FLOOR_USD = 0.20; // Initial guaranteed lock at activation (+$0.20 covers commissions)
+
 const STOCH_MIDLINE_FALLBACK_SYMBOLS = ["R_50", "R_10"];
 
 const GATEWAY_URL = process.env.GATEWAY_URL || process.env.PROXY_URL || "http://127.0.0.1:3000";
@@ -597,43 +602,19 @@ async function manageOpenTradesFastPath() {
     const pnl = calcUnrealizedPnL(openTrade, currentPrice);
 
     // =========================================================================
-    // \ud83d\udee1\ufe0f TIERED PROFIT-LOCK SCALE (Dynamic Dollar-Based Trailing Stop)
+    // \ud83d\udee1\ufe0f CONTINUOUS DOLLAR TRAILING STOP (Ratchet Behind Peak Unrealized Profit)
     // =========================================================================
-    if (pnl >= 9.00) {
-      if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 7.80) {
-        openTrade.lockedPnlFloor = 7.80;
-        saveTrades(trades);
-        console.log(`[PROFIT-LOCK] ${openTrade.contractId} reached +$9.00. Locking in +$7.80.`);
+    if (pnl >= TRAIL_ACTIVATION_USD) {
+      if (!openTrade.maxUnrealizedPnl || pnl > openTrade.maxUnrealizedPnl) {
+        openTrade.maxUnrealizedPnl = parseFloat(pnl.toFixed(2));
       }
-    } else if (pnl >= 7.50) {
-      if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 6.00) {
-        openTrade.lockedPnlFloor = 6.00;
+      const rawFloor = openTrade.maxUnrealizedPnl - TRAIL_BUFFER_USD;
+      const targetFloor = parseFloat(Math.max(TRAIL_INITIAL_FLOOR_USD, rawFloor).toFixed(2));
+
+      if (!openTrade.lockedPnlFloor || targetFloor > openTrade.lockedPnlFloor) {
+        openTrade.lockedPnlFloor = targetFloor;
         saveTrades(trades);
-        console.log(`[PROFIT-LOCK] ${openTrade.contractId} reached +$7.50. Locking in +$6.00.`);
-      }
-    } else if (pnl >= 6.00) {
-      if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 4.80) {
-        openTrade.lockedPnlFloor = 4.80;
-        saveTrades(trades);
-        console.log(`[PROFIT-LOCK] ${openTrade.contractId} reached +$6.00. Locking in +$4.80.`);
-      }
-    } else if (pnl >= 4.50) {
-      if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 3.50) {
-        openTrade.lockedPnlFloor = 3.50;
-        saveTrades(trades);
-        console.log(`[PROFIT-LOCK] ${openTrade.contractId} reached +$4.50. Locking in +$3.50.`);
-      }
-    } else if (pnl >= 3.00) {
-      if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 1.50) {
-        openTrade.lockedPnlFloor = 1.50;
-        saveTrades(trades);
-        console.log(`[PROFIT-LOCK] ${openTrade.contractId} reached +$3.00. Locking in +$1.50.`);
-      }
-    } else if (pnl >= 1.50) {
-      if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 0.20) {
-        openTrade.lockedPnlFloor = 0.20; // BE + Commission
-        saveTrades(trades);
-        console.log(`[PROFIT-LOCK] ${openTrade.contractId} reached +$1.50. Locking Break-Even (+$0.20).`);
+        console.log(`[TRAIL-STOP] ${openTrade.contractId} Peak PnL +$${openTrade.maxUnrealizedPnl.toFixed(2)} -> Trailing floor ratcheted to +$${openTrade.lockedPnlFloor.toFixed(2)}.`);
       }
     }
     // =========================================================================
@@ -800,7 +781,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     if (closingContracts.has(t.contractId)) continue;
 
     // =========================================================================
-    // 🛡️ FAKEOUT EARLY-EXIT PROTECTION ENGINE (2-OF-3 CONFLUENCE FAILURE + M15 CONFIRMATION)
+    // ðŸ›¡ï¸ FAKEOUT EARLY-EXIT PROTECTION ENGINE (2-OF-3 CONFLUENCE FAILURE + M15 CONFIRMATION)
     // =========================================================================
     const isBuy = t.direction === "BUY";
     const pnl = calcUnrealizedPnL(t, currentPrice);
@@ -870,9 +851,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
           saveTrades(trades);
           saveState();
-          const icon = t.result === "WIN" ? "✅" : "❌";
+          const icon = t.result === "WIN" ? "âœ…" : "âŒ";
           const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
-          await sendTelegram(`🛡️ *${REPO_LABEL} — Fakeout Early-Exit Liquidated*\n\nDirection: *${t.direction}*\n📍 Entry: *${Number(t.entry).toFixed(4)}*\n🏁 Exit Spot: *${currentPrice.toFixed(4)}*\n💵 P&L: *${pnlStr}* (Early loss mitigation)\n\n⚠️ *Adverse Structural Failure (${fakeoutVotes}/3 + M15 Adverse Close):*\n• ${fakeoutReasons.join("\n• ")}\n\nPosition cleared immediately to protect capital & unblock reverse setups.\nContract: \`${t.contractId}\``);
+          await sendTelegram(`ðŸ›¡ï¸ *${REPO_LABEL} â€” Fakeout Early-Exit Liquidated*\n\nDirection: *${t.direction}*\nðŸ“ Entry: *${Number(t.entry).toFixed(4)}*\nðŸ Exit Spot: *${currentPrice.toFixed(4)}*\nðŸ’µ P&L: *${pnlStr}* (Early loss mitigation)\n\nâš ï¸ *Adverse Structural Failure (${fakeoutVotes}/3 + M15 Adverse Close):*\nâ€¢ ${fakeoutReasons.join("\nâ€¢ ")}\n\nPosition cleared immediately to protect capital & unblock reverse setups.\nContract: \`${t.contractId}\``);
         } catch (e) {
           console.error(`[FAKEOUT EXIT] Failed to close contract ${t.contractId}:`, e.message);
         }
@@ -900,9 +881,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
           saveTrades(trades);
           saveState();
-          const icon = t.result === "WIN" ? "✅" : "❌";
+          const icon = t.result === "WIN" ? "âœ…" : "âŒ";
           const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
-          await sendTelegram(`${icon} *${REPO_LABEL} — ${t.fractalTimeframe || "M5"} Structure Break*\n\nM5 Candle closed at *${m5ClosePrice.toFixed(4)}* breaking fractal SL *${t.sl.toFixed(4)}*.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+          await sendTelegram(`${icon} *${REPO_LABEL} â€” ${t.fractalTimeframe || "M5"} Structure Break*\n\nM5 Candle closed at *${m5ClosePrice.toFixed(4)}* breaking fractal SL *${t.sl.toFixed(4)}*.\nðŸ’µ P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
         } catch (e) {
           console.error(`[STRUCTURE] Failed to close contract ${t.contractId}:`, e.message);
         }
@@ -918,11 +899,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           if (t.direction === "BUY") {
             const isBottom = parseFloat(c[k].low) === Math.min(parseFloat(c[k-2].low), parseFloat(c[k-1].low), parseFloat(c[k].low), parseFloat(c[k+1].low), parseFloat(c[k+2].low));
             const frac = parseFloat(c[k].low);
-            if (isBottom && frac > t.sl && frac < t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M15 Bottom: ${frac.toFixed(4)}`); break; }
+            if (isBottom && frac > t.sl && frac < t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`ðŸ”Ž *${REPO_LABEL}* â€” SL Upgraded to M15 Bottom: ${frac.toFixed(4)}`); break; }
           } else if (t.direction === "SELL") {
             const isTop = parseFloat(c[k].high) === Math.max(parseFloat(c[k-2].high), parseFloat(c[k-1].high), parseFloat(c[k].high), parseFloat(c[k+1].high), parseFloat(c[k+2].high));
             const frac = parseFloat(c[k].high);
-            if (isTop && frac < t.sl && frac > t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`🔎 *${REPO_LABEL}* — SL Upgraded to M15 Top: ${frac.toFixed(4)}`); break; }
+            if (isTop && frac < t.sl && frac > t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`ðŸ”Ž *${REPO_LABEL}* â€” SL Upgraded to M15 Top: ${frac.toFixed(4)}`); break; }
           }
         }
       }
