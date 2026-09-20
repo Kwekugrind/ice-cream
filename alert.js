@@ -384,18 +384,46 @@ async function fetchAllData() {
 async function fetchCurrentSpotPrice() {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
+    let timer = null;
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      try {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          if (typeof ws.terminate === "function") ws.terminate();
+          else ws.close();
+        }
+      } catch (e) {}
+    };
+
+    timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("fetchCurrentSpotPrice timeout"));
+    }, 4000); // 4-second strict network timeout safeguard to prevent hung sockets
+
     ws.on("open", () => {
-      ws.send(JSON.stringify({ req_id: 3, ticks_history: SYMBOL, count: 1, end: "latest", style: "ticks" }));
-    });
-    ws.on("message", d => {
-      const msg = JSON.parse(d);
-      if (msg.req_id === 3 && msg.history && msg.history.prices && msg.history.prices.length > 0) {
-        ws.close();
-        resolve(parseFloat(msg.history.prices[msg.history.prices.length - 1]));
+      try {
+        ws.send(JSON.stringify({ req_id: 3, ticks_history: SYMBOL, count: 1, end: "latest", style: "ticks" }));
+      } catch (err) {
+        cleanup();
+        reject(err);
       }
     });
-    ws.on("error", err => { ws.close(); reject(err); });
-    setTimeout(() => { ws.close(); reject(new Error("fetchCurrentSpotPrice timeout")); }, 10000);
+    ws.on("message", d => {
+      try {
+        const msg = JSON.parse(d);
+        if (msg.req_id === 3 && msg.history && msg.history.prices && msg.history.prices.length > 0) {
+          cleanup();
+          resolve(parseFloat(msg.history.prices[msg.history.prices.length - 1]));
+        }
+      } catch (err) {
+        cleanup();
+        reject(err);
+      }
+    });
+    ws.on("error", err => {
+      cleanup();
+      reject(err);
+    });
   });
 }
 
@@ -674,13 +702,13 @@ function saveState() { fs.writeFileSync("state.json", JSON.stringify(state, null
 function loadTrades() { try { return JSON.parse(fs.readFileSync("trades.json")); } catch { return []; } }
 function saveTrades(t) { fs.writeFileSync("trades.json", JSON.stringify(t, null, 2)); }
 
-// ==================== FAST PATH: RISK MANAGEMENT (RUNS EVERY 10 SECONDS) ====================
+// ==================== FAST PATH: RISK MANAGEMENT (ADAPTIVE: 3S IN-TRADE / 10S IDLE) ====================
 const closingContracts = new Set();
 
 async function manageOpenTradesFastPath() {
   let trades = loadTrades();
   let openTrades = trades.filter(t => !t.result && !t.pending);
-  if (openTrades.length === 0) return;
+  if (openTrades.length === 0) return false;
 
   let currentPrice;
   try {
@@ -690,7 +718,8 @@ async function manageOpenTradesFastPath() {
     state.lastPriceUpdate = new Date().toISOString();
     saveState();
   } catch (e) {
-    return;
+    // If transient price fetch failure occurred but trade is open, maintain in-trade flag
+    return true;
   }
 
   for (const openTrade of openTrades) {
@@ -776,6 +805,10 @@ async function manageOpenTradesFastPath() {
       await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${finalResult}*\n\nDirection: ${openTrade.direction}\n📍 Entry: ${Number(openTrade.entry).toFixed(4)}\n🏁 Exit: ${currentPrice.toFixed(4)}\n\n💵 P&L: *${pnlStr}* (Net of comm.)\nReason: ${reason}\nDuration: ${formatDuration(durationMs)}\nDaily Net Total: $${state.dailyNetPnl.toFixed(2)}\nContract: \`${openTrade.contractId}\``);
     }
   }
+
+  // Return whether any trades remain actively open and unclosed
+  const remainingTrades = loadTrades();
+  return remainingTrades.some(t => !t.result && !t.pending);
 }
 
 // ==================== SLOW PATH (RUNS ON CLOSED M5 CANDLE) ====================
@@ -1489,11 +1522,12 @@ export async function startContinuousEngine() {
   let isScanning = false;
 
   while (true) {
+    let hasOpenTrade = false;
     try {
       const nowEpoch = Math.floor(Date.now() / 1000);
       const currentM5Boundary = nowEpoch - (nowEpoch % 300);
 
-      await manageOpenTradesFastPath();
+      hasOpenTrade = await manageOpenTradesFastPath();
 
       // Ensure spot price is refreshed periodically in state.json even if no open trades
       if (!state.currentPrice || !state.lastPriceUpdate || (Date.now() - new Date(state.lastPriceUpdate).getTime() > 30000)) {
@@ -1517,7 +1551,8 @@ export async function startContinuousEngine() {
       isScanning = false;
     }
 
-    await sleep(10000);
+    // Adaptive Risk Pulse: 3 seconds when managing an active live trade, 10 seconds when idle
+    await sleep(hasOpenTrade ? 3000 : 10000);
   }
 }
 
