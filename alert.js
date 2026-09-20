@@ -1033,6 +1033,45 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   if (sK === null || sD === null || prevK === null || prevD === null) return;
 
+  // ── LIVE INDICATOR TELEMETRY UPDATES FOR DASHBOARD SYNCHRONIZATION ──
+  state.strategyProfile = STRATEGY_PROFILE;
+  state.stochVal = sK;
+  state.stochSignal = sD;
+  state.cciVal = cVal;
+  state.envUpper = eUp;
+  state.envLower = eLo;
+  state.ema100Val = currentEma100;
+  state.stoch533Val = sK533;
+
+  // Stoch 50 cross & status
+  state.stoch50CrossUp = prevK <= 50.0 && sK > 50.0;
+  state.stoch50CrossDown = prevK >= 50.0 && sK < 50.0;
+  state.stoch50Above = sK > 50.0;
+
+  // EMA 100 alignment status
+  state.ema100BuyArmed = currentPrice > currentEma100;
+  state.ema100SellArmed = currentPrice < currentEma100;
+  state.emaAligned = currentPrice > currentEma100 ? "BUY" : (currentPrice < currentEma100 ? "SELL" : null);
+
+  // Fast Stoch (5,3,3) status
+  state.stoch533BuyCross = prevK533 <= 20.0 && sK533 > 20.0;
+  state.stoch533SellCross = (prevK533 >= 80.0 && sK533 < 80.0) || (prevK533 >= 50.0 && sK533 < 50.0);
+
+  // Envelope status (50 or 200 depending on profile)
+  state.envBuyActive = currentPrice > eUp;
+  state.envSellActive = currentPrice < eLo;
+  state.envAligned = currentPrice > eUp ? "BUY" : (currentPrice < eLo ? "SELL" : null);
+
+  // CCI status
+  state.cciCrossBuy = (prevCci !== null && cVal !== null) ? (prevCci <= -100.0 && cVal > -100.0) : false;
+  state.cciCrossSell = (prevCci !== null && cVal !== null) ? (prevCci >= 100.0 && cVal < 100.0) : false;
+  state.cciAligned = (cVal !== null && cVal > 0) ? "BUY" : (cVal !== null && cVal < 0 ? "SELL" : null);
+
+  // Stoch Boundary status (20/80)
+  state.stoch20CrossUp = prevK <= 20.0 && sK > 20.0;
+  state.stoch80CrossDown = prevK >= 80.0 && sK < 80.0;
+  state.stochAligned = (sK > sD) ? "BUY" : "SELL";
+
   writeToLedger(m5BoundaryEpoch, currentPrice, cVal, sK, sD, eUp, eLo, (state.armed && state.armed.lbl) ? state.armed.lbl : "IDLE", `EMA100:${currentEma100 ? currentEma100.toFixed(2) : "0"}`);
 
   // ── A. RULE 1: UNIVERSAL KEY LEVEL TOUCH & CLOSE-SIDE ARMING ──
