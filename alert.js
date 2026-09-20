@@ -41,8 +41,6 @@ export const INSTRUMENT_PROFILES = {
     strategyProfile: "PROFILE_V75_MIDLINE_FRACTAL",
     gateType: "STOCH_50_MIDLINE",
     stochParams: { k: 18, d: 12, slowing: 25 },
-    envParams: { period: 50, devPct: 0.05 },
-    cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 760.0,
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 4.00,
@@ -62,8 +60,6 @@ export const INSTRUMENT_PROFILES = {
     strategyProfile: "PROFILE_V75_1S_MIDLINE_FRACTAL",
     gateType: "STOCH_50_MIDLINE",
     stochParams: { k: 18, d: 12, slowing: 25 },
-    envParams: { period: 50, devPct: 0.05 },
-    cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 5.08,
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 4.00,
@@ -84,7 +80,6 @@ export const INSTRUMENT_PROFILES = {
     gateType: "STOCH_50_ENV200",
     stochParams: { k: 18, d: 12, slowing: 25 },
     envParams: { period: 200, devPct: 0.05 }, // Mandatory Envelope 200 breakout trend filter
-    cciContinuationThreshold: 40.0,
     minTakeProfitPoints: 10.70,
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 4.00,
@@ -105,8 +100,6 @@ export const INSTRUMENT_PROFILES = {
     gateType: "EMA100_STOCH533",
     stochParams: { k: 5, d: 3, slowing: 3 }, // Fast M5 Stoch (5,3,3)
     emaPeriod: 100, // M5 EMA 100
-    envParams: { period: 50, devPct: 0.05 },
-    cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 17.60,
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 4.00,
@@ -127,8 +120,6 @@ export const INSTRUMENT_PROFILES = {
     gateType: "ASYNC_3WAY_LATCH",
     stochParams: { k: 18, d: 12, slowing: 25 },
     cciPeriod: 100,
-    envParams: { period: 50, devPct: 0.05 },
-    cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 15.0,
     minTakeProfitUsd: 8.00,
     trailActivationUsd: 5.00,
@@ -148,9 +139,7 @@ export const INSTRUMENT_PROFILES = {
     strategyProfile: "PROFILE_V50_STOCH_BOUNDARIES",
     gateType: "STOCH_BOUNDARIES_20_80",
     stochParams: { k: 18, d: 12, slowing: 25 },
-    envParams: { period: 50, devPct: 0.05 },
     excludeFib50: true, // 50% Fib level explicitly excluded
-    cciContinuationThreshold: 40.0,
     minTakeProfitPoints: 0.93,
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 4.00,
@@ -170,8 +159,6 @@ export const INSTRUMENT_PROFILES = {
     strategyProfile: "PROFILE_V10_MIDLINE_FRACTAL",
     gateType: "STOCH_50_MIDLINE",
     stochParams: { k: 18, d: 12, slowing: 25 },
-    envParams: { period: 50, devPct: 0.05 },
-    cciContinuationThreshold: 50.0,
     minTakeProfitPoints: 9.60,
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 4.00,
@@ -522,95 +509,74 @@ export function findRecentFractalM15(m15Candles, direction) {
   return null;
 }
 
-// 4-Hour Pre-Midnight Lookback for Stochastic (Gated strictly to 00:00 - 04:00 UTC)
-function checkPreMidnightStochCross(candles, stoch, dir, type, midlineFallback) {
-  const now = new Date();
-  if (now.getUTCHours() >= 4) return false;
-
-  const todayMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0)).getTime() / 1000;
-  const fourHoursBeforeMidnight = todayMidnight - (4 * 3600);
-
-  let startIdx = -1, endIdx = -1;
+// 8-Hour Rolling Lookback for Stochastic (Scanning up to 96 closed M5 candles / 8 hours)
+function checkStochastic8HrLookback(candles, stoch, dir, type = "MIDLINE") {
+  if (!candles || candles.length < 2 || !stoch || !stoch.k) return false;
+  const eightHoursAgo = (Date.now() / 1000) - (8 * 3600);
+  let startIdx = -1;
   for (let i = 0; i < candles.length; i++) {
-    const ep = candles[i].epoch;
-    if (ep >= fourHoursBeforeMidnight && startIdx === -1) startIdx = i;
-    if (ep < todayMidnight) endIdx = i;
+    if (candles[i].epoch >= eightHoursAgo) {
+      startIdx = i;
+      break;
+    }
   }
-
-  if (startIdx === -1 || endIdx === -1 || startIdx >= endIdx) return false;
+  if (startIdx === -1) startIdx = 0;
 
   let validCrossIdx = -1;
-  for (let i = startIdx + 1; i <= endIdx; i++) {
+  for (let i = Math.max(1, startIdx); i < candles.length - 1; i++) {
     const k = stoch.k[i], d = stoch.d[i], pk = stoch.k[i - 1], pd = stoch.d[i - 1];
     if (k === null || d === null || pk === null || pd === null) continue;
 
-    const crossUp = pk <= pd && k > d;
-    const crossDown = pk >= pd && k < d;
-    const crossedAbove50 = pk < 50 && k >= 50;
-    const crossedBelow50 = pk > 50 && k <= 50;
-
-    if (dir === "BUY") {
-      let isMatch = type === "REV" ? ((crossUp && k <= 25) || (midlineFallback && crossUp && crossedAbove50)) : crossedAbove50;
-      if (isMatch) validCrossIdx = i;
-    } else {
-      let isMatch = type === "REV" ? ((crossDown && k >= 75) || (midlineFallback && crossDown && crossedBelow50)) : crossedBelow50;
-      if (isMatch) validCrossIdx = i;
+    if (type === "MIDLINE") {
+      const crossedAbove50 = pk <= 50.0 && k > 50.0;
+      const crossedBelow50 = pk >= 50.0 && k < 50.0;
+      if (dir === "BUY" && crossedAbove50) validCrossIdx = i;
+      if (dir === "SELL" && crossedBelow50) validCrossIdx = i;
+    } else if (type === "BOUNDARIES_20_80") {
+      const crossedAbove20 = pk <= 20.0 && k > 20.0;
+      const crossedBelow80 = pk >= 80.0 && k < 80.0;
+      if (dir === "BUY" && crossedAbove20) validCrossIdx = i;
+      if (dir === "SELL" && crossedBelow80) validCrossIdx = i;
     }
   }
 
   if (validCrossIdx === -1) return false;
 
+  // Verify that no opposite cross occurred after the valid cross up to the latest closed candle
   for (let i = validCrossIdx + 1; i < candles.length - 1; i++) {
     const k = stoch.k[i], d = stoch.d[i], pk = stoch.k[i - 1], pd = stoch.d[i - 1];
     if (k === null || d === null || pk === null || pd === null) continue;
     
-    if (dir === "BUY" && (pk >= pd && k < d)) return false; 
-    if (dir === "SELL" && (pk <= pd && k > d)) return false; 
+    if (dir === "BUY") {
+      if (type === "MIDLINE" && (pk >= 50.0 && k < 50.0)) return false;
+      if (type === "BOUNDARIES_20_80" && (pk >= 80.0 && k < 80.0)) return false;
+    } else if (dir === "SELL") {
+      if (type === "MIDLINE" && (pk <= 50.0 && k > 50.0)) return false;
+      if (type === "BOUNDARIES_20_80" && (pk <= 20.0 && k > 20.0)) return false;
+    }
   }
-  
+
+  // Ensure latest closed candle is still on the correct side
+  const lastK = stoch.k[candles.length - 2];
+  if (lastK === null) return false;
+  if (type === "MIDLINE") {
+    if (dir === "BUY" && lastK <= 50.0) return false;
+    if (dir === "SELL" && lastK >= 50.0) return false;
+  } else if (type === "BOUNDARIES_20_80") {
+    if (dir === "BUY" && lastK < 20.0) return false;
+    if (dir === "SELL" && lastK > 80.0) return false;
+  }
+
   return true;
 }
 
-function deriveHardStopPrice(entry, direction, setupType = null) {
-  let hardStopPts = MAX_HARD_SL_POINTS;
-  if (SYMBOL === "R_50" && setupType) {
-    hardStopPts = setupType === "REV" ? 0.15 : 0.20;
-  }
-  const pointsSlPrice = direction === "BUY" ? entry - hardStopPts : entry + hardStopPts;
-
+function deriveHardStopPrice(entry, direction) {
   const targetLoss = -5.00;
   const requiredRawPnl = targetLoss + COMMISSION_USD;
   const priceMoveFraction = requiredRawPnl / (STAKE_USD * MULTIPLIER);
   const dollarSlPrice = direction === "BUY" ? entry * (1 + priceMoveFraction) : entry * (1 - priceMoveFraction);
 
-  return direction === "BUY" ? Math.max(pointsSlPrice, dollarSlPrice) : Math.min(pointsSlPrice, dollarSlPrice);
-}
-
-// Higher-Timeframe Trend Shield (M15 & M30 Stochastic alignment)
-function checkHtfTrendShield(direction, m15Candles, m30Candles) {
-  if (!m15Candles || m15Candles.length < 30 || !m30Candles || m30Candles.length < 30) return false;
-  try {
-    const stochM15 = calculateStoch(m15Candles, 18, 12, 25);
-    const stochM30 = calculateStoch(m30Candles, 18, 12, 25);
-    const i15 = m15Candles.length - 2;
-    const i30 = m30Candles.length - 2;
-    const k15 = stochM15.k[i15], d15 = stochM15.d[i15];
-    const k30 = stochM30.k[i30], d30 = stochM30.d[i30];
-    if (k15 === null || d15 === null || k30 === null || d30 === null) return false;
-
-    if (direction === "BUY") {
-      const m15Bullish = (k15 >= d15) || (k15 > 35 && stochM15.k[i15] >= stochM15.k[i15 - 1]);
-      const m30Bullish = (k30 >= d30) || (k30 >= 40);
-      return Boolean(m15Bullish && m30Bullish);
-    } else if (direction === "SELL") {
-      const m15Bearish = (k15 <= d15) || (k15 < 65 && stochM15.k[i15] <= stochM15.k[i15 - 1]);
-      const m30Bearish = (k30 <= d30) || (k30 <= 60);
-      return Boolean(m15Bearish && m30Bearish);
-    }
-  } catch (e) {
-    return false;
-  }
-  return false;
+  return dollarSlPrice;
 }
 
 function calcUnrealizedPnL(trade, currentPrice) {
@@ -914,8 +880,6 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     // 🛡️ FAKEOUT EARLY-EXIT PROTECTION ENGINE (2-OF-3 CONFLUENCE FAILURE + M15 CONFIRMATION)
     const isBuy = t.direction === "BUY";
     const pnl = calcUnrealizedPnL(t, currentPrice);
-    const htfShield = checkHtfTrendShield(t.direction, m15Candles, m30Candles);
-    t.htfShield = htfShield;
 
     if (pnl < 0) {
       let fakeoutVotes = 0;
@@ -955,11 +919,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
          dbg(`[FAKEOUT REJECTED] ${t.contractId}: 2/3 conditions met, BUT M15 did not close adversely. Holding trade.`);
       }
 
-      const shouldExitFakeout = fakeoutVotes >= 2 && m15AdverseClose && (!htfShield || m15Broken);
-
-      if (fakeoutVotes >= 2 && m15AdverseClose && htfShield && !m15Broken) {
-        dbg(`[HTF SHIELD] Active ${t.direction} contract ${t.contractId}: M15/M30 momentum aligned. Absorbing M5 pullback noise. Shielding trade.`);
-      }
+      const shouldExitFakeout = fakeoutVotes >= 2 && m15AdverseClose;
 
       if (shouldExitFakeout) {
         closingContracts.add(t.contractId);
@@ -1233,9 +1193,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       STRATEGY_PROFILE === "PROFILE_V75_1S_MIDLINE_FRACTAL" || 
       STRATEGY_PROFILE === "PROFILE_V10_MIDLINE_FRACTAL") {
     
-    // Strict Stoch (18,12,25) Level 50 Midline Cross
-    const stoch50CrossUp = prevK <= 50.0 && sK > 50.0;
-    const stoch50CrossDown = prevK >= 50.0 && sK < 50.0;
+    // Strict Stoch (18,12,25) Level 50 Midline Cross (Current cross OR 8-Hour Lookback)
+    const stoch50CrossUp = (prevK <= 50.0 && sK > 50.0) || checkStochastic8HrLookback(candles, stoch, "BUY", "MIDLINE");
+    const stoch50CrossDown = (prevK >= 50.0 && sK < 50.0) || checkStochastic8HrLookback(candles, stoch, "SELL", "MIDLINE");
 
     if (state.armed) {
       if (state.armed.dir === "BUY" && stoch50CrossUp) {
@@ -1249,8 +1209,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   }
   // 2. VOLATILITY 100 (R_100) MIDLINE & ENVELOPE 200 ENGINE
   else if (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV") {
-    const stoch50CrossUp = prevK <= 50.0 && sK > 50.0;
-    const stoch50CrossDown = prevK >= 50.0 && sK < 50.0;
+    const stoch50CrossUp = (prevK <= 50.0 && sK > 50.0) || checkStochastic8HrLookback(candles, stoch, "BUY", "MIDLINE");
+    const stoch50CrossDown = (prevK >= 50.0 && sK < 50.0) || checkStochastic8HrLookback(candles, stoch, "SELL", "MIDLINE");
     const env200Upper = eUp; // Computed with period 200
     const env200Lower = eLo;
 
@@ -1330,9 +1290,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   }
   // 5. VOLATILITY 50 STOCHASTIC BOUNDARIES (20 / 80) ENGINE
   else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES") {
-    // BUY: Stoch crosses > 20; SELL: Stoch crosses < 80
-    const stoch20CrossUp = prevK <= 20.0 && sK > 20.0;
-    const stoch80CrossDown = prevK >= 80.0 && sK < 80.0;
+    // BUY: Stoch crosses > 20; SELL: Stoch crosses < 80 (Current cross OR 8-Hour Lookback)
+    const stoch20CrossUp = (prevK <= 20.0 && sK > 20.0) || checkStochastic8HrLookback(candles, stoch, "BUY", "BOUNDARIES_20_80");
+    const stoch80CrossDown = (prevK >= 80.0 && sK < 80.0) || checkStochastic8HrLookback(candles, stoch, "SELL", "BOUNDARIES_20_80");
 
     if (state.armed) {
       if (state.armed.dir === "BUY" && stoch20CrossUp) {
@@ -1427,7 +1387,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     // Initial Stop Loss Anchor: Previous M15 Institutional Fractal
     let initialM15Fractal = findRecentFractalM15(m15Candles, direction);
-    const hardStopPrice = deriveHardStopPrice(entry, direction, entryType && entryType.includes("REV") ? "REV" : "CONT");
+    const hardStopPrice = deriveHardStopPrice(entry, direction);
 
     let sl;
     if (PROFILE.slType === "HARD_POINTS") {
@@ -1442,7 +1402,6 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     const timeFormatted = new Date(m5BoundaryEpoch * 1000).toISOString().replace("T", " ").substring(0, 19);
     const dirEmoji = direction === "BUY" ? "🟢 ⬆️ BUY" : "🔴 ⬇️ SELL";
-    const entryHtfShield = checkHtfTrendShield(direction, m15Candles, m30Candles);
 
     const message = 
       `🚨 *${SYMBOL_NAME.toUpperCase()} SIGNAL* 🚨\n\n` +
@@ -1455,7 +1414,6 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       `💰 Stake: $${STAKE_USD} | Multiplier: ${MULTIPLIER}x\n\n` +
       `📐 *Technical Confluence Verification:*\n` +
       `• Gate Engine: *${GATE_TYPE}*\n` +
-      `• HTF Trend Shield: *${entryHtfShield ? "🛡️ ACTIVE (Trend Aligned)" : "⚪ NEUTRAL"}*\n` +
       `• M5 Stoch: *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}*\n` +
       `• M5 EMA 100: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}*\n` +
       `• Daily Target Progress: *$${(state.dailyNetPnl || 0).toFixed(2)} / $10.00*\n` +
@@ -1466,7 +1424,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const pendingTradeRecord = {
       id: `${SYMBOL}-${Date.now()}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, rr: null, entryType, brokerSlAmount: STAKE_USD,
       entryEpoch: m5BoundaryEpoch, fractalSl: initialM15Fractal, fractalEpoch: null, fractalTimeframe: initialM15Fractal ? "M15" : null, m30FractalUpgraded: false, fibTpPrice,
-      keyLevel: entryKeyLevel, htfShield: entryHtfShield,
+      keyLevel: entryKeyLevel,
       openTime: timeFormatted, closeTime: null, result: null
     };
     trades.push(pendingTradeRecord);
