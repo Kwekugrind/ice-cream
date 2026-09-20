@@ -1403,6 +1403,27 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const timeFormatted = new Date(m5BoundaryEpoch * 1000).toISOString().replace("T", " ").substring(0, 19);
     const dirEmoji = direction === "BUY" ? "🟢 ⬆️ BUY" : "🔴 ⬇️ SELL";
 
+    // Build Dynamic Confluence Verification Lines Matching Exact Instrument Strategy Profile
+    let confluenceLines = `• Gate Engine: *${GATE_TYPE}*\n`;
+    if (STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533") {
+      confluenceLines += `• M5 EMA 100: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > EMA" : "Price < EMA"} [ALIGNED])\n` +
+                         `• Fast Stoch (5,3,3): *%K ${(sK533 !== null ? sK533.toFixed(1) : "N/A")}* | *%D ${(sD533 !== null ? sD533.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">20 Cross" : "<80/50 Cross"} [TRIGGERED])\n`;
+    } else if (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV") {
+      confluenceLines += `• M5 Stoch (18,12,25): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 Midline Cross" : "<50 Midline Cross"} [ALIGNED])\n` +
+                         `• Envelope 200 (0.05%): *${direction === "BUY" ? "Price > Upper (" + eUp.toFixed(4) + ")" : "Price < Lower (" + eLo.toFixed(4) + ")"}* [BREAKOUT]\n`;
+    } else if (STRATEGY_PROFILE === "PROFILE_V25_ASYNC_3WAY") {
+      confluenceLines += `• M5 CCI (100): *${cVal !== null ? cVal.toFixed(1) : "N/A"}* (${direction === "BUY" ? ">-100 Latch" : "<+100 Latch"} [ACTIVE])\n` +
+                         `• M5 Stoch (18,12,25): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">20 Boundary Latch" : "<80 Boundary Latch"} [ACTIVE])\n` +
+                         `• 3-Way Async State: *[FIB + CCI + STOCH LATCHED]*\n`;
+    } else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES") {
+      confluenceLines += `• M5 Stoch (18,12,25): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">20 Oversold Boundary Cross" : "<80 Overbought Boundary Cross"} [TRIGGERED])\n` +
+                         `• M15 Key Fib Level: *${entryKeyLevel ? entryKeyLevel.toFixed(4) : "N/A"}* (Excludes 50% Rebound)\n`;
+    } else {
+      confluenceLines += `• M5 Stoch (18,12,25): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 Midline Cross" : "<50 Midline Cross"} [ALIGNED])\n` +
+                         `• M15 Key Fib Level: *${entryKeyLevel ? entryKeyLevel.toFixed(4) : "N/A"}* (50% Rebound / Discount / Premium)\n`;
+    }
+    confluenceLines += `• Daily Target Progress: *$${(state.dailyNetPnl || 0).toFixed(2)} / $10.00*`;
+
     const message = 
       `🚨 *${SYMBOL_NAME.toUpperCase()} SIGNAL* 🚨\n\n` +
       `Direction: *${dirEmoji}*\n` +
@@ -1413,10 +1434,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       `🎯 Take Profit: *${fibTpPrice.toFixed(4)}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n\n` +
       `💰 Stake: $${STAKE_USD} | Multiplier: ${MULTIPLIER}x\n\n` +
       `📐 *Technical Confluence Verification:*\n` +
-      `• Gate Engine: *${GATE_TYPE}*\n` +
-      `• M5 Stoch: *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}*\n` +
-      `• M5 EMA 100: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}*\n` +
-      `• Daily Target Progress: *$${(state.dailyNetPnl || 0).toFixed(2)} / $10.00*\n` +
+      confluenceLines + `\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
       `⏰ Time (UTC): ${timeFormatted}\n\n` +
       `💡 To close manually: send \`/close win\` or \`/close loss\``;
