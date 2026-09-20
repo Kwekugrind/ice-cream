@@ -26,23 +26,30 @@ try {
   console.error("[AUTO-RELOAD] Watcher initialization error:", e.message);
 }
 
-// ==================== INSTRUMENT PROFILES (CALIBRATED EMPIRICAL MATRIX) ====================
-// Pure empirical optimization based on multi-day flight recorder ledger data across 77 CSVs.
-// Enforces clean directional Stochastic crossover gates, dynamic Take Profit floors, and noise-wick resilient hard stops.
-const INSTRUMENT_PROFILES = {
+// ==================== MASTER INSTRUMENT PROFILES (CALIBRATED EMPIRICAL MATRIX) ====================
+// Authoritative multi-asset quantitative specifications aligned with MetaTrader 5 visual audit
+// and multi-day flight recorder ledger analysis across Deriv Multiplier tick dynamics.
+export const INSTRUMENT_PROFILES = {
   "R_75": {
     symbol: "R_75",
     symbolName: "Volatility 75 Index",
     repoLabel: "Lery's Alerts (V75 Demo)",
     server: "S1",
     multiplier: 50,
+    stakeUsd: 5.0,
     commissionUsd: 0.15,
-    gateType: "OPTION_B",
+    strategyProfile: "PROFILE_V75_MIDLINE_FRACTAL",
+    gateType: "STOCH_50_MIDLINE",
+    stochParams: { k: 18, d: 12, slowing: 25 },
+    envParams: { period: 50, devPct: 0.05 },
     cciContinuationThreshold: 50.0,
-    minTakeProfitPoints: 350.0,
-    maxHardStopPoints: 180.0, // Calibrated from 150.0 to 180.0 (covers 90th % M5 noise bar at safe $1.14 risk)
+    minTakeProfitPoints: 760.0,
+    minTakeProfitUsd: 4.00,
+    trailActivationUsd: 4.00,
+    maxHardStopPoints: 180.0,
     modesAllowed: ["CONT", "REV"],
-    notes: "Heavyweight index; Option B Stoch-Only; 350 pt TP yields +$1.84 net."
+    slType: "M15_FRACTAL",
+    notes: "V75 Heavyweight; M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $4.00 TP & Trailing."
   },
   "1HZ75V": {
     symbol: "1HZ75V",
@@ -50,13 +57,20 @@ const INSTRUMENT_PROFILES = {
     repoLabel: "Coffee (V75-1s Demo)",
     server: "S1",
     multiplier: 100,
+    stakeUsd: 5.0,
     commissionUsd: 0.15,
-    gateType: "OPTION_C2",
+    strategyProfile: "PROFILE_V75_1S_MIDLINE_FRACTAL",
+    gateType: "STOCH_50_MIDLINE",
+    stochParams: { k: 18, d: 12, slowing: 25 },
+    envParams: { period: 50, devPct: 0.05 },
     cciContinuationThreshold: 50.0,
-    minTakeProfitPoints: 16.0,
-    maxHardStopPoints: 18.0, // Calibrated from 6.0 to 18.0 (clears 75th % 16.56 pt noise at safe $1.72 risk)
+    minTakeProfitPoints: 5.08,
+    minTakeProfitUsd: 4.00,
+    trailActivationUsd: 4.00,
+    maxHardStopPoints: 18.0,
     modesAllowed: ["CONT", "REV"],
-    notes: "1-second tick speed; 100x multiplier ($1.27 pts/$1); Option C2; 18.0 pt SL accommodates 1s noise wicks."
+    slType: "M15_FRACTAL",
+    notes: "1s tick speed; 100x multiplier; M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $4.00 TP & Trailing."
   },
   "R_100": {
     symbol: "R_100",
@@ -64,27 +78,20 @@ const INSTRUMENT_PROFILES = {
     repoLabel: "Milk (V100 Demo)",
     server: "S1",
     multiplier: 40,
+    stakeUsd: 5.0,
     commissionUsd: 0.15,
-    gateType: "OPTION_C2",
+    strategyProfile: "PROFILE_V100_MIDLINE_ENV",
+    gateType: "STOCH_50_ENV200",
+    stochParams: { k: 18, d: 12, slowing: 25 },
+    envParams: { period: 200, devPct: 0.05 }, // Mandatory Envelope 200 breakout trend filter
     cciContinuationThreshold: 40.0,
-    minTakeProfitPoints: 3.50,
-    maxHardStopPoints: 3.00, // Calibrated from 2.50 to 3.00 (clears 75th % 1.96 pt noise at $2.57 risk)
+    minTakeProfitPoints: 10.70,
+    minTakeProfitUsd: 4.00,
+    trailActivationUsd: 4.00,
+    maxHardStopPoints: 3.00,
     modesAllowed: ["CONT"],
-    notes: "40x multiplier; Option C2; eliminates reversal bleed; 3.5 pt TP."
-  },
-  "R_25": {
-    symbol: "R_25",
-    symbolName: "Volatility 25 Index",
-    repoLabel: "Tea (V25 Demo)",
-    server: "S1",
-    multiplier: 400,
-    commissionUsd: 0.32,
-    gateType: "OPTION_B",
-    cciContinuationThreshold: 50.0,
-    minTakeProfitPoints: 15.0,
-    maxHardStopPoints: 3.5, // Retained: empirically proven optimal 2.12x avg M5 bar ($2.72 risk)
-    modesAllowed: ["REV"],
-    notes: "400x multiplier ($1.38 pts/$1); Option B Stoch-Only Reversals hit +$8.00 to +$10.00 net."
+    slType: "M15_FRACTAL",
+    notes: "40x multiplier; M15 Fib + M5 Stoch 50 Midline Cross + Envelope 200 breakout filter + Previous M15 Fractal SL + $4.00 TP & Trailing."
   },
   "1HZ100V": {
     symbol: "1HZ100V",
@@ -92,13 +99,43 @@ const INSTRUMENT_PROFILES = {
     repoLabel: "Ice Cream Machine",
     server: "S2",
     multiplier: 40,
+    stakeUsd: 5.0,
     commissionUsd: 0.15,
-    gateType: "OPTION_C2",
+    strategyProfile: "PROFILE_V100_1S_EMA_STOCH533",
+    gateType: "EMA100_STOCH533",
+    stochParams: { k: 5, d: 3, slowing: 3 }, // Fast M5 Stoch (5,3,3)
+    emaPeriod: 100, // M5 EMA 100
+    envParams: { period: 50, devPct: 0.05 },
     cciContinuationThreshold: 50.0,
-    minTakeProfitPoints: 4.50,
-    maxHardStopPoints: 5.50, // Calibrated from 1.65 to 5.50 (clears 75th % 3.00 pt noise at safe $1.36 risk)
+    minTakeProfitPoints: 17.60,
+    minTakeProfitUsd: 4.00,
+    trailActivationUsd: 4.00,
+    maxHardStopPoints: 5.50,
     modesAllowed: ["CONT", "REV"],
-    notes: "High velocity 1s ticks; Option C2; 5.50 pt SL gives 2.60x avg M5 bar room; prevents premature wick-outs."
+    slType: "M15_FRACTAL",
+    notes: "Two-stage state machine: Stage 1: M15 Fib + M5 EMA 100 direction arming lock; Stage 2: Fast Stoch (5,3,3) 20/80 cross trigger + Previous M15 Fractal SL + $4.00 TP."
+  },
+  "R_25": {
+    symbol: "R_25",
+    symbolName: "Volatility 25 Index",
+    repoLabel: "Tea (V25 Demo)",
+    server: "S1",
+    multiplier: 400,
+    stakeUsd: 5.0,
+    commissionUsd: 0.32,
+    strategyProfile: "PROFILE_V25_ASYNC_3WAY",
+    gateType: "ASYNC_3WAY_LATCH",
+    stochParams: { k: 18, d: 12, slowing: 25 },
+    cciPeriod: 100,
+    envParams: { period: 50, devPct: 0.05 },
+    cciContinuationThreshold: 50.0,
+    minTakeProfitPoints: 15.0,
+    minTakeProfitUsd: 8.00,
+    trailActivationUsd: 5.00,
+    maxHardStopPoints: 3.50,
+    modesAllowed: ["REV"],
+    slType: "HARD_POINTS",
+    notes: "400x multiplier ($1.38 pts/$1); Out-of-order independent 3-condition latching (M15 Fib + M5 CCI 100 + M5 Stoch 18,12,25) + $8-$10 TP."
   },
   "R_50": {
     symbol: "R_50",
@@ -106,13 +143,21 @@ const INSTRUMENT_PROFILES = {
     repoLabel: "OmniSight (V50)",
     server: "S2",
     multiplier: 80,
+    stakeUsd: 5.0,
     commissionUsd: 0.16,
-    gateType: "DUAL_HYBRID",
+    strategyProfile: "PROFILE_V50_STOCH_BOUNDARIES",
+    gateType: "STOCH_BOUNDARIES_20_80",
+    stochParams: { k: 18, d: 12, slowing: 25 },
+    envParams: { period: 50, devPct: 0.05 },
+    excludeFib50: true, // 50% Fib level explicitly excluded
     cciContinuationThreshold: 40.0,
-    minTakeProfitPoints: 0.30,
-    maxHardStopPoints: 0.20, // Calibrated from 0.18 to 0.20 (clears 75th % 0.17 pt bar at $1.80 risk)
+    minTakeProfitPoints: 0.93,
+    minTakeProfitUsd: 4.00,
+    trailActivationUsd: 4.00,
+    maxHardStopPoints: 0.20,
     modesAllowed: ["CONT", "REV"],
-    notes: "80x multiplier ($0.124 pts/$1); Dual-Hybrid Engine; CONT: Stoch Only (TP 0.80 pt); REV: Zero-CCI + Stoch (TP 0.30 pt)."
+    slType: "M15_FRACTAL",
+    notes: "80x multiplier; M15 Fib (excluding 50%) + M5 Stoch (18,12,25) 20/80 boundary cross + Previous M15 Fractal SL + $4.00 TP & Trailing."
   },
   "R_10": {
     symbol: "R_10",
@@ -120,13 +165,20 @@ const INSTRUMENT_PROFILES = {
     repoLabel: "Test Bot (V10 Live)",
     server: "S2",
     multiplier: 400,
+    stakeUsd: 5.0,
     commissionUsd: 0.80,
-    gateType: "OPTION_C2",
+    strategyProfile: "PROFILE_V10_MIDLINE_FRACTAL",
+    gateType: "STOCH_50_MIDLINE",
+    stochParams: { k: 18, d: 12, slowing: 25 },
+    envParams: { period: 50, devPct: 0.05 },
     cciContinuationThreshold: 50.0,
-    minTakeProfitPoints: 24.0,
-    maxHardStopPoints: 8.0, // Retained: fleet champion (+ $13.57 net, 2.08 PF, protected by Fakeout engine)
+    minTakeProfitPoints: 9.60,
+    minTakeProfitUsd: 4.00,
+    trailActivationUsd: 4.00,
+    maxHardStopPoints: 8.00,
     modesAllowed: ["CONT", "REV"],
-    notes: "400x multiplier ($2.40 pts/$1); Option C2; 24.0 pt TP delivers up to +$10.00 daily cap."
+    slType: "M15_FRACTAL",
+    notes: "400x multiplier ($2.40 pts/$1); M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $4.00 TP & Trailing."
   }
 };
 
@@ -140,23 +192,25 @@ const SYMBOL_NAME = PROFILE.symbolName;
 const REPO_LABEL = PROFILE.repoLabel;
 const MULTIPLIER = PROFILE.multiplier;
 const COMMISSION_USD = PROFILE.commissionUsd;
+const STAKE_USD = PROFILE.stakeUsd || 5.0;
 const STOCH_SEPARATION_MIN = 0; // Pure directional crossover (zero separation barrier)
 const MIN_TP_POINTS_FLOOR = PROFILE.minTakeProfitPoints;
 const MAX_HARD_SL_POINTS = PROFILE.maxHardStopPoints;
 const MODES_ALLOWED = PROFILE.modesAllowed;
-const GATE_TYPE = PROFILE.gateType || "BASELINE";
+const GATE_TYPE = PROFILE.gateType;
+const STRATEGY_PROFILE = PROFILE.strategyProfile;
 
 const TRADING_SYMBOL = SYMBOL;
-const STAKE_USD = 5;
+
 const SOFTWARE_SL_USD = -3.60;
 const SERVER_TP_USD = 10.00;
 const CATASTROPHIC_PNL_FLOOR = -5.50;
 const DAILY_PROFIT_TARGET_USD = 10.00;
 const MARKET_DATA_APP_ID = "1089";
-const TARGET_MIN_PROFIT = 5.00;
+const TARGET_MIN_PROFIT = PROFILE.minTakeProfitUsd || 4.00;
 
 // Continuous Dollar Trailing Stop Settings
-const TRAIL_ACTIVATION_USD = 1.50; // Activate trailing once profit reaches +$1.50
+const TRAIL_ACTIVATION_USD = PROFILE.trailActivationUsd || 4.00; // Activated once profit reaches +$4.00 net
 const TRAIL_BUFFER_USD = 1.00;     // Trail $1.00 behind peak unrealized profit
 const TRAIL_INITIAL_FLOOR_USD = 0.20; // Initial guaranteed lock at activation (+$0.20 covers commissions)
 
@@ -230,15 +284,16 @@ function formatDuration(ms) {
   return `${s}s`;
 }
 
-// ==================== DAILY LEDGER ====================
-function writeToLedger(epoch, closePrice, cci, stochK, stochD, envUp, envLo, phase) {
+// ==================== DAILY LEDGER FLIGHT RECORDER ====================
+function writeToLedger(epoch, closePrice, cci, stochK, stochD, envUp, envLo, phase, extra = "") {
   const dateStr = new Date(epoch * 1000).toISOString().split('T')[0];
   const file = `ledger_${SYMBOL}_${dateStr}.csv`;
   const timeStr = new Date(epoch * 1000).toISOString().replace("T", " ").substring(0, 19);
-  const line = `${timeStr},${closePrice.toFixed(4)},${cci.toFixed(2)},${stochK.toFixed(2)},${stochD.toFixed(2)},${envUp.toFixed(4)},${envLo.toFixed(4)},${phase || "IDLE"}\n`;
+  const extraStr = extra ? `,${extra}` : "";
+  const line = `${timeStr},${closePrice.toFixed(4)},${(cci !== null ? cci.toFixed(2) : "0.00")},${(stochK !== null ? stochK.toFixed(2) : "0.00")},${(stochD !== null ? stochD.toFixed(2) : "0.00")},${(envUp !== null ? envUp.toFixed(4) : "0.0000")},${(envLo !== null ? envLo.toFixed(4) : "0.0000")},${phase || "IDLE"}${extraStr}\n`;
   
   if (!fs.existsSync(file)) {
-    fs.writeFileSync(file, "Time,Close,CCI,Stoch_K,Stoch_D,Env_Up,Env_Lo,Phase\n");
+    fs.writeFileSync(file, "Time,Close,CCI,Stoch_K,Stoch_D,Env_Up,Env_Lo,Phase,Extra\n");
   }
   fs.appendFileSync(file, line);
 }
@@ -308,7 +363,7 @@ async function fetchAllData() {
     const ws = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
     const results = {};
     ws.on("open", () => {
-      ws.send(JSON.stringify({ req_id: 1, ticks_history: SYMBOL, granularity: M5,  count: 120, end: "latest", style: "candles" }));
+      ws.send(JSON.stringify({ req_id: 1, ticks_history: SYMBOL, granularity: M5,  count: 220, end: "latest", style: "candles" }));
       ws.send(JSON.stringify({ req_id: 4, ticks_history: SYMBOL, granularity: M15, count: 250, end: "latest", style: "candles" }));
       ws.send(JSON.stringify({ req_id: 6, ticks_history: SYMBOL, granularity: M30, count: 120, end: "latest", style: "candles" }));
       ws.send(JSON.stringify({ req_id: 5, ticks_history: SYMBOL, granularity: D1,  count: 5,   end: "latest", style: "candles" }));
@@ -349,7 +404,24 @@ function sma(data, period) {
   return data.map((_, i) => (i < period - 1 ? null : data.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0) / period));
 }
 
-function calculateStoch(candles, kPeriod = 18, dPeriod = 12, slowing = 25) {
+export function calculateEMA(candles, period = 100) {
+  const closes = candles.map(c => parseFloat(c.close));
+  const out = new Array(closes.length).fill(null);
+  if (closes.length < period) return out;
+  const k = 2 / (period + 1);
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += closes[i];
+  let prevEma = sum / period;
+  out[period - 1] = prevEma;
+  for (let i = period; i < closes.length; i++) {
+    const curEma = (closes[i] * k) + (prevEma * (1 - k));
+    out[i] = curEma;
+    prevEma = curEma;
+  }
+  return out;
+}
+
+export function calculateStoch(candles, kPeriod = 18, dPeriod = 12, slowing = 25) {
   const fastK = new Array(candles.length).fill(null);
   for (let i = kPeriod - 1; i < candles.length; i++) {
     const sl = candles.slice(i - kPeriod + 1, i + 1);
@@ -363,7 +435,7 @@ function calculateStoch(candles, kPeriod = 18, dPeriod = 12, slowing = 25) {
   return { k: slowK, d: slowD };
 }
 
-function calculateEnvelopes(candles, period = 50, devPct = 0.05) {
+export function calculateEnvelopes(candles, period = 50, devPct = 0.05) {
   const closes = candles.map(c => parseFloat(c.close));
   const mid = sma(closes, period);
   return {
@@ -372,7 +444,7 @@ function calculateEnvelopes(candles, period = 50, devPct = 0.05) {
   };
 }
 
-function calculateCCI(candles, n = 100) {
+export function calculateCCI(candles, n = 100) {
   const out = new Array(candles.length).fill(null);
   for (let i = n - 1; i < candles.length; i++) {
     const sl = candles.slice(i - n + 1, i + 1);
@@ -384,7 +456,7 @@ function calculateCCI(candles, n = 100) {
   return out;
 }
 
-function computeDailyFibLevels(d1Candles) {
+export function computeDailyFibLevels(d1Candles) {
   if (!d1Candles || d1Candles.length < 2) return null;
   const yesterday = d1Candles[d1Candles.length - 2];
   const today     = d1Candles[d1Candles.length - 1];
@@ -399,6 +471,27 @@ function computeDailyFibLevels(d1Candles) {
   return bullish
     ? { bullish, fibM50: h + 0.5*rng, fib0: h, fib50: h - 0.5*rng, fib79: h - 0.79*rng, fib100: l, fib1618: h - 1.618*rng, dailyBiasPrice }
     : { bullish, fibM50: l - 0.5*rng, fib0: l, fib50: l + 0.5*rng, fib79: l + 0.79*rng, fib100: h, fib1618: l + 1.618*rng, dailyBiasPrice };
+}
+
+// Finds previous institutional swing fractal on M15 timeframe (Top for SELL, Down for BUY)
+export function findRecentFractalM15(m15Candles, direction) {
+  if (!m15Candles || m15Candles.length < 5) return null;
+  for (let k = m15Candles.length - 3; k >= 2; k--) {
+    if (direction === "BUY") {
+      const low = parseFloat(m15Candles[k].low);
+      if (low < parseFloat(m15Candles[k - 1].low) && low < parseFloat(m15Candles[k - 2].low) &&
+          low < parseFloat(m15Candles[k + 1].low) && low < parseFloat(m15Candles[k + 2].low)) {
+        return low;
+      }
+    } else {
+      const high = parseFloat(m15Candles[k].high);
+      if (high > parseFloat(m15Candles[k - 1].high) && high > parseFloat(m15Candles[k - 2].high) &&
+          high > parseFloat(m15Candles[k + 1].high) && high > parseFloat(m15Candles[k + 2].high)) {
+        return high;
+      }
+    }
+  }
+  return null;
 }
 
 // 4-Hour Pre-Midnight Lookback for Stochastic (Gated strictly to 00:00 - 04:00 UTC)
@@ -465,15 +558,12 @@ function deriveHardStopPrice(entry, direction, setupType = null) {
   return direction === "BUY" ? Math.max(pointsSlPrice, dollarSlPrice) : Math.min(pointsSlPrice, dollarSlPrice);
 }
 
-// ==================== HIGHER-TIMEFRAME TREND SHIELD ====================
-// Evaluates M15 and M30 Stochastic momentum to shield trades from micro-wick noise.
-// When HTF momentum strongly aligns with position direction, structure-based M5 candle closes
-// take precedence over instantaneous sub-bar spikes.
+// Higher-Timeframe Trend Shield (M15 & M30 Stochastic alignment)
 function checkHtfTrendShield(direction, m15Candles, m30Candles) {
   if (!m15Candles || m15Candles.length < 30 || !m30Candles || m30Candles.length < 30) return false;
   try {
-    const stochM15 = calculateStoch(m15Candles);
-    const stochM30 = calculateStoch(m30Candles);
+    const stochM15 = calculateStoch(m15Candles, 18, 12, 25);
+    const stochM30 = calculateStoch(m30Candles, 18, 12, 25);
     const i15 = m15Candles.length - 2;
     const i30 = m30Candles.length - 2;
     const k15 = stochM15.k[i15], d15 = stochM15.d[i15];
@@ -518,8 +608,6 @@ function findRecentFractal(candles, currentIndex, direction) {
 }
 
 function findAdverseFractalAfterEntry(candles, entryEpoch, direction) {
-  // For BUY: look for Top (high/resistance) fractal formed after entryEpoch
-  // For SELL: look for Bottom (low/support) fractal formed after entryEpoch
   for (let k = candles.length - 3; k >= 2; k--) {
     if (candles[k].epoch < entryEpoch) break;
     if (direction === "BUY") {
@@ -569,7 +657,17 @@ let state = {
   stochSeparation: null,
   cciState: null,
   nextPhase: null, h1TdiDir: null, fibBullish: null, fib0: null, fib50: null, fib618: null, fib79: null, fib100: null,
-  cciAligned: false, stochAligned: false, envAligned: false
+  cciAligned: false, stochAligned: false, envAligned: false, emaAligned: false,
+  // V100 (1s) Two-stage state machine
+  v100_1s_armed: false,
+  v100_1s_armDir: null,
+  // V25 Out-of-Order 3-way latches
+  latchFib_BUY: false,
+  latchFib_SELL: false,
+  latchCci_BUY: false,
+  latchCci_SELL: false,
+  latchStoch_BUY: false,
+  latchStoch_SELL: false
 };
 try { state = { ...state, ...JSON.parse(fs.readFileSync("state.json")) }; } catch {}
 function saveState() { fs.writeFileSync("state.json", JSON.stringify(state, null, 2)); }
@@ -602,7 +700,8 @@ async function manageOpenTradesFastPath() {
     const pnl = calcUnrealizedPnL(openTrade, currentPrice);
 
     // =========================================================================
-    // \ud83d\udee1\ufe0f CONTINUOUS DOLLAR TRAILING STOP (Ratchet Behind Peak Unrealized Profit)
+    // 🛡️ CONTINUOUS DOLLAR TRAILING STOP (Ratchet Behind Peak Unrealized Profit)
+    // Activated once profit reaches minimum threshold (+$4.00 net across fleet)
     // =========================================================================
     if (pnl >= TRAIL_ACTIVATION_USD) {
       if (!openTrade.maxUnrealizedPnl || pnl > openTrade.maxUnrealizedPnl) {
@@ -629,11 +728,11 @@ async function manageOpenTradesFastPath() {
 
     let reason = null;
     if (openTrade.lockedPnlFloor && pnl <= openTrade.lockedPnlFloor) { 
-      reason = `Profit-Lock hit \u2014 Secured +$${openTrade.lockedPnlFloor.toFixed(2)}`; 
+      reason = `Profit-Lock hit — Secured +$${openTrade.lockedPnlFloor.toFixed(2)}`; 
     }
     else if (hardStopBreached) { reason = `Hard SL breached at ${currentPrice.toFixed(4)}`; } 
-    else if (pnl <= CATASTROPHIC_PNL_FLOOR) { reason = `Catastrophic floor hit \u2014 PnL $${pnl.toFixed(2)}`; } 
-    else if (pnl <= SOFTWARE_SL_USD) { reason = `Software SL hit \u2014 PnL $${pnl.toFixed(2)}`; } 
+    else if (pnl <= CATASTROPHIC_PNL_FLOOR) { reason = `Catastrophic floor hit — PnL $${pnl.toFixed(2)}`; } 
+    else if (pnl <= SOFTWARE_SL_USD) { reason = `Software SL hit — PnL $${pnl.toFixed(2)}`; } 
     else if (tpHit) { reason = `Fib TP reached at ${currentPrice.toFixed(4)}`; }
 
     if (reason) {
@@ -664,17 +763,17 @@ async function manageOpenTradesFastPath() {
         state.dailyTargetReached = true;
         state.dailyTargetDate = new Date().toISOString().split("T")[0];
         console.log(`[DAILY TARGET] +$10.00 Daily Goal Achieved ($${state.dailyNetPnl.toFixed(2)}). Switching to IDLE_DAILY_TARGET_REACHED.`);
-        await sendTelegram(`\ud83c\udfaf *${REPO_LABEL} \u2014 DAILY TARGET ACHIEVED!* \ud83c\udfaf\n\nDaily Net Profit: *+$${state.dailyNetPnl.toFixed(2)}*\nBot is now locked in profit protection until 00:00 UTC rollover.`);
+        await sendTelegram(`🎯 *${REPO_LABEL} — DAILY TARGET ACHIEVED!* 🎯\n\nDaily Net Profit: *+$${state.dailyNetPnl.toFixed(2)}*\nBot is now locked in profit protection until 00:00 UTC rollover.`);
       }
 
       saveTrades(trades);
       saveState();
       closingContracts.delete(openTrade.contractId);
       
-      const icon = finalResult === "WIN" ? "\u2705" : "\u274c";
+      const icon = finalResult === "WIN" ? "✅" : "❌";
       const pnlStr = serverPnl >= 0 ? `+$${serverPnl.toFixed(2)}` : `-$${Math.abs(serverPnl).toFixed(2)}`;
       const durationMs = new Date(openTrade.closeTime) - new Date(openTrade.openTime);
-      await sendTelegram(`${icon} *${REPO_LABEL} \u2014 Trade ${finalResult}*\n\nDirection: ${openTrade.direction}\n\ud83d\udccd Entry: ${Number(openTrade.entry).toFixed(4)}\n\ud83c\udfc1 Exit: ${currentPrice.toFixed(4)}\n\n\ud83d\udcb5 P&L: *${pnlStr}* (Net of comm.)\nReason: ${reason}\nDuration: ${formatDuration(durationMs)}\nDaily Net Total: $${state.dailyNetPnl.toFixed(2)}\nContract: \`${openTrade.contractId}\``);
+      await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${finalResult}*\n\nDirection: ${openTrade.direction}\n📍 Entry: ${Number(openTrade.entry).toFixed(4)}\n🏁 Exit: ${currentPrice.toFixed(4)}\n\n💵 P&L: *${pnlStr}* (Net of comm.)\nReason: ${reason}\nDuration: ${formatDuration(durationMs)}\nDaily Net Total: $${state.dailyNetPnl.toFixed(2)}\nContract: \`${openTrade.contractId}\``);
     }
   }
 }
@@ -716,7 +815,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           entryEpoch: live.date_start, fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false, fibTpPrice: null, keyLevel: null,
           openTime: new Date(live.date_start * 1000).toISOString().replace("T", " ").substring(0, 19), closeTime: null, result: null
         });
-        await sendTelegram(`\u26a0\ufe0f *${REPO_LABEL}* \u2014 Adopted unmanaged live contract \`${live.contract_id}\` (${dir}).`);
+        await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted unmanaged live contract \`${live.contract_id}\` (${dir}).`);
       }
     }
     
@@ -732,7 +831,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             state.dailyTargetReached = true;
             state.dailyTargetDate = todayStr;
           }
-          await sendTelegram(`${t.result === "WIN" ? "\u2705" : "\u274c"} *${REPO_LABEL} \u2014 Trade ${t.result} (Broker Native Exit)*\n\n\ud83d\udcb5 P&L: *${rec.profit >= 0 ? `+$${rec.profit.toFixed(2)}` : `-$${Math.abs(rec.profit).toFixed(2)}`}*`);
+          await sendTelegram(`${t.result === "WIN" ? "✅" : "❌"} *${REPO_LABEL} — Trade ${t.result} (Broker Native Exit)*\n\n💵 P&L: *${rec.profit >= 0 ? `+$${rec.profit.toFixed(2)}` : `-$${Math.abs(rec.profit).toFixed(2)}`}*`);
         }
       }
     }
@@ -752,7 +851,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   state.currentPrice = currentPrice;
   state.lastPriceUpdate = new Date().toISOString();
 
-  // 3. Calculate Fibonacci Levels & Key M15 Candle Close First
+  // 3. Calculate Fibonacci Levels & Key M15 Candle Close
   const fib = computeDailyFibLevels(d1Candles);
   if (!fib) return;
 
@@ -774,15 +873,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const m15Close     = parseFloat(currM15.close);
   const m15Open      = parseFloat(currM15.open);
 
-  
   // 4. Manage Structure & Fakeout Early-Exit Protection on Active Trades
   const openTrades = trades.filter(t => !t.result && !t.pending);
   for (const t of openTrades) {
     if (closingContracts.has(t.contractId)) continue;
 
-    // =========================================================================
-    // ðŸ›¡ï¸ FAKEOUT EARLY-EXIT PROTECTION ENGINE (2-OF-3 CONFLUENCE FAILURE + M15 CONFIRMATION)
-    // =========================================================================
+    // 🛡️ FAKEOUT EARLY-EXIT PROTECTION ENGINE (2-OF-3 CONFLUENCE FAILURE + M15 CONFIRMATION)
     const isBuy = t.direction === "BUY";
     const pnl = calcUnrealizedPnL(t, currentPrice);
     const htfShield = checkHtfTrendShield(t.direction, m15Candles, m30Candles);
@@ -821,20 +917,17 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
       }
 
-      // NEW CONDITION: M15 candle has to close bearish for buy and bullish for sell.
       const m15AdverseClose = isBuy ? (m15Close < m15Open) : (m15Close > m15Open);
       if (!m15AdverseClose && fakeoutVotes >= 2) {
-         console.log(`[FAKEOUT REJECTED] ${t.contractId}: 2/3 conditions met, BUT M15 did not close adversely. Holding trade.`);
+         dbg(`[FAKEOUT REJECTED] ${t.contractId}: 2/3 conditions met, BUT M15 did not close adversely. Holding trade.`);
       }
 
-      // Higher-Timeframe Trend Shield Protection:
       const shouldExitFakeout = fakeoutVotes >= 2 && m15AdverseClose && (!htfShield || m15Broken);
 
       if (fakeoutVotes >= 2 && m15AdverseClose && htfShield && !m15Broken) {
-        console.log(`[HTF SHIELD] Active ${t.direction} contract ${t.contractId}: M15/M30 momentum aligned. Absorbing M5 pullback noise. Shielding trade.`);
+        dbg(`[HTF SHIELD] Active ${t.direction} contract ${t.contractId}: M15/M30 momentum aligned. Absorbing M5 pullback noise. Shielding trade.`);
       }
 
-      // If exit condition is confirmed: Exit trade immediately as Fakeout
       if (shouldExitFakeout) {
         closingContracts.add(t.contractId);
         const reason = `Fakeout Early-Exit (${fakeoutVotes}/3 conditions + M15 Adverse Close: ${fakeoutReasons.join(" | ")})`;
@@ -851,9 +944,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
           saveTrades(trades);
           saveState();
-          const icon = t.result === "WIN" ? "âœ…" : "âŒ";
+          const icon = t.result === "WIN" ? "✅" : "❌";
           const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
-          await sendTelegram(`ðŸ›¡ï¸ *${REPO_LABEL} â€” Fakeout Early-Exit Liquidated*\n\nDirection: *${t.direction}*\nðŸ“ Entry: *${Number(t.entry).toFixed(4)}*\nðŸ Exit Spot: *${currentPrice.toFixed(4)}*\nðŸ’µ P&L: *${pnlStr}* (Early loss mitigation)\n\nâš ï¸ *Adverse Structural Failure (${fakeoutVotes}/3 + M15 Adverse Close):*\nâ€¢ ${fakeoutReasons.join("\nâ€¢ ")}\n\nPosition cleared immediately to protect capital & unblock reverse setups.\nContract: \`${t.contractId}\``);
+          await sendTelegram(`🛡️ *${REPO_LABEL} — Fakeout Early-Exit Liquidated*\n\nDirection: *${t.direction}*\n📍 Entry: *${Number(t.entry).toFixed(4)}*\n🏁 Exit Spot: *${currentPrice.toFixed(4)}*\n💵 P&L: *${pnlStr}* (Early loss mitigation)\n\n⚠️ *Adverse Structural Failure (${fakeoutVotes}/3 + M15 Adverse Close):*\n• ${fakeoutReasons.join("\n• ")}\n\nPosition cleared immediately to protect capital & unblock reverse setups.\nContract: \`${t.contractId}\``);
         } catch (e) {
           console.error(`[FAKEOUT EXIT] Failed to close contract ${t.contractId}:`, e.message);
         }
@@ -862,14 +955,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
 
-    // Fractal SL Market Structure Break (Evaluated strictly on M5 Candle Close)
+    // Fractal SL Market Structure Break (Evaluated strictly on Candle Close)
     const m5ClosePrice = currentPrice;
     if (t.sl) {
       const isBuy = t.direction === "BUY";
       const structureBroken = isBuy ? m5ClosePrice < t.sl : m5ClosePrice > t.sl;
       if (structureBroken) {
         closingContracts.add(t.contractId);
-        console.log(`[STRUCTURE] M5 candle closed at ${m5ClosePrice.toFixed(4)} breaking ${t.fractalTimeframe || "M5"} fractal SL ${t.sl.toFixed(4)}. Exiting.`);
+        console.log(`[STRUCTURE] M5 candle closed at ${m5ClosePrice.toFixed(4)} breaking ${t.fractalTimeframe || "M15"} fractal SL ${t.sl.toFixed(4)}. Exiting.`);
         try {
           await closeContract(t.contractId);
           const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
@@ -881,9 +974,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
           saveTrades(trades);
           saveState();
-          const icon = t.result === "WIN" ? "âœ…" : "âŒ";
+          const icon = t.result === "WIN" ? "✅" : "❌";
           const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
-          await sendTelegram(`${icon} *${REPO_LABEL} â€” ${t.fractalTimeframe || "M5"} Structure Break*\n\nM5 Candle closed at *${m5ClosePrice.toFixed(4)}* breaking fractal SL *${t.sl.toFixed(4)}*.\nðŸ’µ P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+          await sendTelegram(`${icon} *${REPO_LABEL} — ${t.fractalTimeframe || "M15"} Structure Break*\n\nM5 Candle closed at *${m5ClosePrice.toFixed(4)}* breaking fractal SL *${t.sl.toFixed(4)}*.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
         } catch (e) {
           console.error(`[STRUCTURE] Failed to close contract ${t.contractId}:`, e.message);
         }
@@ -892,40 +985,26 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
 
-    if (!t.m30FractalUpgraded && m15Candles.length >= 5) {
+    // Upgrade M15 Fractal SL if new favorable M15 structure forms
+    if (m15Candles.length >= 5) {
       for (let k = 2; k <= m15Candles.length - 4; k++) {
         if (m15Candles[k + 2].epoch + M15 > t.entryEpoch) {
           const c = m15Candles;
           if (t.direction === "BUY") {
             const isBottom = parseFloat(c[k].low) === Math.min(parseFloat(c[k-2].low), parseFloat(c[k-1].low), parseFloat(c[k].low), parseFloat(c[k+1].low), parseFloat(c[k+2].low));
             const frac = parseFloat(c[k].low);
-            if (isBottom && frac > t.sl && frac < t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`ðŸ”Ž *${REPO_LABEL}* â€” SL Upgraded to M15 Bottom: ${frac.toFixed(4)}`); break; }
-          } else if (t.direction === "SELL") {
-            const isTop = parseFloat(c[k].high) === Math.max(parseFloat(c[k-2].high), parseFloat(c[k-1].high), parseFloat(c[k].high), parseFloat(c[k+1].high), parseFloat(c[k+2].high));
-            const frac = parseFloat(c[k].high);
-            if (isTop && frac < t.sl && frac > t.entry) { t.m30FractalUpgraded = true; t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); await sendTelegram(`ðŸ”Ž *${REPO_LABEL}* â€” SL Upgraded to M15 Top: ${frac.toFixed(4)}`); break; }
-          }
-        }
-      }
-    }
-
-    if (candles.length >= 5) {
-      for (let k = 2; k <= candles.length - 4; k++) {
-        if (candles[k + 2].epoch > t.entryEpoch) {
-          const c = candles;
-          if (t.direction === "BUY") {
-            const isBottom = parseFloat(c[k].low) === Math.min(parseFloat(c[k-2].low), parseFloat(c[k-1].low), parseFloat(c[k].low), parseFloat(c[k+1].low), parseFloat(c[k+2].low));
-            const frac = parseFloat(c[k].low);
-            if (isBottom && frac > t.sl) { 
-              t.sl = frac; t.fractalTimeframe = "M5_Trail"; saveTrades(trades); 
-              console.log(`[TRAIL SL] Trailed BUY SL to M5 Bottom: ${frac.toFixed(4)}`); 
+            if (isBottom && frac > t.sl && frac < t.entry) { 
+              t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); 
+              console.log(`[TRAIL SL] Upgraded BUY SL to M15 Bottom Fractal: ${frac.toFixed(4)}`); 
+              break; 
             }
           } else if (t.direction === "SELL") {
             const isTop = parseFloat(c[k].high) === Math.max(parseFloat(c[k-2].high), parseFloat(c[k-1].high), parseFloat(c[k].high), parseFloat(c[k+1].high), parseFloat(c[k+2].high));
             const frac = parseFloat(c[k].high);
-            if (isTop && frac < t.sl) { 
-              t.sl = frac; t.fractalTimeframe = "M5_Trail"; saveTrades(trades); 
-              console.log(`[TRAIL SL] Trailed SELL SL to M5 Top: ${frac.toFixed(4)}`); 
+            if (isTop && frac < t.sl && frac > t.entry) { 
+              t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); 
+              console.log(`[TRAIL SL] Upgraded SELL SL to M15 Top Fractal: ${frac.toFixed(4)}`); 
+              break; 
             }
           }
         }
@@ -933,21 +1012,30 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
   }
 
-
-  // 5. Calculate Indicators & Write to Daily Ledger CSV
+  // 5. Calculate Technical Indicators Based on Active Instrument Architecture
   const cci = calculateCCI(candles, 100);
-  const env = calculateEnvelopes(candles, 50, 0.05);
-  const stoch = calculateStoch(candles, 18, 12, 25);
+  const stochParams = PROFILE.stochParams || { k: 18, d: 12, slowing: 25 };
+  const stoch = calculateStoch(candles, stochParams.k, stochParams.d, stochParams.slowing);
+  const envParams = PROFILE.envParams || { period: 50, devPct: 0.05 };
+  const env = calculateEnvelopes(candles, envParams.period, envParams.devPct);
+
+  // EMA 100 for V100 (1s) Two-Stage State Arming
+  const ema100 = calculateEMA(candles, 100);
+  const currentEma100 = ema100[si];
+
+  // Secondary Fast Stoch (5,3,3) for V100 (1s)
+  const stoch533 = calculateStoch(candles, 5, 3, 3);
 
   const cVal = cci[si], prevCci = cci[si - 1];
   const eUp = env.upper[si], eLo = env.lower[si];
   const sK = stoch.k[si], sD = stoch.d[si], prevK = stoch.k[si - 1], prevD = stoch.d[si - 1];
+  const sK533 = stoch533.k[si], prevK533 = stoch533.k[si - 1];
 
-  if (cVal === null || prevCci === null || eUp === null || eLo === null || sK === null || sD === null || prevK === null || prevD === null) return;
+  if (sK === null || sD === null || prevK === null || prevD === null) return;
 
-  writeToLedger(m5BoundaryEpoch, currentPrice, cVal, sK, sD, eUp, eLo, (state.armed && state.armed.lbl) ? state.armed.lbl : "IDLE");
+  writeToLedger(m5BoundaryEpoch, currentPrice, cVal, sK, sD, eUp, eLo, (state.armed && state.armed.lbl) ? state.armed.lbl : "IDLE", `EMA100:${currentEma100 ? currentEma100.toFixed(2) : "0"}`);
 
-  // \u2500\u2500 A. RULE 1: UNIVERSAL KEY LEVEL TOUCH & CLOSE-SIDE ARMING \u2500\u2500
+  // ── A. RULE 1: UNIVERSAL KEY LEVEL TOUCH & CLOSE-SIDE ARMING ──
   function isLevelTouched(level, candle) {
     if (!level) return false;
     const h = parseFloat(candle.high);
@@ -965,16 +1053,16 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   let newArm = null;
 
+  // Build Key Levels Array (Explicitly exclude 50% for Volatility 50)
   const keyLevels = [
     { lvl: fib.fib0,    name: "0%" },
-    { lvl: fib.fib50,   name: "50%" },
+    ...(PROFILE.excludeFib50 ? [] : [{ lvl: fib.fib50, name: "50%" }]),
     { lvl: fib.fib79,   name: "79%" },
     { lvl: fib.fib100,  name: "100%" },
     { lvl: fib.fibM50,  name: "-50%" },
     { lvl: fib.fib1618, name: "161.8%" }
   ];
 
-  // Track 50% Origin Memory from 0% and 100% touches
   if (isLevelTouched(fib.fib0, currM15)) state.last50Origin = "fib0";
   if (isLevelTouched(fib.fib100, currM15)) state.last50Origin = "fib100";
 
@@ -990,12 +1078,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         if (item.lvl === fib.fib0) {
           if (closedAbove) newArm = { type: "CONT", dir: "BUY", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_BUY (0 to -50)" };
           else if (closedBelow) newArm = { type: "REV", dir: "SELL", tp: fib.fib50, lvl: fib.fib0, lbl: "REV_SELL (0 to 50)" };
-        } else if (item.lvl === fib.fib50) {
+        } else if (item.lvl === fib.fib50 && !PROFILE.excludeFib50) {
           if (closedAbove && state.last50Origin === "fib0") newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_BUY (50 to 0)" };
           else if (closedBelow && state.last50Origin === "fib100") newArm = { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_SELL (50 to 100)" };
         } else if (item.lvl === fib.fib79) {
           if (closedAbove) newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib79, lbl: "REV_BUY (79 to 0)" };
-          // Closed below 79% on bullish day is strictly INACTIVE per Handbook Section 4
         } else if (item.lvl === fib.fib100) {
           if (closedAbove) newArm = { type: "REV", dir: "BUY", tp: fib.fib50, lvl: fib.fib100, lbl: "REV_BUY (100 to 50)" };
           else if (closedBelow) newArm = { type: "CONT", dir: "SELL", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_SELL (100 to 161.8)" };
@@ -1008,12 +1095,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         if (item.lvl === fib.fib0) {
           if (closedBelow) newArm = { type: "CONT", dir: "SELL", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_SELL (0 to -50)" };
           else if (closedAbove) newArm = { type: "REV", dir: "BUY", tp: fib.fib50, lvl: fib.fib0, lbl: "REV_BUY (0 to 50)" };
-        } else if (item.lvl === fib.fib50) {
+        } else if (item.lvl === fib.fib50 && !PROFILE.excludeFib50) {
           if (closedBelow && state.last50Origin === "fib0") newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_SELL (50 to 0)" };
           else if (closedAbove && state.last50Origin === "fib100") newArm = { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_BUY (50 to 100)" };
         } else if (item.lvl === fib.fib79) {
           if (closedBelow) newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib79, lbl: "REV_SELL (79 to 0)" };
-          // Closed above 79% on bearish day is strictly INACTIVE per Handbook Section 4
         } else if (item.lvl === fib.fib100) {
           if (closedAbove) newArm = { type: "CONT", dir: "BUY", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_BUY (100 to 161.8)" };
           else if (closedBelow) newArm = { type: "REV", dir: "SELL", tp: fib.fib50, lvl: fib.fib100, lbl: "REV_SELL (100 to 50)" };
@@ -1030,9 +1116,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         newArm = null;
       }
 
-      // 30-Minute Execution Latch: Prevent re-arming the exact same setup if recently executed
+      // 30-Minute Execution Latch: Prevent re-arming duplicate setup
       if (newArm && state.lastTriggeredSetup === newArm.lbl && (m5BoundaryEpoch - (state.lastTriggeredEpoch || 0)) < 1800) {
-        dbg(`[COOLDOWN LATCH] Setup ${newArm.lbl} was executed within the last 30 minutes. Suppressing duplicate re-arm.`);
+        dbg(`[COOLDOWN LATCH] Setup ${newArm.lbl} executed within 30 mins. Suppressing duplicate re-arm.`);
         newArm = null;
       }
 
@@ -1043,294 +1129,271 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   // Active M15 Wrong-Side Invalidation & Target Expiration
   if (state.armed) {
     if (state.armed.dir === "BUY" && m15Close < state.armed.lvl) {
-      dbg(`[INVALIDATION] M15 closed at ${m15Close} BELOW armed BUY level ${state.armed.lvl}. Disarming.`);
+      dbg(`[INVALIDATION] M15 closed below armed BUY level ${state.armed.lvl}. Disarming.`);
       state.armed = null;
-      state.confirm = null;
-      state.nextPhase = null;
-      state.cciAligned = false;
-      state.stochAligned = false;
-      state.envAligned = false;
     } else if (state.armed.dir === "SELL" && m15Close > state.armed.lvl) {
-      dbg(`[INVALIDATION] M15 closed at ${m15Close} ABOVE armed SELL level ${state.armed.lvl}. Disarming.`);
+      dbg(`[INVALIDATION] M15 closed above armed SELL level ${state.armed.lvl}. Disarming.`);
       state.armed = null;
-      state.confirm = null;
-      state.nextPhase = null;
-      state.cciAligned = false;
-      state.stochAligned = false;
-      state.envAligned = false;
     } else if (state.armed.dir === "BUY" && state.armed.tp && m15Close >= state.armed.tp) {
-      dbg(`[EXPIRED] M15 closed at ${m15Close} at/above armed BUY target ${state.armed.tp} without confluence trigger. Disarming.`);
+      dbg(`[EXPIRED] M15 reached armed BUY target ${state.armed.tp}. Disarming.`);
       state.armed = null;
-      state.confirm = null;
-      state.nextPhase = null;
-      state.cciAligned = false;
-      state.stochAligned = false;
-      state.envAligned = false;
     } else if (state.armed.dir === "SELL" && state.armed.tp && m15Close <= state.armed.tp) {
-      dbg(`[EXPIRED] M15 closed at ${m15Close} at/below armed SELL target ${state.armed.tp} without confluence trigger. Disarming.`);
+      dbg(`[EXPIRED] M15 reached armed SELL target ${state.armed.tp}. Disarming.`);
       state.armed = null;
-      state.confirm = null;
-      state.nextPhase = null;
-      state.cciAligned = false;
-      state.stochAligned = false;
-      state.envAligned = false;
     }
   }
 
   if (newArm && (!state.armed || state.armed.lbl !== newArm.lbl)) {
     dbg(`[STATE] New Arm: ${newArm.lbl} (Level: ${newArm.lvl}, TP: ${newArm.tp})`);
     state.armed = newArm;
-    state.confirm = { label: newArm.lbl, cci: { aligned: false }, stoch: { aligned: false }, env: { aligned: false }, gate: GATE_TYPE };
+    state.confirm = { label: newArm.lbl, dir: newArm.dir, gate: GATE_TYPE };
   }
 
   state.nextPhase = state.armed ? state.armed.lbl : null;
 
-  // \u2500\u2500 B/C/D. PERSISTENT STATE CONFLUENCE ENGINE (DUAL-GATE: REVERSAL & PINNED TREND) \u2500\u2500
-  const crossUp         = prevK <= prevD && sK > sD;
-  const crossDown       = prevK >= prevD && sK < sD;
-  const crossedAbove50  = prevK < 50 && sK >= 50;
-  const crossedBelow50  = prevK > 50 && sK <= 50;
-  const midlineFallback = STOCH_MIDLINE_FALLBACK_SYMBOLS.includes(SYMBOL);
-
-  // 1. Stochastic State Evaluation (Clean Directional Crossover - Zero Separation Barrier)
-  const stochSeparation = Math.abs(sK - sD);
-
-  if (crossUp) {
-    if (sK <= 25 || (midlineFallback && crossedAbove50)) {
-      state.stochState = { dir: "BUY", type: "REV" };
-    } else if (crossedAbove50 || prevK <= 55) {
-      // Continuation: Micro-pullback cross in trend
-      state.stochState = { dir: "BUY", type: "CONT" };
-    } else {
-      state.stochState = null;
-    }
-  } else if (crossDown) {
-    if (sK >= 75 || (midlineFallback && crossedBelow50)) {
-      state.stochState = { dir: "SELL", type: "REV" };
-    } else if (crossedBelow50 || prevK >= 45) {
-      // Continuation: Micro-pullback cross in trend
-      state.stochState = { dir: "SELL", type: "CONT" };
-    } else {
-      state.stochState = null;
-    }
-  }
-
-  if (!state.stochState && state.armed) {
-    const preMidnightValid = checkPreMidnightStochCross(candles, stoch, state.armed.dir, state.armed.type, midlineFallback);
-    if (preMidnightValid) {
-      state.stochState = { dir: state.armed.dir, type: state.armed.type };
-    }
-  }
-
-  // 2. CCI State Evaluation (Reversal Bounds)
-  if (prevCci <= -70.5 && cVal > -70.5) {
-    state.cciState = "BUY";
-  } else if (state.cciState === "BUY" && cVal <= -70.5) {
-    state.cciState = null;
-  }
-
-  if (prevCci >= 70.5 && cVal < 70.5) {
-    state.cciState = "SELL";
-  } else if (state.cciState === "SELL" && cVal >= 70.5) {
-    state.cciState = null;
-  }
-
-  // 3. Envelopes State Evaluation
-  let envState = null;
-  if (currentPrice > eUp) envState = "BUY";
-  if (currentPrice < eLo) envState = "SELL";
-
-  // 4. Confluence Alignment (Calibrated Instrument Gate Engine)
-  const gate = GATE_TYPE;
-
-  if (state.armed) {
-    const requiredDir = state.armed.dir;
-    const requiredType = state.armed.type;
-
-    // Envelope Band Requirement (Closed candle outside Envelopes in setup direction)
-    state.envAligned = (envState === requiredDir);
-
-    // Stochastic Alignment with separation lead filter
-    const stochDirAligned = Boolean(state.stochState && state.stochState.dir === requiredDir);
-    const stochRevAligned = Boolean(stochDirAligned && state.stochState.type === "REV");
-    state.stochAligned = requiredType === "REV" ? (stochRevAligned || stochDirAligned) : stochDirAligned;
-
-    // Strict Zero-Line CCI Momentum Crossover (Fresh momentum thrust through 0.0)
-    const zeroLineCciCrossed = (requiredDir === "BUY" && prevCci <= 0 && cVal > 0) ||
-                               (requiredDir === "SELL" && prevCci >= 0 && cVal < 0);
-
-    // Extreme Zone Recovery CCI Alignment
-    const zoneRecoveryCciAligned = (state.cciState === requiredDir);
-
-    // Pinned Momentum CCI Alignment (for CONT)
-    const cciThreshold = PROFILE.cciContinuationThreshold || 50.0;
-    const pinnedCciCrossed = (requiredDir === "BUY" && prevCci < cciThreshold && cVal >= cciThreshold) ||
-                             (requiredDir === "SELL" && prevCci > -cciThreshold && cVal <= -cciThreshold);
-
-    if (gate === "OPTION_B") {
-      // Option B (R_75, R_25): Stochastic Only outside Envelopes. CCI is completely bypassed.
-      state.cciAligned = true;
-    } else if (gate === "OPTION_C2") {
-      // Option C2 (1HZ75V, R_100, 1HZ100V, R_10): Requires fresh momentum event (Zero-line cross, Zone recovery, or Pinned cross)
-      state.cciAligned = zeroLineCciCrossed || zoneRecoveryCciAligned || pinnedCciCrossed;
-    } else if (gate === "DUAL_HYBRID") {
-      // Dual-Hybrid (R_50):
-      // On CONT: Stochastic Only outside Envelope (CCI bypassed)
-      // On REV: Strict Zero-Line CCI (BUY > 0 / SELL < 0) + Stochastic cross
-      if (requiredType === "CONT") {
-        state.cciAligned = true;
-      } else {
-        state.cciAligned = zeroLineCciAligned || zoneRecoveryCciAligned;
-      }
-    } else {
-      // Baseline Dual Confluence
-      if (requiredType === "REV") {
-        state.cciAligned = zoneRecoveryCciAligned;
-      } else {
-        state.cciAligned = pinnedCciAligned || zoneRecoveryCciAligned;
-      }
-    }
-  } else {
-    state.cciAligned = false;
-    state.stochAligned = false;
-    state.envAligned = false;
-  }
-
-  // \u2500\u2500 6. TRIGGER LOGIC (WITH EXECUTION SIDE-GATE) \u2500\u2500
-  let signalTriggered = false, direction = "", fibTpPrice = null, entryType = null, entryKeyLevel = null;
-
+  // ── B. QUANTITATIVE STRATEGY DISPATCHER & CONFLUENCE ENGINE ──
   let indicatorsSatisfied = false;
-  if (state.armed && state.envAligned) {
-    if (gate === "OPTION_B") {
-      // Stochastic Only required
-      indicatorsSatisfied = Boolean(state.stochAligned);
-    } else if (gate === "OPTION_C2") {
-      // Either Strict Zero-Line CCI OR Stochastic crossover required
-      indicatorsSatisfied = Boolean(state.cciAligned || state.stochAligned);
-    } else if (gate === "DUAL_HYBRID") {
-      // CONT: Stoch Only; REV: Both Zero-Line CCI and Stoch required
-      if (state.armed.type === "CONT") {
-        indicatorsSatisfied = Boolean(state.stochAligned);
-      } else {
-        indicatorsSatisfied = Boolean(state.cciAligned && state.stochAligned);
+  let signalDirection = "";
+  let setupLabel = state.armed ? state.armed.lbl : "";
+
+  // 1. UNIFIED V75 / V75 (1s) / V10 MIDLINE FRACTAL ENGINE
+  if (STRATEGY_PROFILE === "PROFILE_V75_MIDLINE_FRACTAL" || 
+      STRATEGY_PROFILE === "PROFILE_V75_1S_MIDLINE_FRACTAL" || 
+      STRATEGY_PROFILE === "PROFILE_V10_MIDLINE_FRACTAL") {
+    
+    // Strict Stoch (18,12,25) Level 50 Midline Cross
+    const stoch50CrossUp = prevK <= 50.0 && sK > 50.0;
+    const stoch50CrossDown = prevK >= 50.0 && sK < 50.0;
+
+    if (state.armed) {
+      if (state.armed.dir === "BUY" && stoch50CrossUp) {
+        indicatorsSatisfied = true;
+        signalDirection = "BUY";
+      } else if (state.armed.dir === "SELL" && stoch50CrossDown) {
+        indicatorsSatisfied = true;
+        signalDirection = "SELL";
       }
-    } else {
-      indicatorsSatisfied = Boolean(state.cciAligned && state.stochAligned);
+    }
+  }
+  // 2. VOLATILITY 100 (R_100) MIDLINE & ENVELOPE 200 ENGINE
+  else if (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV") {
+    const stoch50CrossUp = prevK <= 50.0 && sK > 50.0;
+    const stoch50CrossDown = prevK >= 50.0 && sK < 50.0;
+    const env200Upper = eUp; // Computed with period 200
+    const env200Lower = eLo;
+
+    const envBuyActive = currentPrice > env200Upper;
+    const envSellActive = currentPrice < env200Lower;
+
+    if (state.armed) {
+      if (state.armed.dir === "BUY" && stoch50CrossUp && envBuyActive) {
+        indicatorsSatisfied = true;
+        signalDirection = "BUY";
+      } else if (state.armed.dir === "SELL" && stoch50CrossDown && envSellActive) {
+        indicatorsSatisfied = true;
+        signalDirection = "SELL";
+      }
+    }
+  }
+  // 3. VOLATILITY 100 (1s) TWO-STAGE STATE ARMING & FAST STOCH (5,3,3) ENGINE
+  else if (STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533") {
+    // Stage 1: State Arming (M15 Key Level + M5 EMA 100 Direction)
+    const emaBuyArmed = currentPrice > currentEma100;
+    const emaSellArmed = currentPrice < currentEma100;
+
+    const buyStateArmed = Boolean(state.armed && state.armed.dir === "BUY" && emaBuyArmed);
+    const sellStateArmed = Boolean(state.armed && state.armed.dir === "SELL" && emaSellArmed);
+
+    state.v100_1s_armed = buyStateArmed || sellStateArmed;
+    state.v100_1s_armDir = buyStateArmed ? "BUY" : (sellStateArmed ? "SELL" : null);
+
+    // Stage 2: Execution Trigger (Fast M5 Stoch 5,3,3)
+    const stoch533BuyCross = prevK533 <= 20.0 && sK533 > 20.0;
+    const stoch533SellCross = (prevK533 >= 80.0 && sK533 < 80.0) || (prevK533 >= 50.0 && sK533 < 50.0);
+
+    if (buyStateArmed && stoch533BuyCross) {
+      indicatorsSatisfied = true;
+      signalDirection = "BUY";
+    } else if (sellStateArmed && stoch533SellCross) {
+      indicatorsSatisfied = true;
+      signalDirection = "SELL";
+    }
+  }
+  // 4. VOLATILITY 25 OUT-OF-ORDER 3-WAY INDEPENDENT LATCHING ENGINE
+  else if (STRATEGY_PROFILE === "PROFILE_V25_ASYNC_3WAY") {
+    // Condition 1: M15 Key Level Interaction
+    if (state.armed) {
+      if (state.armed.dir === "BUY") state.latchFib_BUY = true;
+      if (state.armed.dir === "SELL") state.latchFib_SELL = true;
+    }
+
+    // Condition 2: M5 CCI 100 Crossing (-100 / +100)
+    if (cVal !== null && prevCci !== null) {
+      if (prevCci <= -100.0 && cVal > -100.0) state.latchCci_BUY = true;
+      if (prevCci >= 100.0 && cVal < 100.0) state.latchCci_SELL = true;
+      // Selective Reset: if CCI re-crosses back into adverse territory
+      if (cVal < -100.0) state.latchCci_BUY = false;
+      if (cVal > 100.0) state.latchCci_SELL = false;
+    }
+
+    // Condition 3: M5 Stochastic (18,12,25) Crossing
+    const stochBuyCross = (prevK <= 20.0 && sK > 20.0) || (prevK <= prevD && sK > sD && sK <= 20.0);
+    const stochSellCross = (prevK >= 80.0 && sK < 80.0) || (prevK >= prevD && sK < sD && sK >= 80.0);
+    if (stochBuyCross) state.latchStoch_BUY = true;
+    if (stochSellCross) state.latchStoch_SELL = true;
+    // Selective Reset: if Stoch crosses adversely
+    if (sK > 80.0) state.latchStoch_BUY = false;
+    if (sK < 20.0) state.latchStoch_SELL = false;
+
+    // Confluence: All 3 latches aligned
+    if (state.latchFib_BUY && state.latchCci_BUY && state.latchStoch_BUY) {
+      indicatorsSatisfied = true;
+      signalDirection = "BUY";
+      setupLabel = "V25_ASYNC_3WAY (REV_BUY)";
+    } else if (state.latchFib_SELL && state.latchCci_SELL && state.latchStoch_SELL) {
+      indicatorsSatisfied = true;
+      signalDirection = "SELL";
+      setupLabel = "V25_ASYNC_3WAY (REV_SELL)";
+    }
+  }
+  // 5. VOLATILITY 50 STOCHASTIC BOUNDARIES (20 / 80) ENGINE
+  else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES") {
+    // BUY: Stoch crosses > 20; SELL: Stoch crosses < 80
+    const stoch20CrossUp = prevK <= 20.0 && sK > 20.0;
+    const stoch80CrossDown = prevK >= 80.0 && sK < 80.0;
+
+    if (state.armed) {
+      if (state.armed.dir === "BUY" && stoch20CrossUp) {
+        indicatorsSatisfied = true;
+        signalDirection = "BUY";
+      } else if (state.armed.dir === "SELL" && stoch80CrossDown) {
+        indicatorsSatisfied = true;
+        signalDirection = "SELL";
+      }
+    }
+  }
+  // 6. GENERAL / LEGACY CONFLUENCE FALLBACK
+  else {
+    const crossUp = prevK <= prevD && sK > sD;
+    const crossDown = prevK >= prevD && sK < sD;
+    const crossedAbove50 = prevK < 50 && sK >= 50;
+    const crossedBelow50 = prevK > 50 && sK <= 50;
+    const envAligned = (currentPrice > eUp && state.armed?.dir === "BUY") || (currentPrice < eLo && state.armed?.dir === "SELL");
+
+    if (state.armed && envAligned) {
+      if (state.armed.dir === "BUY" && (crossUp || crossedAbove50)) {
+        indicatorsSatisfied = true;
+        signalDirection = "BUY";
+      } else if (state.armed.dir === "SELL" && (crossDown || crossedBelow50)) {
+        indicatorsSatisfied = true;
+        signalDirection = "SELL";
+      }
     }
   }
 
-  if (indicatorsSatisfied) {
-    const isPriceValid = (state.armed.dir === "BUY" && currentPrice >= state.armed.lvl) ||
-                         (state.armed.dir === "SELL" && currentPrice <= state.armed.lvl);
+  // ── C. TRIGGER EXECUTION GATE & CONTRACT CREATION ──
+  let signalTriggered = false;
+  let direction = signalDirection;
+  let fibTpPrice = state.armed?.tp || null;
+  let entryType = setupLabel || state.armed?.lbl || "STRATEGY_EXECUTION";
+  let entryKeyLevel = state.armed?.lvl || null;
+
+  if (indicatorsSatisfied && direction) {
+    const isPriceValid = (direction === "BUY" && (entryKeyLevel === null || currentPrice >= entryKeyLevel)) ||
+                         (direction === "SELL" && (entryKeyLevel === null || currentPrice <= entryKeyLevel));
 
     if (isPriceValid) {
       signalTriggered = true;
-      direction   = state.armed.dir;
-      entryType   = state.armed.lbl;
-      fibTpPrice  = state.armed.tp;
-      entryKeyLevel = state.armed.lvl;
       state.lastTriggeredSetup = entryType;
       state.lastTriggeredEpoch = m5BoundaryEpoch;
-      state.armed   = null; 
+      state.armed = null; 
       state.confirm = null;
       state.nextPhase = null;
-      state.stochState = null;
-      state.cciState = null;
-      state.cciAligned = false;
-      state.stochAligned = false;
-      state.envAligned = false;
+      state.v100_1s_armed = false;
+      state.v100_1s_armDir = null;
+      state.latchFib_BUY = false;
+      state.latchFib_SELL = false;
+      state.latchCci_BUY = false;
+      state.latchCci_SELL = false;
+      state.latchStoch_BUY = false;
+      state.latchStoch_SELL = false;
     } else {
-      dbg(`[ABORT TRIGGER] Price ${currentPrice} is on the wrong side of level ${state.armed.lvl} for ${state.armed.dir}. Aborting.`);
+      dbg(`[ABORT TRIGGER] Price ${currentPrice} is on wrong side of level ${entryKeyLevel} for ${direction}. Aborting.`);
       state.armed = null;
       state.confirm = null;
       state.nextPhase = null;
-      state.cciAligned = false;
-      state.stochAligned = false;
-      state.envAligned = false;
     }
   }
 
-  // \u2500\u2500 7. EXECUTE & TELEGRAM DIAGNOSTIC CONFIRMATION CARD \u2500\u2500
   if (signalTriggered) {
-    // Just-In-Time Execution Gate: If another trade is still open, block new execution.
-    // If the old trade closed moments before this check, trades has no open positions and new trade executes instantly.
+    // Just-In-Time Execution Gate: Block if another position is active
     trades = loadTrades();
     const activeTrade = trades.find(t => !t.result && !t.pending);
     if (activeTrade) {
-      console.log(`[EXECUTION GATED] Signal ${entryType} confirmed, but position ${activeTrade.contractId} (${activeTrade.direction}) is currently active. Blocking new contract. Resetting armed state.`);
+      console.log(`[EXECUTION GATED] Signal ${entryType} confirmed, but contract ${activeTrade.contractId} (${activeTrade.direction}) is active. Resetting armed state.`);
       state.armed = null;
-      state.confirm = null;
-      state.nextPhase = null;
-      state.stochState = null;
-      state.cciState = null;
-      state.cciAligned = false;
-      state.stochAligned = false;
-      state.envAligned = false;
       state.lastProcessedEpoch = m5BoundaryEpoch;
       saveState();
       return;
     }
     const entry = currentPrice;
 
-    // Calibrated Minimum Take Profit Engine (Points Floor + $5.00 Dynamic Extension)
+    // Calibrated Minimum Take Profit Engine ($4.00 TP Floor Across Fleet)
     let calibratedMinPts = MIN_TP_POINTS_FLOOR;
-    if (SYMBOL === "R_50") {
-      calibratedMinPts = (entryType && entryType.includes("CONT")) ? 0.80 : 0.30;
-    }
-
-    const pointsTpPrice = direction === "BUY" ? entry + calibratedMinPts : entry - calibratedMinPts;
-
     const requiredRawPnl = TARGET_MIN_PROFIT + COMMISSION_USD;
     const priceMoveFraction = requiredRawPnl / (STAKE_USD * MULTIPLIER);
     const dollarTpPrice = direction === "BUY" ? entry * (1 + priceMoveFraction) : entry * (1 - priceMoveFraction);
+    const pointsTpPrice = direction === "BUY" ? entry + calibratedMinPts : entry - calibratedMinPts;
 
     const minRequiredTp = direction === "BUY" ? Math.max(pointsTpPrice, dollarTpPrice) : Math.min(pointsTpPrice, dollarTpPrice);
 
-    if (direction === "BUY" && minRequiredTp > fibTpPrice) {
-      fibTpPrice = minRequiredTp; entryType = entryType + " (Calibrated TP Ext)";
+    if (!fibTpPrice || (direction === "BUY" && minRequiredTp > fibTpPrice)) {
+      fibTpPrice = minRequiredTp; entryType = entryType + " ($4.00 TP Floor)";
     } else if (direction === "SELL" && minRequiredTp < fibTpPrice) {
-      fibTpPrice = minRequiredTp; entryType = entryType + " (Calibrated TP Ext)";
+      fibTpPrice = minRequiredTp; entryType = entryType + " ($4.00 TP Floor)";
     }
 
-    let initialFractal = findRecentFractal(candles, si, direction);
+    // Initial Stop Loss Anchor: Previous M15 Institutional Fractal
+    let initialM15Fractal = findRecentFractalM15(m15Candles, direction);
     const hardStopPrice = deriveHardStopPrice(entry, direction, entryType && entryType.includes("REV") ? "REV" : "CONT");
 
     let sl;
-    if (direction === "BUY") {
-      sl = (initialFractal && initialFractal > hardStopPrice && initialFractal < entry) ? initialFractal : (initialFractal = null, hardStopPrice);
+    if (PROFILE.slType === "HARD_POINTS") {
+      sl = hardStopPrice;
     } else {
-      sl = (initialFractal && initialFractal < hardStopPrice && initialFractal > entry) ? initialFractal : (initialFractal = null, hardStopPrice);
+      if (direction === "BUY") {
+        sl = (initialM15Fractal && initialM15Fractal > hardStopPrice && initialM15Fractal < entry) ? initialM15Fractal : hardStopPrice;
+      } else {
+        sl = (initialM15Fractal && initialM15Fractal < hardStopPrice && initialM15Fractal > entry) ? initialM15Fractal : hardStopPrice;
+      }
     }
 
     const timeFormatted = new Date(m5BoundaryEpoch * 1000).toISOString().replace("T", " ").substring(0, 19);
-    const dirEmoji = direction === "BUY" ? "\ud83d\udfe2 \u2b06\ufe0f BUY" : "\ud83d\udd34 \u2b07\ufe0f SELL";
-    const envStatus = direction === "BUY" ? `Close ${currentPrice.toFixed(4)} > Upper ${eUp.toFixed(4)}` : `Close ${currentPrice.toFixed(4)} < Lower ${eLo.toFixed(4)}`;
-
+    const dirEmoji = direction === "BUY" ? "🟢 ⬆️ BUY" : "🔴 ⬇️ SELL";
     const entryHtfShield = checkHtfTrendShield(direction, m15Candles, m30Candles);
 
     const message = 
-      `\ud83d\udea8 *${SYMBOL_NAME.toUpperCase()} SIGNAL* \ud83d\udea8\n\n` +
+      `🚨 *${SYMBOL_NAME.toUpperCase()} SIGNAL* 🚨\n\n` +
       `Direction: *${dirEmoji}*\n` +
+      `Strategy Profile: *${STRATEGY_PROFILE}*\n` +
       `Setup: *${escapeMarkdown(entryType)}*\n` +
-      `\ud83d\udccd Entry: *${entry.toFixed(4)}*\n` +
-      `\ud83d\uded1 Initial SL: *${sl.toFixed(4)}* (${initialFractal ? "M5 Fractal" : "Hard Stop"})\n` +
-      `\ud83c\udfaf Fib TP: *${fibTpPrice.toFixed(4)}*\n\n` +
-      `\ud83d\udcb0 Stake: $${STAKE_USD} | Multiplier: ${MULTIPLIER}x\n\n` +
-      `\ud83d\udcd0 *Confluence & Profile Verified*\n` +
-      `\u2022 Key Level Trigger: *${entryType}*\n` +
-      `\u2022 Gate Engine: *${gate}*\n` +
-      `\u2022 HTF Trend Shield (M15/M30): *${entryHtfShield ? "\ud83d\udee1\ufe0f ACTIVE (Trend Aligned)" : "\u26aa NEUTRAL"}*\n` +
-      `\u2022 M5 CCI(100): *${cVal.toFixed(2)}* (${state.cciAligned ? "Aligned" : "Bypassed / Off"})\n` +
-      `\u2022 M5 Stoch(18,12,25): *%K ${sK.toFixed(1)}* | *%D ${sD.toFixed(1)}* (Directional Cross Verified)\n` +
-      `\u2022 M5 Envelopes(50, 0.05%): *${envStatus}*\n` +
-      `\u2022 Daily Target Progress: *$${(state.dailyNetPnl || 0).toFixed(2)} / $10.00*\n` +
-      `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n` +
-      `\u23f0 Time (UTC): ${timeFormatted}\n\n` +
-      `\ud83d\udca1 To close manually: send \`/close win\` or \`/close loss\``;
+      `📍 Entry: *${entry.toFixed(4)}*\n` +
+      `🛑 Initial SL: *${sl.toFixed(4)}* (${initialM15Fractal ? "M15 Fractal Anchor" : "Hard Stop Barrier"})\n` +
+      `🎯 Take Profit: *${fibTpPrice.toFixed(4)}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n\n` +
+      `💰 Stake: $${STAKE_USD} | Multiplier: ${MULTIPLIER}x\n\n` +
+      `📐 *Technical Confluence Verification:*\n` +
+      `• Gate Engine: *${GATE_TYPE}*\n` +
+      `• HTF Trend Shield: *${entryHtfShield ? "🛡️ ACTIVE (Trend Aligned)" : "⚪ NEUTRAL"}*\n` +
+      `• M5 Stoch: *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}*\n` +
+      `• M5 EMA 100: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}*\n` +
+      `• Daily Target Progress: *$${(state.dailyNetPnl || 0).toFixed(2)} / $10.00*\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `⏰ Time (UTC): ${timeFormatted}\n\n` +
+      `💡 To close manually: send \`/close win\` or \`/close loss\``;
 
     const pendingTradeRecord = {
       id: `${SYMBOL}-${Date.now()}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, rr: null, entryType, brokerSlAmount: STAKE_USD,
-      entryEpoch: m5BoundaryEpoch, fractalSl: initialFractal, fractalEpoch: null, fractalTimeframe: initialFractal ? "M5" : null, m30FractalUpgraded: false, fibTpPrice,
+      entryEpoch: m5BoundaryEpoch, fractalSl: initialM15Fractal, fractalEpoch: null, fractalTimeframe: initialM15Fractal ? "M15" : null, m30FractalUpgraded: false, fibTpPrice,
       keyLevel: entryKeyLevel, htfShield: entryHtfShield,
       openTime: timeFormatted, closeTime: null, result: null
     };
@@ -1341,7 +1404,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const contractId = await executeTrade(direction);
       if (!contractId) {
         trades.splice(trades.findIndex(t => t.id === pendingTradeRecord.id), 1); saveTrades(trades);
-        await sendTelegram(`\u274c *${REPO_LABEL}* \u2014 Signal triggered, but broker returned no contract ID. Aborted.`);
+        await sendTelegram(`❌ *${REPO_LABEL}* — Signal triggered, but broker returned no contract ID. Aborted.`);
         return;
       }
       pendingTradeRecord.contractId = contractId;
@@ -1350,7 +1413,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       await sendTelegram(message);
     } catch (execErr) {
       trades.splice(trades.findIndex(t => t.id === pendingTradeRecord.id), 1); saveTrades(trades);
-      await sendTelegram(`\u274c *${REPO_LABEL}* \u2014 Live execution failed: ${execErr.message}`);
+      await sendTelegram(`❌ *${REPO_LABEL}* — Live execution failed: ${execErr.message}`);
     }
   }
 
@@ -1370,7 +1433,7 @@ async function checkTelegramCommands() {
       const text = update.message?.text?.trim()?.toLowerCase();
       if (text === "/status") {
         const t = loadTrades().filter(x => !x.result && !x.pending);
-        const reply = t.length ? `\ud83d\udccd *Active Trades:*\n` + t.map(x => `\u2022 ${x.direction} @ ${Number(x.entry).toFixed(4)}`).join("\n") : `\u26aa No open trades.`;
+        const reply = t.length ? `📍 *Active Trades:*\n` + t.map(x => `• ${x.symbol || SYMBOL} ${x.direction} @ ${Number(x.entry).toFixed(4)} (SL: ${Number(x.sl).toFixed(4)})`).join("\n") : `⚪ No open trades.`;
         await sendTelegram(reply);
       }
     }
@@ -1378,9 +1441,9 @@ async function checkTelegramCommands() {
   } catch (e) {}
 }
 
-async function startContinuousEngine() {
-  console.log(`[${REPO_LABEL}] \ud83d\ude80 24/7 Continuous Trading Engine Started Successfully.`);
-  console.log(`[${REPO_LABEL}] \u2699\ufe0f Profile: Multiplier ${MULTIPLIER}x | Modes: ${MODES_ALLOWED.join(",")}`);
+export async function startContinuousEngine() {
+  console.log(`[${REPO_LABEL}] 🚀 24/7 Continuous Master Trading Engine Initialized.`);
+  console.log(`[${REPO_LABEL}] ⚙️ Profile: ${STRATEGY_PROFILE} | Multiplier: ${MULTIPLIER}x | Modes: ${MODES_ALLOWED.join(",")}`);
   
   setInterval(checkTelegramCommands, 15000);
 
