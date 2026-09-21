@@ -601,39 +601,6 @@ function findRecentFractal(candles, currentIndex, direction) {
   return null;
 }
 
-function findAdverseFractalAfterEntry(candles, entryEpoch, direction) {
-  for (let k = candles.length - 3; k >= 2; k--) {
-    if (candles[k].epoch < entryEpoch) break;
-    if (direction === "BUY") {
-      const high = parseFloat(candles[k].high);
-      if (high > parseFloat(candles[k - 1].high) && high > parseFloat(candles[k - 2].high) &&
-          high > parseFloat(candles[k + 1].high) && high > parseFloat(candles[k + 2].high)) {
-        return { price: high, epoch: candles[k].epoch };
-      }
-    } else {
-      const low = parseFloat(candles[k].low);
-      if (low < parseFloat(candles[k - 1].low) && low < parseFloat(candles[k - 2].low) &&
-          low < parseFloat(candles[k + 1].low) && low < parseFloat(candles[k + 2].low)) {
-        return { price: low, epoch: candles[k].epoch };
-      }
-    }
-  }
-  return null;
-}
-
-function getTradeKeyLevel(trade, fib) {
-  if (trade && typeof trade.keyLevel === "number") return trade.keyLevel;
-  if (!fib) return null;
-  const et = (trade && trade.entryType) ? trade.entryType : "";
-  if (et.includes("0 to -50") || et.includes("0 to 50")) return fib.fib0;
-  if (et.includes("50 to 0") || et.includes("50 to 100")) return fib.fib50;
-  if (et.includes("79 to 0") || et.includes("79 to 100")) return fib.fib79;
-  if (et.includes("100 to 161.8") || et.includes("100 to 50")) return fib.fib100;
-  if (et.includes("-50 to 0")) return fib.fibM50;
-  if (et.includes("161.8 to 100")) return fib.fib1618;
-  return null;
-}
-
 // ==================== STATE MANAGEMENT ====================
 let state = {
   symbol: SYMBOL,
@@ -872,81 +839,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const m15Close     = parseFloat(currM15.close);
   const m15Open      = parseFloat(currM15.open);
 
-  // 4. Manage Structure & Fakeout Early-Exit Protection on Active Trades
+  // 4. Manage Structure on Active Trades
   const openTrades = trades.filter(t => !t.result && !t.pending);
   for (const t of openTrades) {
     if (closingContracts.has(t.contractId)) continue;
-
-    // 🛡️ FAKEOUT EARLY-EXIT PROTECTION ENGINE (2-OF-3 CONFLUENCE FAILURE + M15 CONFIRMATION)
-    const isBuy = t.direction === "BUY";
-    const pnl = calcUnrealizedPnL(t, currentPrice);
-
-    if (pnl < 0) {
-      let fakeoutVotes = 0;
-      const fakeoutReasons = [];
-
-      // Condition 1: Fresh adverse fractal formed against position in loss
-      const advFractal = findAdverseFractalAfterEntry(candles, t.entryEpoch, t.direction);
-      if (advFractal) {
-        fakeoutVotes++;
-        fakeoutReasons.push(isBuy ? `Adverse Top Fractal formed at ${advFractal.price.toFixed(4)}` : `Adverse Bottom Fractal formed at ${advFractal.price.toFixed(4)}`);
-      }
-
-      // Condition 2: M15 closed in opposite direction against key Fib level
-      let m15Broken = false;
-      const keyLvl = getTradeKeyLevel(t, fib);
-      if (keyLvl !== null) {
-        m15Broken = isBuy ? (m15Close < keyLvl) : (m15Close > keyLvl);
-        if (m15Broken) {
-          fakeoutVotes++;
-          fakeoutReasons.push(isBuy ? `M15 closed (${m15Close.toFixed(4)}) below entry Fib level (${keyLvl.toFixed(4)})` : `M15 closed (${m15Close.toFixed(4)}) above entry Fib level (${keyLvl.toFixed(4)})`);
-        }
-      }
-
-      // Condition 3: Two consecutive closed M5 candles against trade direction
-      if (candles.length >= 4) {
-        const c1 = parseFloat(candles[si].close);
-        const c2 = parseFloat(candles[si - 1].close);
-        const twoAdverse = isBuy ? (c1 < t.entry && c2 < t.entry) : (c1 > t.entry && c2 > t.entry);
-        if (twoAdverse) {
-          fakeoutVotes++;
-          fakeoutReasons.push(isBuy ? `2 consecutive M5 candles closed below entry (${t.entry.toFixed(4)})` : `2 consecutive M5 candles closed above entry (${t.entry.toFixed(4)})`);
-        }
-      }
-
-      const m15AdverseClose = isBuy ? (m15Close < m15Open) : (m15Close > m15Open);
-      if (!m15AdverseClose && fakeoutVotes >= 2) {
-         dbg(`[FAKEOUT REJECTED] ${t.contractId}: 2/3 conditions met, BUT M15 did not close adversely. Holding trade.`);
-      }
-
-      const shouldExitFakeout = fakeoutVotes >= 2 && m15AdverseClose;
-
-      if (shouldExitFakeout) {
-        closingContracts.add(t.contractId);
-        const reason = `Fakeout Early-Exit (${fakeoutVotes}/3 conditions + M15 Adverse Close: ${fakeoutReasons.join(" | ")})`;
-        console.log(`[FAKEOUT EXIT] Active ${t.direction} contract ${t.contractId}: ${reason}`);
-
-        try {
-          await closeContract(t.contractId);
-          const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
-          t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
-          t.resultSource = settled !== null ? "deriv_settled_official" : "fakeout_early_exit";
-          t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
-          t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
-          t.exitReason = reason;
-          state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
-          saveTrades(trades);
-          saveState();
-          const icon = t.result === "WIN" ? "✅" : "❌";
-          const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
-          await sendTelegram(`🛡️ *${REPO_LABEL} — Fakeout Early-Exit Liquidated*\n\nDirection: *${t.direction}*\n📍 Entry: *${Number(t.entry).toFixed(4)}*\n🏁 Exit Spot: *${currentPrice.toFixed(4)}*\n💵 P&L: *${pnlStr}* (Early loss mitigation)\n\n⚠️ *Adverse Structural Failure (${fakeoutVotes}/3 + M15 Adverse Close):*\n• ${fakeoutReasons.join("\n• ")}\n\nPosition cleared immediately to protect capital & unblock reverse setups.\nContract: \`${t.contractId}\``);
-        } catch (e) {
-          console.error(`[FAKEOUT EXIT] Failed to close contract ${t.contractId}:`, e.message);
-        }
-        closingContracts.delete(t.contractId);
-        continue;
-      }
-    }
 
     // Fractal SL Market Structure Break (Evaluated strictly on Candle Close)
     const m5ClosePrice = currentPrice;
