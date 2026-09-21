@@ -932,10 +932,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   state.ema100Val = currentEma100;
   state.stoch533Val = sK533;
 
-  // Stoch 50 cross & status
-  state.stoch50CrossUp = prevK <= 50.0 && sK > 50.0;
-  state.stoch50CrossDown = prevK >= 50.0 && sK < 50.0;
+  // Stoch 50 cross & status (Current cross OR 8-Hour Rolling Lookback OR Position Relative to 50)
+  const stoch50CrossUpLookback = (prevK <= 50.0 && sK > 50.0) || checkStochastic8HrLookback(candles, stoch, "BUY", "MIDLINE");
+  const stoch50CrossDownLookback = (prevK >= 50.0 && sK < 50.0) || checkStochastic8HrLookback(candles, stoch, "SELL", "MIDLINE");
+
+  state.stoch50CrossUp = stoch50CrossUpLookback;
+  state.stoch50CrossDown = stoch50CrossDownLookback;
   state.stoch50Above = sK > 50.0;
+  state.stoch50Below = sK < 50.0;
+  state.stoch50Cross = stoch50CrossUpLookback || stoch50CrossDownLookback || sK > 50.0 || sK < 50.0;
 
   // EMA 100 alignment status
   state.ema100BuyArmed = currentPrice > currentEma100;
@@ -957,8 +962,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   state.cciAligned = (cVal !== null && cVal > 0) ? "BUY" : (cVal !== null && cVal < 0 ? "SELL" : null);
 
   // Stoch Boundary status (20/80)
-  state.stoch20CrossUp = prevK <= 20.0 && sK > 20.0;
-  state.stoch80CrossDown = prevK >= 80.0 && sK < 80.0;
+  const stoch20Cross8Hr = checkStochastic8HrLookback(candles, stoch, "BUY", "BOUNDARIES_20_80");
+  const stoch80Cross8Hr = checkStochastic8HrLookback(candles, stoch, "SELL", "BOUNDARIES_20_80");
+  state.stoch20CrossUp = (prevK <= 20.0 && sK > 20.0) || stoch20Cross8Hr;
+  state.stoch80CrossDown = (prevK >= 80.0 && sK < 80.0) || stoch80Cross8Hr;
+  state.stoch20Above = sK > 20.0;
+  state.stoch80Below = sK < 80.0;
   state.stochAligned = (sK > sD) ? "BUY" : "SELL";
 
   writeToLedger(m5BoundaryEpoch, currentPrice, cVal, sK, sD, eUp, eLo, (state.armed && state.armed.lbl) ? state.armed.lbl : "IDLE", `EMA100:${currentEma100 ? currentEma100.toFixed(2) : "0"}`);
