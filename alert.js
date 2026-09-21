@@ -509,23 +509,27 @@ export function findRecentFractalM15(m15Candles, direction) {
   return null;
 }
 
-// 8-Hour Rolling Lookback for Stochastic (Scanning up to 96 closed M5 candles / 8 hours)
+// Stochastic Continuous State-Based Arming (Unbounded by time: remains armed as long as condition is satisfied and not invalidated)
 function checkStochastic8HrLookback(candles, stoch, dir, type = "MIDLINE") {
   if (!candles || candles.length < 2 || !stoch || !stoch.k) return false;
-  const eightHoursAgo = (Date.now() / 1000) - (8 * 3600);
-  let startIdx = -1;
-  for (let i = 0; i < candles.length; i++) {
-    if (candles[i].epoch >= eightHoursAgo) {
-      startIdx = i;
-      break;
-    }
-  }
-  if (startIdx === -1) startIdx = 0;
+  
+  // Continuous state arming: check latest closed candle first
+  const lastK = stoch.k[candles.length - 2];
+  if (lastK === null) return false;
 
+  if (type === "MIDLINE") {
+    if (dir === "BUY" && lastK <= 50.0) return false;
+    if (dir === "SELL" && lastK >= 50.0) return false;
+  } else if (type === "BOUNDARIES_20_80") {
+    if (dir === "BUY" && lastK < 20.0) return false;
+    if (dir === "SELL" && lastK > 80.0) return false;
+  }
+
+  // Scan backwards from closed candles to verify that a confirmed cross occurred and no adverse invalidation occurred since
   let validCrossIdx = -1;
-  for (let i = Math.max(1, startIdx); i < candles.length - 1; i++) {
-    const k = stoch.k[i], d = stoch.d[i], pk = stoch.k[i - 1], pd = stoch.d[i - 1];
-    if (k === null || d === null || pk === null || pd === null) continue;
+  for (let i = 1; i < candles.length - 1; i++) {
+    const k = stoch.k[i], pk = stoch.k[i - 1];
+    if (k === null || pk === null) continue;
 
     if (type === "MIDLINE") {
       const crossedAbove50 = pk <= 50.0 && k > 50.0;
@@ -540,12 +544,15 @@ function checkStochastic8HrLookback(candles, stoch, dir, type = "MIDLINE") {
     }
   }
 
-  if (validCrossIdx === -1) return false;
+  // If no cross was captured in the loaded candle window, but the latest closed candle is on the valid side without invalidation, maintain armed status
+  if (validCrossIdx === -1) {
+    return true;
+  }
 
   // Verify that no opposite cross occurred after the valid cross up to the latest closed candle
   for (let i = validCrossIdx + 1; i < candles.length - 1; i++) {
-    const k = stoch.k[i], d = stoch.d[i], pk = stoch.k[i - 1], pd = stoch.d[i - 1];
-    if (k === null || d === null || pk === null || pd === null) continue;
+    const k = stoch.k[i], pk = stoch.k[i - 1];
+    if (k === null || pk === null) continue;
     
     if (dir === "BUY") {
       if (type === "MIDLINE" && (pk >= 50.0 && k < 50.0)) return false;
@@ -556,19 +563,10 @@ function checkStochastic8HrLookback(candles, stoch, dir, type = "MIDLINE") {
     }
   }
 
-  // Ensure latest closed candle is still on the correct side
-  const lastK = stoch.k[candles.length - 2];
-  if (lastK === null) return false;
-  if (type === "MIDLINE") {
-    if (dir === "BUY" && lastK <= 50.0) return false;
-    if (dir === "SELL" && lastK >= 50.0) return false;
-  } else if (type === "BOUNDARIES_20_80") {
-    if (dir === "BUY" && lastK < 20.0) return false;
-    if (dir === "SELL" && lastK > 80.0) return false;
-  }
-
   return true;
 }
+
+const checkStochasticStateArmed = checkStochastic8HrLookback;
 
 function deriveHardStopPrice(entry, direction) {
   const targetLoss = -5.00;
@@ -688,8 +686,22 @@ async function manageOpenTradesFastPath() {
       tpHit = isBuy ? currentPrice >= openTrade.fibTpPrice : currentPrice <= openTrade.fibTpPrice;
     }
 
+    // 🛡️ Rescue Retracement Exit: If this is an old parent trade with an active rescue position,
+    // and price retraces back to old trade's entry price, close the old trade once its profit reaches at least +$0.20
+    const activeRescueTrade = trades.find(t => !t.result && !t.pending && t.isRescue && (t.parentId === openTrade.id || t.parentContractId === openTrade.contractId));
+    let rescueBreakevenHit = false;
+    if (activeRescueTrade && !openTrade.isRescue) {
+      const reachedOldEntry = isBuy ? currentPrice >= openTrade.entry : currentPrice <= openTrade.entry;
+      if (reachedOldEntry && pnl >= 0.20) {
+        rescueBreakevenHit = true;
+      }
+    }
+
     let reason = null;
-    if (openTrade.lockedPnlFloor && pnl <= openTrade.lockedPnlFloor) { 
+    if (rescueBreakevenHit) {
+      reason = `Rescue Retracement Target hit — Old position closed at +$${pnl.toFixed(2)} (>= +$0.20 profit) while rescue contract ${activeRescueTrade.contractId} runs to TP`;
+    }
+    else if (openTrade.lockedPnlFloor && pnl <= openTrade.lockedPnlFloor) { 
       reason = `Profit-Lock hit — Secured +$${openTrade.lockedPnlFloor.toFixed(2)}`; 
     }
     else if (hardStopBreached) { reason = `Hard SL breached at ${currentPrice.toFixed(4)}`; } 
@@ -742,6 +754,169 @@ async function manageOpenTradesFastPath() {
   // Return whether any trades remain actively open and unclosed
   const remainingTrades = loadTrades();
   return remainingTrades.some(t => !t.result && !t.pending);
+}
+
+// =========================================================================
+// 🚑 LOSS RECOVERY / RESCUE ENTRY ENGINE (FOR STOCH 50 MIDLINE INSTRUMENTS)
+// =========================================================================
+async function checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch) {
+  const isMidlineProfile = 
+    STRATEGY_PROFILE === "PROFILE_V75_MIDLINE_FRACTAL" || 
+    STRATEGY_PROFILE === "PROFILE_V75_1S_MIDLINE_FRACTAL" || 
+    STRATEGY_PROFILE === "PROFILE_V10_MIDLINE_FRACTAL" || 
+    STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV";
+  
+  if (!isMidlineProfile) return;
+
+  let trades = loadTrades();
+  const openTrades = trades.filter(t => !t.result && !t.pending);
+  const parentTrade = openTrades.find(t => !t.isRescue);
+
+  if (!parentTrade || !parentTrade.contractId) {
+    state.rescueEnvTouched = false;
+    state.rescueStochArmed = false;
+    return;
+  }
+
+  // Verify that no rescue trade is already active for this parent trade
+  const existingRescue = openTrades.find(t => t.isRescue && (t.parentId === parentTrade.id || t.parentContractId === parentTrade.contractId));
+  if (existingRescue) {
+    return;
+  }
+
+  // Must be in floating loss
+  const parentPnl = calcUnrealizedPnL(parentTrade, currentPrice);
+  if (parentPnl >= 0) {
+    state.rescueEnvTouched = false;
+    state.rescueStochArmed = false;
+    return;
+  }
+
+  // 1. Condition 1: Price must retrace to touch Envelope 50 (deviation 0.05%)
+  const env50 = calculateEnvelopes(candles, 50, 0.05);
+  const si = candles.length - 2;
+  const env50Up = env50.upper[si];
+  const env50Lo = env50.lower[si];
+  const lastCandle = candles[si];
+
+  let touchedEnv50 = false;
+  if (parentTrade.direction === "BUY") {
+    touchedEnv50 = parseFloat(lastCandle.low) <= env50Lo || currentPrice <= env50Lo;
+  } else if (parentTrade.direction === "SELL") {
+    touchedEnv50 = parseFloat(lastCandle.high) >= env50Up || currentPrice >= env50Up;
+  }
+
+  if (touchedEnv50) {
+    state.rescueEnvTouched = true;
+    console.log(`[RESCUE ENGINE] ${SYMBOL} Parent trade #${parentTrade.contractId} (${parentTrade.direction}) touched Envelope 50 (Up: ${env50Up.toFixed(4)}, Lo: ${env50Lo.toFixed(4)}). Latched.`);
+  }
+
+  // If Envelope 50 has not been touched during this loss retracement, rescue cannot be triggered
+  if (!state.rescueEnvTouched && !touchedEnv50) {
+    return;
+  }
+
+  // 2. Condition 2: Fast Stoch (5,3,3) must retrace to 20/80 level and cross
+  // For BUY: retrace to 20 level and cross > 20
+  // For SELL: retrace to 80 level and cross < 80
+  const stoch533 = calculateStoch(candles, 5, 3, 3);
+  const sK533 = stoch533.k[si], prevK533 = stoch533.k[si - 1];
+  if (sK533 === null || prevK533 === null) return;
+
+  let stoch533Cross = false;
+  if (parentTrade.direction === "BUY") {
+    if (prevK533 <= 20.0 || sK533 <= 20.0) state.rescueStochArmed = true;
+    stoch533Cross = (prevK533 <= 20.0 && sK533 > 20.0) || (state.rescueStochArmed && sK533 > 20.0);
+  } else if (parentTrade.direction === "SELL") {
+    if (prevK533 >= 80.0 || sK533 >= 80.0) state.rescueStochArmed = true;
+    stoch533Cross = (prevK533 >= 80.0 && sK533 < 80.0) || (state.rescueStochArmed && sK533 < 80.0);
+  }
+
+  if (!stoch533Cross) {
+    return;
+  }
+
+  console.log(`[RESCUE ENGINE] 🚨 All conditions satisfied for ${SYMBOL} Loss Recovery / Rescue Entry!`);
+  console.log(`  • Parent Trade: #${parentTrade.contractId} (${parentTrade.direction} @ ${Number(parentTrade.entry).toFixed(4)}, PnL: $${parentPnl.toFixed(2)})`);
+  console.log(`  • Envelope 50 Touch: CONFIRMED`);
+  console.log(`  • Fast Stoch (5,3,3) Cross: CONFIRMED (%K: ${sK533.toFixed(1)}, prev: ${prevK533.toFixed(1)})`);
+
+  const direction = parentTrade.direction;
+  const entry = currentPrice;
+  const sl = parentTrade.sl; // Inherited opposite M15 fractal recorded when the old trade was placed
+  const fibTpPrice = parentTrade.fibTpPrice; // Same TP target as old trade
+  const timeFormatted = new Date(m5BoundaryEpoch * 1000).toISOString().replace("T", " ").substring(0, 19);
+  const dirEmoji = direction === "BUY" ? "🟢 ⬆️ BUY" : "🔴 ⬇️ SELL";
+
+  const pendingRescueRecord = {
+    id: `${SYMBOL}-RESCUE-${Date.now()}`,
+    contractId: null,
+    pending: true,
+    repo: REPO_LABEL,
+    symbol: SYMBOL,
+    direction,
+    entry,
+    sl,
+    rr: null,
+    entryType: "RESCUE_ENTRY_ENV50_STOCH533",
+    brokerSlAmount: STAKE_USD,
+    entryEpoch: m5BoundaryEpoch,
+    fractalSl: parentTrade.fractalSl || parentTrade.sl,
+    fractalEpoch: null,
+    fractalTimeframe: parentTrade.fractalTimeframe || "M15",
+    m30FractalUpgraded: false,
+    fibTpPrice,
+    keyLevel: parentTrade.keyLevel || null,
+    openTime: timeFormatted,
+    closeTime: null,
+    result: null,
+    isRescue: true,
+    parentId: parentTrade.id,
+    parentContractId: parentTrade.contractId
+  };
+
+  trades.push(pendingRescueRecord);
+  saveTrades(trades);
+
+  const rescueMessage = 
+    `🚑 *${SYMBOL_NAME.toUpperCase()} — LOSS RECOVERY / RESCUE ENTRY* 🚑\n\n` +
+    `Direction: *${dirEmoji}*\n` +
+    `Setup: *Loss Recovery (Env 50 Touch + Stoch 5,3,3 Cross)*\n` +
+    `📍 Rescue Entry: *${entry.toFixed(4)}*\n` +
+    `🛑 Stop Loss: *${Number(sl).toFixed(4)}* (Inherited from Parent Trade)\n` +
+    `🎯 Take Profit: *${fibTpPrice ? Number(fibTpPrice).toFixed(4) : "Parent TP Target"}*\n` +
+    `💰 Stake: $${STAKE_USD} | Multiplier: ${MULTIPLIER}x\n\n` +
+    `🔗 *Parent Trade Reference:*\n` +
+    `• Parent Contract: \`${parentTrade.contractId}\` (${parentTrade.direction} @ ${Number(parentTrade.entry).toFixed(4)})\n` +
+    `• Floating Loss at Rescue: *$${parentPnl.toFixed(2)}*\n` +
+    `• Envelope 50 Touch: *Confirmed*\n` +
+    `• Fast Stoch (5,3,3): *%K ${sK533.toFixed(1)}* (${direction === "BUY" ? "> 20 Cross" : "< 80 Cross"})\n` +
+    `• Strategy: *When price retraces to ${Number(parentTrade.entry).toFixed(4)}, parent trade will close at >= +$0.20 while this rescue position runs to TP.*\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `⏰ Time (UTC): ${timeFormatted}`;
+
+  try {
+    const contractId = await executeTrade(direction);
+    if (!contractId) {
+      trades.splice(trades.findIndex(t => t.id === pendingRescueRecord.id), 1);
+      saveTrades(trades);
+      await sendTelegram(`❌ *${REPO_LABEL}* — Rescue entry triggered, but broker returned no contract ID. Aborted.`);
+      return;
+    }
+    pendingRescueRecord.contractId = contractId;
+    pendingRescueRecord.pending = false;
+    saveTrades(trades);
+
+    state.rescueEnvTouched = false;
+    state.rescueStochArmed = false;
+    saveState();
+
+    await sendTelegram(rescueMessage);
+  } catch (execErr) {
+    trades.splice(trades.findIndex(t => t.id === pendingRescueRecord.id), 1);
+    saveTrades(trades);
+    await sendTelegram(`❌ *${REPO_LABEL}* — Rescue entry live execution failed: ${execErr.message}`);
+  }
 }
 
 // ==================== SLOW PATH (RUNS ON CLOSED M5 CANDLE) ====================
@@ -971,6 +1146,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   state.stochAligned = (sK > sD) ? "BUY" : "SELL";
 
   writeToLedger(m5BoundaryEpoch, currentPrice, cVal, sK, sD, eUp, eLo, (state.armed && state.armed.lbl) ? state.armed.lbl : "IDLE", `EMA100:${currentEma100 ? currentEma100.toFixed(2) : "0"}`);
+
+  // Evaluate Loss Recovery / Rescue Entry if parent trade is active and floating in loss
+  await checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch);
 
   // ── A. RULE 1: UNIVERSAL KEY LEVEL TOUCH & CLOSE-SIDE ARMING ──
   function isLevelTouched(level, candle) {
