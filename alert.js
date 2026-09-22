@@ -515,55 +515,34 @@ function checkStochastic8HrLookback(candles, stoch, dir, type = "MIDLINE") {
   
   // Continuous state arming: check latest closed candle first
   const lastK = stoch.k[candles.length - 2];
-  if (lastK === null) return false;
+  if (lastK === null || isNaN(lastK)) return false;
 
   if (type === "MIDLINE") {
-    if (dir === "BUY" && lastK <= 50.0) return false;
-    if (dir === "SELL" && lastK >= 50.0) return false;
+    // Unbounded by time: remains armed as long as %K is on the valid side of 50
+    if (dir === "BUY") return lastK > 50.0;
+    if (dir === "SELL") return lastK < 50.0;
   } else if (type === "BOUNDARIES_20_80") {
+    // Boundary rule: must be on the valid side of the extreme levels
     if (dir === "BUY" && lastK < 20.0) return false;
     if (dir === "SELL" && lastK > 80.0) return false;
-  }
 
-  // Scan backwards from closed candles to verify that a confirmed cross occurred and no adverse invalidation occurred since
-  let validCrossIdx = -1;
-  for (let i = 1; i < candles.length - 1; i++) {
-    const k = stoch.k[i], pk = stoch.k[i - 1];
-    if (k === null || pk === null) continue;
+    // Scan backwards from closed candles to find the confirmed crossing
+    for (let i = candles.length - 2; i >= 1; i--) {
+      const k = stoch.k[i], pk = stoch.k[i - 1];
+      if (k === null || pk === null) break;
 
-    if (type === "MIDLINE") {
-      const crossedAbove50 = pk <= 50.0 && k > 50.0;
-      const crossedBelow50 = pk >= 50.0 && k < 50.0;
-      if (dir === "BUY" && crossedAbove50) validCrossIdx = i;
-      if (dir === "SELL" && crossedBelow50) validCrossIdx = i;
-    } else if (type === "BOUNDARIES_20_80") {
-      const crossedAbove20 = pk <= 20.0 && k > 20.0;
-      const crossedBelow80 = pk >= 80.0 && k < 80.0;
-      if (dir === "BUY" && crossedAbove20) validCrossIdx = i;
-      if (dir === "SELL" && crossedBelow80) validCrossIdx = i;
+      if (dir === "BUY") {
+        if (pk <= 20.0 && k > 20.0) return true; // Confirmed cross above 20
+        if (k < 20.0) return false; // Adverse dip below 20 invalidates
+      } else if (dir === "SELL") {
+        if (pk >= 80.0 && k < 80.0) return true; // Confirmed cross below 80
+        if (k > 80.0) return false; // Adverse rise above 80 invalidates
+      }
     }
+    return dir === "BUY" ? lastK >= 20.0 : lastK <= 80.0;
   }
 
-  // If no cross was captured in the loaded candle window, but the latest closed candle is on the valid side without invalidation, maintain armed status
-  if (validCrossIdx === -1) {
-    return true;
-  }
-
-  // Verify that no opposite cross occurred after the valid cross up to the latest closed candle
-  for (let i = validCrossIdx + 1; i < candles.length - 1; i++) {
-    const k = stoch.k[i], pk = stoch.k[i - 1];
-    if (k === null || pk === null) continue;
-    
-    if (dir === "BUY") {
-      if (type === "MIDLINE" && (pk >= 50.0 && k < 50.0)) return false;
-      if (type === "BOUNDARIES_20_80" && (pk >= 80.0 && k < 80.0)) return false;
-    } else if (dir === "SELL") {
-      if (type === "MIDLINE" && (pk <= 50.0 && k > 50.0)) return false;
-      if (type === "BOUNDARIES_20_80" && (pk <= 20.0 && k > 20.0)) return false;
-    }
-  }
-
-  return true;
+  return false;
 }
 
 const checkStochasticStateArmed = checkStochastic8HrLookback;
@@ -973,6 +952,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             state.dailyTargetDate = todayStr;
           }
           await sendTelegram(`${t.result === "WIN" ? "✅" : "❌"} *${REPO_LABEL} — Trade ${t.result} (Broker Native Exit)*\n\n💵 P&L: *${rec.profit >= 0 ? `+$${rec.profit.toFixed(2)}` : `-$${Math.abs(rec.profit).toFixed(2)}`}*`);
+        } else {
+          // Fallback: Contract is confirmed closed on Deriv (absent from live portfolio). Reconcile to unblock execution gate.
+          t.result = "CLOSED_EXTERNAL";
+          t.serverPnl = 0;
+          t.resultSource = "server_portfolio_reconciled";
+          t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+          console.log(`[PORTFOLIO SYNC] Contract ${t.contractId} no longer in portfolio. Reconciled as CLOSED_EXTERNAL to unblock bot.`);
         }
       }
     }
@@ -1433,10 +1419,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.latchStoch_BUY = false;
       state.latchStoch_SELL = false;
     } else {
-      dbg(`[ABORT TRIGGER] Price ${currentPrice} is on wrong side of level ${entryKeyLevel} for ${direction}. Aborting.`);
-      state.armed = null;
-      state.confirm = null;
-      state.nextPhase = null;
+      dbg(`[PENDING PRICE CONFIRMATION] Price ${currentPrice} is waiting to cross level ${entryKeyLevel} for ${direction}. Maintaining armed state.`);
     }
   }
 
