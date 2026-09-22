@@ -799,7 +799,7 @@ async function checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch
   // For BUY: retrace to 20 level and cross > 20
   // For SELL: retrace to 80 level and cross < 80
   const stoch533 = calculateStoch(candles, 5, 3, 3);
-  const sK533 = stoch533.k[si], prevK533 = stoch533.k[si - 1];
+  const sK533 = stoch533.k[si], sD533 = stoch533.d[si], prevK533 = stoch533.k[si - 1], prevD533 = stoch533.d[si - 1];
   if (sK533 === null || prevK533 === null) return;
 
   let stoch533Cross = false;
@@ -901,6 +901,8 @@ async function checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch
 // ==================== SLOW PATH (RUNS ON CLOSED M5 CANDLE) ====================
 async function runSlowPathScan(m5BoundaryEpoch) {
   console.log(`[${REPO_LABEL}] Scanning closed M5 candle: ${new Date(m5BoundaryEpoch * 1000).toISOString()}`);
+  state.lastProcessedEpoch = m5BoundaryEpoch;
+  saveState();
   let trades = loadTrades();
 
   // Daily UTC Rollover Reset for Target Cap
@@ -1130,6 +1132,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   state.stoch20Above = sK > 20.0;
   state.stoch80Below = sK < 80.0;
   state.stochAligned = (sK > sD) ? "BUY" : "SELL";
+  saveState();
 
   writeToLedger(m5BoundaryEpoch, currentPrice, cVal, sK, sD, eUp, eLo, (state.armed && state.armed.lbl) ? state.armed.lbl : "IDLE", `EMA100:${currentEma100 ? currentEma100.toFixed(2) : "0"}`);
 
@@ -1170,8 +1173,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   for (const item of keyLevels) {
     if (!item.lvl) continue;
     const crossed = checkCrossover(item.lvl, prevM15Close, m15Close, m15Open);
+    const touched = isLevelTouched(item.lvl, currM15);
 
-    if (crossed) {
+    if (crossed || touched) {
       const closedAbove = m15Close >= item.lvl;
       const closedBelow = m15Close <= item.lvl;
 
