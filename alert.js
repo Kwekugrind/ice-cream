@@ -349,29 +349,9 @@ async function fetchAllData() {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
     const results = {};
-    ws.on("open", () => {
-      ws.send(JSON.stringify({ req_id: 1, ticks_history: SYMBOL, granularity: M5,  count: 220, end: "latest", style: "candles" }));
-      ws.send(JSON.stringify({ req_id: 4, ticks_history: SYMBOL, granularity: M15, count: 250, end: "latest", style: "candles" }));
-      ws.send(JSON.stringify({ req_id: 6, ticks_history: SYMBOL, granularity: M30, count: 120, end: "latest", style: "candles" }));
-      ws.send(JSON.stringify({ req_id: 5, ticks_history: SYMBOL, granularity: D1,  count: 5,   end: "latest", style: "candles" }));
-    });
-    ws.on("message", d => {
-      const msg = JSON.parse(d);
-      if (msg.req_id === 1) results.m5  = msg.candles;
-      if (msg.req_id === 4) results.m15 = msg.candles;
-      if (msg.req_id === 6) results.m30 = msg.candles;
-      if (msg.req_id === 5) results.d1  = msg.candles;
-      if (results.m5 && results.m15 && results.m30 && results.d1) { ws.close(); resolve(results); }
-    });
-    ws.on("error", err => { ws.close(); reject(err); });
-    setTimeout(() => { ws.close(); reject(new Error("fetchAllData timeout")); }, 15000);
-  });
-}
-
-async function fetchCurrentSpotPrice() {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
     let timer = null;
+    let isSettled = false;
+
     const cleanup = () => {
       if (timer) clearTimeout(timer);
       try {
@@ -383,33 +363,136 @@ async function fetchCurrentSpotPrice() {
     };
 
     timer = setTimeout(() => {
-      cleanup();
-      reject(new Error("fetchCurrentSpotPrice timeout"));
+      if (!isSettled) {
+        isSettled = true;
+        cleanup();
+        reject(new Error("fetchAllData timeout (15s exceeded)"));
+      }
+    }, 15000);
+
+    ws.on("open", () => {
+      try {
+        ws.send(JSON.stringify({ req_id: 1, ticks_history: SYMBOL, granularity: M5,  count: 220, end: "latest", style: "candles" }));
+        ws.send(JSON.stringify({ req_id: 4, ticks_history: SYMBOL, granularity: M15, count: 250, end: "latest", style: "candles" }));
+        ws.send(JSON.stringify({ req_id: 6, ticks_history: SYMBOL, granularity: M30, count: 120, end: "latest", style: "candles" }));
+        ws.send(JSON.stringify({ req_id: 5, ticks_history: SYMBOL, granularity: D1,  count: 5,   end: "latest", style: "candles" }));
+      } catch (err) {
+        if (!isSettled) {
+          isSettled = true;
+          cleanup();
+          reject(err);
+        }
+      }
+    });
+
+    ws.on("message", d => {
+      try {
+        const msg = JSON.parse(d);
+        if (msg.error) {
+          if (!isSettled) {
+            isSettled = true;
+            cleanup();
+            reject(new Error(`Deriv WS error: ${msg.error.message || msg.error.code}`));
+          }
+          return;
+        }
+        if (msg.req_id === 1) results.m5  = msg.candles;
+        if (msg.req_id === 4) results.m15 = msg.candles;
+        if (msg.req_id === 6) results.m30 = msg.candles;
+        if (msg.req_id === 5) results.d1  = msg.candles;
+        if (results.m5 && results.m15 && results.m30 && results.d1) {
+          if (!isSettled) {
+            isSettled = true;
+            cleanup();
+            resolve(results);
+          }
+        }
+      } catch (err) {
+        if (!isSettled) {
+          isSettled = true;
+          cleanup();
+          reject(err);
+        }
+      }
+    });
+
+    ws.on("error", err => {
+      if (!isSettled) {
+        isSettled = true;
+        cleanup();
+        reject(err);
+      }
+    });
+  });
+}
+
+async function fetchCurrentSpotPrice() {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
+    let timer = null;
+    let isSettled = false;
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      try {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          if (typeof ws.terminate === "function") ws.terminate();
+          else ws.close();
+        }
+      } catch (e) {}
+    };
+
+    timer = setTimeout(() => {
+      if (!isSettled) {
+        isSettled = true;
+        cleanup();
+        reject(new Error("fetchCurrentSpotPrice timeout (4s exceeded)"));
+      }
     }, 4000); // 4-second strict network timeout safeguard to prevent hung sockets
 
     ws.on("open", () => {
       try {
         ws.send(JSON.stringify({ req_id: 3, ticks_history: SYMBOL, count: 1, end: "latest", style: "ticks" }));
       } catch (err) {
-        cleanup();
-        reject(err);
+        if (!isSettled) {
+          isSettled = true;
+          cleanup();
+          reject(err);
+        }
       }
     });
     ws.on("message", d => {
       try {
         const msg = JSON.parse(d);
+        if (msg.error) {
+          if (!isSettled) {
+            isSettled = true;
+            cleanup();
+            reject(new Error(`Deriv WS spot error: ${msg.error.message || msg.error.code}`));
+          }
+          return;
+        }
         if (msg.req_id === 3 && msg.history && msg.history.prices && msg.history.prices.length > 0) {
-          cleanup();
-          resolve(parseFloat(msg.history.prices[msg.history.prices.length - 1]));
+          if (!isSettled) {
+            isSettled = true;
+            cleanup();
+            resolve(parseFloat(msg.history.prices[msg.history.prices.length - 1]));
+          }
         }
       } catch (err) {
-        cleanup();
-        reject(err);
+        if (!isSettled) {
+          isSettled = true;
+          cleanup();
+          reject(err);
+        }
       }
     });
     ws.on("error", err => {
-      cleanup();
-      reject(err);
+      if (!isSettled) {
+        isSettled = true;
+        cleanup();
+        reject(err);
+      }
     });
   });
 }
@@ -596,6 +679,32 @@ let state = {
   cciState: null,
   nextPhase: null, h1TdiDir: null, fibBullish: null, fib0: null, fib50: null, fib618: null, fib79: null, fib100: null,
   cciAligned: false, stochAligned: false, envAligned: false, emaAligned: false,
+  // Indicator telemetry values
+  strategyProfile: STRATEGY_PROFILE,
+  stochVal: null,
+  stochSignal: null,
+  cciVal: null,
+  envUpper: null,
+  envLower: null,
+  ema100Val: null,
+  stoch533Val: null,
+  stoch50CrossUp: false,
+  stoch50CrossDown: false,
+  stoch50Above: false,
+  stoch50Below: false,
+  stoch50Cross: false,
+  ema100BuyArmed: false,
+  ema100SellArmed: false,
+  stoch533BuyCross: false,
+  stoch533SellCross: false,
+  envBuyActive: false,
+  envSellActive: false,
+  cciCrossBuy: false,
+  cciCrossSell: false,
+  stoch20CrossUp: false,
+  stoch80CrossDown: false,
+  stoch20Above: false,
+  stoch80Below: false,
   // V100 (1s) Two-stage state machine
   v100_1s_armed: false,
   v100_1s_armDir: null,
@@ -970,10 +1079,18 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   // 2. Fetch Market Candles
   let scanData;
-  try { scanData = await fetchAllData(); } catch (e) { console.warn(`Fetch error: ${e.message}`); return; }
+  try {
+    scanData = await fetchAllData();
+  } catch (e) {
+    console.error(`[${REPO_LABEL}] fetchAllData error: ${e.message}`);
+    return;
+  }
   const { m5: candles, m15: m15Candles, m30: m30Candles, d1: d1Candles } = scanData;
 
-  if (!candles || candles.length < 120 || !m15Candles || !m30Candles || !d1Candles) return;
+  if (!candles || candles.length < 120 || !m15Candles || !m30Candles || !d1Candles) {
+    console.warn(`[${REPO_LABEL}] Incomplete candle set: m5=${candles?.length || 0}, m15=${m15Candles?.length || 0}, m30=${m30Candles?.length || 0}, d1=${d1Candles?.length || 0}`);
+    return;
+  }
   const si = candles.length - 2; 
   const currentPrice = parseFloat(candles[si].close);
   state.symbol = SYMBOL;
@@ -1583,7 +1700,12 @@ export async function startContinuousEngine() {
           state.currentPrice = freshPrice;
           state.lastPriceUpdate = new Date().toISOString();
           saveState();
-        } catch (e) {}
+        } catch (e) {
+          // Log only if price has never been fetched yet
+          if (!state.currentPrice) {
+            console.warn(`[${REPO_LABEL}] Periodic spot fetch warning: ${e.message}`);
+          }
+        }
       }
 
       const secondsIntoCandle = nowEpoch % 300;
