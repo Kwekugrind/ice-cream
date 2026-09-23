@@ -592,37 +592,22 @@ export function findRecentFractalM15(m15Candles, direction) {
   return null;
 }
 
-// Stochastic Continuous State-Based Arming (Unbounded by time: remains armed as long as condition is satisfied and not invalidated)
+// Stochastic Continuous State-Based Arming (Unbounded by time: remains armed as long as %K is on the valid side of the threshold)
 function checkStochastic8HrLookback(candles, stoch, dir, type = "MIDLINE") {
   if (!candles || candles.length < 2 || !stoch || !stoch.k) return false;
   
-  // Continuous state arming: check latest closed candle first
+  // Evaluation index: latest completed candle
   const lastK = stoch.k[candles.length - 2];
   if (lastK === null || isNaN(lastK)) return false;
 
   if (type === "MIDLINE") {
-    // Unbounded by time: remains armed as long as %K is on the valid side of 50
-    if (dir === "BUY") return lastK > 50.0;
-    if (dir === "SELL") return lastK < 50.0;
+    // BUY is armed whenever %K >= 50.0; SELL is armed whenever %K <= 50.0
+    if (dir === "BUY") return lastK >= 50.0;
+    if (dir === "SELL") return lastK <= 50.0;
   } else if (type === "BOUNDARIES_20_80") {
-    // Boundary rule: must be on the valid side of the extreme levels
-    if (dir === "BUY" && lastK < 20.0) return false;
-    if (dir === "SELL" && lastK > 80.0) return false;
-
-    // Scan backwards from closed candles to find the confirmed crossing
-    for (let i = candles.length - 2; i >= 1; i--) {
-      const k = stoch.k[i], pk = stoch.k[i - 1];
-      if (k === null || pk === null) break;
-
-      if (dir === "BUY") {
-        if (pk <= 20.0 && k > 20.0) return true; // Confirmed cross above 20
-        if (k < 20.0) return false; // Adverse dip below 20 invalidates
-      } else if (dir === "SELL") {
-        if (pk >= 80.0 && k < 80.0) return true; // Confirmed cross below 80
-        if (k > 80.0) return false; // Adverse rise above 80 invalidates
-      }
-    }
-    return dir === "BUY" ? lastK >= 20.0 : lastK <= 80.0;
+    // BUY is armed whenever %K >= 20.0; SELL is armed whenever %K <= 80.0
+    if (dir === "BUY") return lastK >= 20.0;
+    if (dir === "SELL") return lastK <= 80.0;
   }
 
   return false;
@@ -1287,56 +1272,58 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   if (isLevelTouched(fib.fib0, currM15)) state.last50Origin = "fib0";
   if (isLevelTouched(fib.fib100, currM15)) state.last50Origin = "fib100";
 
+  function resolveFibSetup(level, price) {
+    if (!level) return null;
+    const closedAbove = price >= level;
+    let s = null;
+
+    if (fib.bullish) {
+      if (level === fib.fib0) {
+        s = closedAbove ? { type: "CONT", dir: "BUY", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_BUY (0 to -50)" }
+                        : { type: "REV", dir: "SELL", tp: fib.fib50, lvl: fib.fib0, lbl: "REV_SELL (0 to 50)" };
+      } else if (level === fib.fib50 && !PROFILE.excludeFib50) {
+        s = (closedAbove && state.last50Origin === "fib0") ? { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_BUY (50 to 0)" }
+          : (!closedAbove && state.last50Origin === "fib100") ? { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_SELL (50 to 100)" } : null;
+      } else if (level === fib.fib79) {
+        if (closedAbove) s = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib79, lbl: "REV_BUY (79 to 0)" };
+      } else if (level === fib.fib100) {
+        s = closedAbove ? { type: "REV", dir: "BUY", tp: fib.fib50, lvl: fib.fib100, lbl: "REV_BUY (100 to 50)" }
+                        : { type: "CONT", dir: "SELL", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_SELL (100 to 161.8)" };
+      } else if (level === fib.fibM50 && !closedAbove) {
+        s = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fibM50, lbl: "REV_SELL (-50 to 0)" };
+      } else if (level === fib.fib1618 && closedAbove) {
+        s = { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib1618, lbl: "REV_BUY (161.8 to 100)" };
+      }
+    } else {
+      if (level === fib.fib0) {
+        s = !closedAbove ? { type: "CONT", dir: "SELL", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_SELL (0 to -50)" }
+                         : { type: "REV", dir: "BUY", tp: fib.fib50, lvl: fib.fib0, lbl: "REV_BUY (0 to 50)" };
+      } else if (level === fib.fib50 && !PROFILE.excludeFib50) {
+        s = (!closedAbove && state.last50Origin === "fib0") ? { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_SELL (50 to 0)" }
+          : (closedAbove && state.last50Origin === "fib100") ? { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_BUY (50 to 100)" } : null;
+      } else if (level === fib.fib79) {
+        if (!closedAbove) s = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib79, lbl: "REV_SELL (79 to 0)" };
+      } else if (level === fib.fib100) {
+        s = closedAbove ? { type: "CONT", dir: "BUY", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_BUY (100 to 161.8)" }
+                        : { type: "REV", dir: "SELL", tp: fib.fib50, lvl: fib.fib100, lbl: "REV_SELL (100 to 50)" };
+      } else if (level === fib.fibM50 && closedAbove) {
+        s = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fibM50, lbl: "REV_BUY (-50 to 0)" };
+      } else if (level === fib.fib1618 && !closedAbove) {
+        s = { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib1618, lbl: "REV_SELL (161.8 to 100)" };
+      }
+    }
+
+    if (s && !MODES_ALLOWED.includes(s.type)) return null;
+    return s;
+  }
+
   for (const item of keyLevels) {
     if (!item.lvl) continue;
     const crossed = checkCrossover(item.lvl, prevM15Close, m15Close, m15Open);
     const touched = isLevelTouched(item.lvl, currM15);
 
     if (crossed || touched) {
-      const closedAbove = m15Close >= item.lvl;
-      const closedBelow = m15Close <= item.lvl;
-
-      if (fib.bullish) {
-        if (item.lvl === fib.fib0) {
-          if (closedAbove) newArm = { type: "CONT", dir: "BUY", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_BUY (0 to -50)" };
-          else if (closedBelow) newArm = { type: "REV", dir: "SELL", tp: fib.fib50, lvl: fib.fib0, lbl: "REV_SELL (0 to 50)" };
-        } else if (item.lvl === fib.fib50 && !PROFILE.excludeFib50) {
-          if (closedAbove && state.last50Origin === "fib0") newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_BUY (50 to 0)" };
-          else if (closedBelow && state.last50Origin === "fib100") newArm = { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_SELL (50 to 100)" };
-        } else if (item.lvl === fib.fib79) {
-          if (closedAbove) newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib79, lbl: "REV_BUY (79 to 0)" };
-        } else if (item.lvl === fib.fib100) {
-          if (closedAbove) newArm = { type: "REV", dir: "BUY", tp: fib.fib50, lvl: fib.fib100, lbl: "REV_BUY (100 to 50)" };
-          else if (closedBelow) newArm = { type: "CONT", dir: "SELL", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_SELL (100 to 161.8)" };
-        } else if (item.lvl === fib.fibM50 && closedBelow) {
-          newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fibM50, lbl: "REV_SELL (-50 to 0)" };
-        } else if (item.lvl === fib.fib1618 && closedAbove) {
-          newArm = { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib1618, lbl: "REV_BUY (161.8 to 100)" };
-        }
-      } else {
-        if (item.lvl === fib.fib0) {
-          if (closedBelow) newArm = { type: "CONT", dir: "SELL", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_SELL (0 to -50)" };
-          else if (closedAbove) newArm = { type: "REV", dir: "BUY", tp: fib.fib50, lvl: fib.fib0, lbl: "REV_BUY (0 to 50)" };
-        } else if (item.lvl === fib.fib50 && !PROFILE.excludeFib50) {
-          if (closedBelow && state.last50Origin === "fib0") newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_SELL (50 to 0)" };
-          else if (closedAbove && state.last50Origin === "fib100") newArm = { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_BUY (50 to 100)" };
-        } else if (item.lvl === fib.fib79) {
-          if (closedBelow) newArm = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib79, lbl: "REV_SELL (79 to 0)" };
-        } else if (item.lvl === fib.fib100) {
-          if (closedAbove) newArm = { type: "CONT", dir: "BUY", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_BUY (100 to 161.8)" };
-          else if (closedBelow) newArm = { type: "REV", dir: "SELL", tp: fib.fib50, lvl: fib.fib100, lbl: "REV_SELL (100 to 50)" };
-        } else if (item.lvl === fib.fibM50 && closedAbove) {
-          newArm = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fibM50, lbl: "REV_BUY (-50 to 0)" };
-        } else if (item.lvl === fib.fib1618 && closedBelow) {
-          newArm = { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib1618, lbl: "REV_SELL (161.8 to 100)" };
-        }
-      }
-
-      // Check if setup mode is allowed by this instrument's profile
-      if (newArm && !MODES_ALLOWED.includes(newArm.type)) {
-        dbg(`[PROFILE FILTER] Setup ${newArm.lbl} ignored; instrument allows only: ${MODES_ALLOWED.join(",")}`);
-        newArm = null;
-      }
+      newArm = resolveFibSetup(item.lvl, m15Close);
 
       // 30-Minute Execution Latch: Prevent re-arming duplicate setup
       if (newArm && state.lastTriggeredSetup === newArm.lbl && (m5BoundaryEpoch - (state.lastTriggeredEpoch || 0)) < 1800) {
@@ -1348,18 +1335,25 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
   }
 
-  // Active M15 Wrong-Side Invalidation & Target Expiration
+  // Active M15 Dynamic Invalidation & Direction Transition
   if (state.armed) {
-    if (state.armed.dir === "BUY" && m15Close < state.armed.lvl) {
-      dbg(`[INVALIDATION] M15 closed below armed BUY level ${state.armed.lvl}. Disarming.`);
-      state.armed = null;
-      state.armedEpoch = null;
-      state.armedTime = null;
-    } else if (state.armed.dir === "SELL" && m15Close > state.armed.lvl) {
-      dbg(`[INVALIDATION] M15 closed above armed SELL level ${state.armed.lvl}. Disarming.`);
-      state.armed = null;
-      state.armedEpoch = null;
-      state.armedTime = null;
+    const isBuyFlipped = state.armed.dir === "BUY" && m15Close < state.armed.lvl;
+    const isSellFlipped = state.armed.dir === "SELL" && m15Close > state.armed.lvl;
+
+    if (isBuyFlipped || isSellFlipped) {
+      const flippedSetup = resolveFibSetup(state.armed.lvl, m15Close);
+      if (flippedSetup) {
+        dbg(`[DIRECTION FLIP] Price crossed level ${state.armed.lvl}. Arming opposite direction: ${flippedSetup.lbl}`);
+        state.armed = flippedSetup;
+        state.armedEpoch = m5BoundaryEpoch;
+        state.armedTime = new Date(m5BoundaryEpoch * 1000).toISOString().substring(11, 16) + " UTC";
+        state.confirm = { label: flippedSetup.lbl, dir: flippedSetup.dir, gate: GATE_TYPE };
+      } else {
+        dbg(`[INVALIDATION] Price crossed level ${state.armed.lvl}. Disarming.`);
+        state.armed = null;
+        state.armedEpoch = null;
+        state.armedTime = null;
+      }
     } else if (state.armed.dir === "BUY" && state.armed.tp && m15Close >= state.armed.tp) {
       dbg(`[EXPIRED] M15 reached armed BUY target ${state.armed.tp}. Disarming.`);
       state.armed = null;
