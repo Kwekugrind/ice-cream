@@ -613,6 +613,38 @@ function checkStochastic8HrLookback(candles, stoch, dir, type = "MIDLINE") {
   return false;
 }
 
+// Finds the candle epoch when the latest continuous cross/arming occurred
+function findStochasticCrossCandleEpoch(candles, stoch, dir, type = "MIDLINE") {
+  if (!candles || candles.length < 2 || !stoch || !stoch.k) return null;
+  const lastIdx = candles.length - 2;
+
+  // Walk backwards from latest completed candle
+  for (let i = lastIdx; i >= 1; i--) {
+    const k = stoch.k[i];
+    const prevK = stoch.k[i - 1];
+    if (k === null || prevK === null || isNaN(k) || isNaN(prevK)) break;
+
+    if (type === "MIDLINE") {
+      if (dir === "BUY") {
+        if (k < 50.0) return candles[i + 1] ? candles[i + 1].epoch : null;
+        if (prevK <= 50.0 && k >= 50.0) return candles[i].epoch;
+      } else if (dir === "SELL") {
+        if (k > 50.0) return candles[i + 1] ? candles[i + 1].epoch : null;
+        if (prevK >= 50.0 && k <= 50.0) return candles[i].epoch;
+      }
+    } else if (type === "BOUNDARIES_20_80") {
+      if (dir === "BUY") {
+        if (k < 20.0) return candles[i + 1] ? candles[i + 1].epoch : null;
+        if (prevK <= 20.0 && k >= 20.0) return candles[i].epoch;
+      } else if (dir === "SELL") {
+        if (k > 80.0) return candles[i + 1] ? candles[i + 1].epoch : null;
+        if (prevK >= 80.0 && k <= 80.0) return candles[i].epoch;
+      }
+    }
+  }
+  return null;
+}
+
 const checkStochasticStateArmed = checkStochastic8HrLookback;
 
 function deriveHardStopPrice(entry, direction) {
@@ -1207,24 +1239,107 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   state.stoch50Below = sK < 50.0;
   state.stoch50Cross = stoch50CrossUpLookback || stoch50CrossDownLookback || sK > 50.0 || sK < 50.0;
 
-  // EMA 100 alignment status
-  state.ema100BuyArmed = currentPrice > currentEma100;
-  state.ema100SellArmed = currentPrice < currentEma100;
-  state.emaAligned = currentPrice > currentEma100 ? "BUY" : (currentPrice < currentEma100 ? "SELL" : null);
+  // Track persistent cross epoch for Stoch 50
+  if (stoch50CrossUpLookback || sK > 50.0) {
+    if (!state.stoch50CrossEpoch || !state.stoch50CrossDir || state.stoch50CrossDir !== "BUY") {
+      state.stoch50CrossEpoch = findStochasticCrossCandleEpoch(candles, stoch, "BUY", "MIDLINE") || m5BoundaryEpoch;
+      state.stoch50CrossDir = "BUY";
+    }
+  } else if (stoch50CrossDownLookback || sK < 50.0) {
+    if (!state.stoch50CrossEpoch || !state.stoch50CrossDir || state.stoch50CrossDir !== "SELL") {
+      state.stoch50CrossEpoch = findStochasticCrossCandleEpoch(candles, stoch, "SELL", "MIDLINE") || m5BoundaryEpoch;
+      state.stoch50CrossDir = "SELL";
+    }
+  } else {
+    state.stoch50CrossEpoch = null;
+    state.stoch50CrossDir = null;
+  }
 
-  // Fast Stoch (5,3,3) status
-  state.stoch533BuyCross = prevK533 <= 20.0 && sK533 > 20.0;
-  state.stoch533SellCross = (prevK533 >= 80.0 && sK533 < 80.0) || (prevK533 >= 50.0 && sK533 < 50.0);
+  // EMA 100 alignment status & persistent alignment epoch
+  const emaBuyArmed = currentPrice > currentEma100;
+  const emaSellArmed = currentPrice < currentEma100;
+  state.ema100BuyArmed = emaBuyArmed;
+  state.ema100SellArmed = emaSellArmed;
+  state.emaAligned = emaBuyArmed ? "BUY" : (emaSellArmed ? "SELL" : null);
+
+  if (emaBuyArmed) {
+    if (!state.ema100AlignEpoch || state.emaAlignedDir !== "BUY") {
+      state.ema100AlignEpoch = m5BoundaryEpoch;
+      state.emaAlignedDir = "BUY";
+    }
+  } else if (emaSellArmed) {
+    if (!state.ema100AlignEpoch || state.emaAlignedDir !== "SELL") {
+      state.ema100AlignEpoch = m5BoundaryEpoch;
+      state.emaAlignedDir = "SELL";
+    }
+  } else {
+    state.ema100AlignEpoch = null;
+    state.emaAlignedDir = null;
+  }
+
+  // Fast Stoch (5,3,3) status & persistent cross epoch
+  const stoch533BuyCross = prevK533 <= 20.0 && sK533 > 20.0;
+  const stoch533SellCross = (prevK533 >= 80.0 && sK533 < 80.0) || (prevK533 >= 50.0 && sK533 < 50.0);
+  state.stoch533BuyCross = stoch533BuyCross;
+  state.stoch533SellCross = stoch533SellCross;
+
+  if (stoch533BuyCross) {
+    state.stoch533CrossEpoch = m5BoundaryEpoch;
+    state.stoch533CrossDir = "BUY";
+  } else if (stoch533SellCross) {
+    state.stoch533CrossEpoch = m5BoundaryEpoch;
+    state.stoch533CrossDir = "SELL";
+  } else if (sK533 > 20.0 && sK533 < 80.0) {
+    if (!state.stoch533CrossEpoch) {
+      state.stoch533CrossEpoch = findStochasticCrossCandleEpoch(candles, stoch533, sK533 >= 50 ? "BUY" : "SELL", "MIDLINE") || m5BoundaryEpoch;
+      state.stoch533CrossDir = sK533 >= 50 ? "BUY" : "SELL";
+    }
+  } else {
+    state.stoch533CrossEpoch = null;
+    state.stoch533CrossDir = null;
+  }
 
   // Envelope status (50 or 200 depending on profile)
-  state.envBuyActive = currentPrice > eUp;
-  state.envSellActive = currentPrice < eLo;
-  state.envAligned = currentPrice > eUp ? "BUY" : (currentPrice < eLo ? "SELL" : null);
+  const envBuyActive = currentPrice > eUp;
+  const envSellActive = currentPrice < eLo;
+  state.envBuyActive = envBuyActive;
+  state.envSellActive = envSellActive;
+  state.envAligned = envBuyActive ? "BUY" : (envSellActive ? "SELL" : null);
+
+  if (envBuyActive) {
+    if (!state.envBreakoutEpoch || state.envBreakoutDir !== "BUY") {
+      state.envBreakoutEpoch = m5BoundaryEpoch;
+      state.envBreakoutDir = "BUY";
+    }
+  } else if (envSellActive) {
+    if (!state.envBreakoutEpoch || state.envBreakoutDir !== "SELL") {
+      state.envBreakoutEpoch = m5BoundaryEpoch;
+      state.envBreakoutDir = "SELL";
+    }
+  } else {
+    state.envBreakoutEpoch = null;
+    state.envBreakoutDir = null;
+  }
 
   // CCI status
-  state.cciCrossBuy = (prevCci !== null && cVal !== null) ? (prevCci <= -100.0 && cVal > -100.0) : false;
-  state.cciCrossSell = (prevCci !== null && cVal !== null) ? (prevCci >= 100.0 && cVal < 100.0) : false;
+  const cciCrossBuy = (prevCci !== null && cVal !== null) ? (prevCci <= -100.0 && cVal > -100.0) : false;
+  const cciCrossSell = (prevCci !== null && cVal !== null) ? (prevCci >= 100.0 && cVal < 100.0) : false;
+  state.cciCrossBuy = cciCrossBuy;
+  state.cciCrossSell = cciCrossSell;
   state.cciAligned = (cVal !== null && cVal > 0) ? "BUY" : (cVal !== null && cVal < 0 ? "SELL" : null);
+
+  if (cciCrossBuy) {
+    state.cciCrossEpoch = m5BoundaryEpoch;
+    state.cciCrossDir = "BUY";
+  } else if (cciCrossSell) {
+    state.cciCrossEpoch = m5BoundaryEpoch;
+    state.cciCrossDir = "SELL";
+  } else if (!state.cciCrossEpoch && cVal !== null) {
+    if (cVal > -100 && cVal < 100) {
+      state.cciCrossEpoch = m5BoundaryEpoch;
+      state.cciCrossDir = cVal >= 0 ? "BUY" : "SELL";
+    }
+  }
 
   // Stoch Boundary status (20/80)
   const stoch20Cross8Hr = checkStochastic8HrLookback(candles, stoch, "BUY", "BOUNDARIES_20_80");
@@ -1234,6 +1349,21 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   state.stoch20Above = sK > 20.0;
   state.stoch80Below = sK < 80.0;
   state.stochAligned = (sK > sD) ? "BUY" : "SELL";
+
+  if (state.stoch20CrossUp || sK > 20.0) {
+    if (!state.stochBoundaryEpoch || state.stochBoundaryDir !== "BUY") {
+      state.stochBoundaryEpoch = findStochasticCrossCandleEpoch(candles, stoch, "BUY", "BOUNDARIES_20_80") || m5BoundaryEpoch;
+      state.stochBoundaryDir = "BUY";
+    }
+  } else if (state.stoch80CrossDown || sK < 80.0) {
+    if (!state.stochBoundaryEpoch || state.stochBoundaryDir !== "SELL") {
+      state.stochBoundaryEpoch = findStochasticCrossCandleEpoch(candles, stoch, "SELL", "BOUNDARIES_20_80") || m5BoundaryEpoch;
+      state.stochBoundaryDir = "SELL";
+    }
+  } else {
+    state.stochBoundaryEpoch = null;
+    state.stochBoundaryDir = null;
+  }
   saveState();
 
   writeToLedger(m5BoundaryEpoch, currentPrice, cVal, sK, sD, eUp, eLo, (state.armed && state.armed.lbl) ? state.armed.lbl : "IDLE", `EMA100:${currentEma100 ? currentEma100.toFixed(2) : "0"}`);
