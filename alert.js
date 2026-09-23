@@ -666,7 +666,7 @@ let state = {
   symbol: SYMBOL,
   currentPrice: null,
   lastPriceUpdate: null,
-  lastProcessedEpoch: null, lastTgUpdateId: 0, armed: null, confirm: null, dailyBiasPrice: null,
+  lastProcessedEpoch: null, lastTgUpdateId: 0, armed: null, armedEpoch: null, armedTime: null, confirm: null, dailyBiasPrice: null,
   last50Origin: null,
   lastTriggeredSetup: null,
   lastTriggeredEpoch: null,
@@ -1353,22 +1353,35 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     if (state.armed.dir === "BUY" && m15Close < state.armed.lvl) {
       dbg(`[INVALIDATION] M15 closed below armed BUY level ${state.armed.lvl}. Disarming.`);
       state.armed = null;
+      state.armedEpoch = null;
+      state.armedTime = null;
     } else if (state.armed.dir === "SELL" && m15Close > state.armed.lvl) {
       dbg(`[INVALIDATION] M15 closed above armed SELL level ${state.armed.lvl}. Disarming.`);
       state.armed = null;
+      state.armedEpoch = null;
+      state.armedTime = null;
     } else if (state.armed.dir === "BUY" && state.armed.tp && m15Close >= state.armed.tp) {
       dbg(`[EXPIRED] M15 reached armed BUY target ${state.armed.tp}. Disarming.`);
       state.armed = null;
+      state.armedEpoch = null;
+      state.armedTime = null;
     } else if (state.armed.dir === "SELL" && state.armed.tp && m15Close <= state.armed.tp) {
       dbg(`[EXPIRED] M15 reached armed SELL target ${state.armed.tp}. Disarming.`);
       state.armed = null;
+      state.armedEpoch = null;
+      state.armedTime = null;
     }
   }
 
   if (newArm && (!state.armed || state.armed.lbl !== newArm.lbl)) {
     dbg(`[STATE] New Arm: ${newArm.lbl} (Level: ${newArm.lvl}, TP: ${newArm.tp})`);
     state.armed = newArm;
+    state.armedEpoch = m5BoundaryEpoch;
+    state.armedTime = new Date(m5BoundaryEpoch * 1000).toISOString().substring(11, 16) + " UTC";
     state.confirm = { label: newArm.lbl, dir: newArm.dir, gate: GATE_TYPE };
+  } else if (!state.armed) {
+    state.armedEpoch = null;
+    state.armedTime = null;
   }
 
   state.nextPhase = state.armed ? state.armed.lbl : null;
@@ -1528,7 +1541,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       signalTriggered = true;
       state.lastTriggeredSetup = entryType;
       state.lastTriggeredEpoch = m5BoundaryEpoch;
-      state.armed = null; 
+      state.armed = null;
+      state.armedEpoch = null;
+      state.armedTime = null;
       state.confirm = null;
       state.nextPhase = null;
       state.v100_1s_armed = false;
@@ -1551,6 +1566,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     if (activeTrade) {
       console.log(`[EXECUTION GATED] Signal ${entryType} confirmed, but contract ${activeTrade.contractId} (${activeTrade.direction}) is active. Resetting armed state.`);
       state.armed = null;
+      state.armedEpoch = null;
+      state.armedTime = null;
       state.lastProcessedEpoch = m5BoundaryEpoch;
       saveState();
       return;
