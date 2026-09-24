@@ -1447,15 +1447,16 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const targetKey = tp ? keyLevels.find(k => Math.abs(k.lvl - tp) < 1e-6) : null;
     const tpName = targetKey ? targetKey.name : (tp ? tp.toFixed(2) : "OPEN");
 
+    const setupType = MODES_ALLOWED.includes("CONT") ? "CONT" : (MODES_ALLOWED.includes("REV") ? "REV" : "CONT");
+
     const s = {
-      type: "REV",
+      type: setupType,
       dir,
       tp,
       lvl: level,
       lbl: `${dir} (${lvlName} to ${tpName})`
     };
 
-    if (s && !MODES_ALLOWED.includes(s.type)) return null;
     return s;
   }
 
@@ -1568,9 +1569,16 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.armedEpoch = m5BoundaryEpoch;
     state.armedTime = new Date(m5BoundaryEpoch * 1000).toISOString().substring(11, 16) + " UTC";
     state.confirm = { label: newArm.lbl, dir: newArm.dir, gate: GATE_TYPE };
+    state.keyLevelTouched = true;
+    state.levelTouched = `Level: ${newArm.lvl}`;
   } else if (!state.armed) {
     state.armedEpoch = null;
     state.armedTime = null;
+    state.keyLevelTouched = false;
+    state.levelTouched = null;
+  } else {
+    state.keyLevelTouched = true;
+    state.levelTouched = `Level: ${state.armed.lvl}`;
   }
 
   state.nextPhase = state.armed ? state.armed.lbl : null;
@@ -1891,6 +1899,19 @@ export async function startContinuousEngine() {
   setInterval(checkTelegramCommands, 15000);
 
   let isScanning = false;
+
+  // Immediate Initial Scan on Startup: Resolve market structure and arm state immediately
+  try {
+    const initEpoch = Math.floor(Date.now() / 1000);
+    const initM5Boundary = initEpoch - (initEpoch % 300);
+    console.log(`[${REPO_LABEL}] 🔄 Executing initial startup slow-path scan to resolve market state...`);
+    isScanning = true;
+    await runSlowPathScan(initM5Boundary);
+    isScanning = false;
+  } catch (initErr) {
+    console.error(`[${REPO_LABEL}] Initial Startup Scan Warning:`, initErr.message);
+    isScanning = false;
+  }
 
   while (true) {
     let hasOpenTrade = false;
