@@ -725,6 +725,8 @@ let state = {
   // V100 (1s) Two-stage state machine
   v100_1s_armed: false,
   v100_1s_armDir: null,
+  latchStoch533_BUY: false,
+  latchStoch533_SELL: false,
   // V25 Out-of-Order 3-way latches
   latchFib_BUY: false,
   latchFib_SELL: false,
@@ -1277,22 +1279,42 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.emaAlignedDir = null;
   }
 
-  // Fast Stoch (5,3,3) status & persistent cross epoch
+  // Fast Stoch (5,3,3) status, directional latching & persistent cross epoch
   const stoch533BuyCross = prevK533 <= 20.0 && sK533 > 20.0;
   const stoch533SellCross = (prevK533 >= 80.0 && sK533 < 80.0) || (prevK533 >= 50.0 && sK533 < 50.0);
-  state.stoch533BuyCross = stoch533BuyCross;
-  state.stoch533SellCross = stoch533SellCross;
 
   if (stoch533BuyCross) {
-    state.stoch533CrossEpoch = m5BoundaryEpoch;
-    state.stoch533CrossDir = "BUY";
-  } else if (stoch533SellCross) {
-    state.stoch533CrossEpoch = m5BoundaryEpoch;
-    state.stoch533CrossDir = "SELL";
-  } else if (sK533 > 20.0 && sK533 < 80.0) {
-    if (!state.stoch533CrossEpoch) {
-      state.stoch533CrossEpoch = findStochasticCrossCandleEpoch(candles, stoch533, sK533 >= 50 ? "BUY" : "SELL", "MIDLINE") || m5BoundaryEpoch;
-      state.stoch533CrossDir = sK533 >= 50 ? "BUY" : "SELL";
+    state.latchStoch533_BUY = true;
+    state.latchStoch533_SELL = false;
+  }
+  if (stoch533SellCross) {
+    state.latchStoch533_SELL = true;
+    state.latchStoch533_BUY = false;
+  }
+
+  // De-alignment Protocol: If BUY-latched and candle closes back below 50, disarm immediately
+  if (state.latchStoch533_BUY && sK533 < 50.0) {
+    state.latchStoch533_BUY = false;
+    dbg(`[STOCH 5,3,3 DISARM] Fast Stoch %K (${sK533.toFixed(2)}) closed back below 50. BUY trigger disarmed; awaiting fresh cross > 20.`);
+  }
+  // De-alignment Protocol: If SELL-latched and candle closes back above 50, disarm immediately
+  if (state.latchStoch533_SELL && sK533 > 50.0) {
+    state.latchStoch533_SELL = false;
+    dbg(`[STOCH 5,3,3 DISARM] Fast Stoch %K (${sK533.toFixed(2)}) closed back above 50. SELL trigger disarmed; awaiting fresh cross < 80/50.`);
+  }
+
+  state.stoch533BuyCross = Boolean(stoch533BuyCross || state.latchStoch533_BUY);
+  state.stoch533SellCross = Boolean(stoch533SellCross || state.latchStoch533_SELL);
+
+  if (stoch533BuyCross || state.latchStoch533_BUY) {
+    if (!state.stoch533CrossEpoch || state.stoch533CrossDir !== "BUY") {
+      state.stoch533CrossEpoch = m5BoundaryEpoch;
+      state.stoch533CrossDir = "BUY";
+    }
+  } else if (stoch533SellCross || state.latchStoch533_SELL) {
+    if (!state.stoch533CrossEpoch || state.stoch533CrossDir !== "SELL") {
+      state.stoch533CrossEpoch = m5BoundaryEpoch;
+      state.stoch533CrossDir = "SELL";
     }
   } else {
     state.stoch533CrossEpoch = null;
@@ -1556,14 +1578,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.v100_1s_armed = buyStateArmed || sellStateArmed;
     state.v100_1s_armDir = buyStateArmed ? "BUY" : (sellStateArmed ? "SELL" : null);
 
-    // Stage 2: Execution Trigger (Fast M5 Stoch 5,3,3)
+    // Stage 2: Execution Trigger (Fast M5 Stoch 5,3,3 with 50 De-alignment)
     const stoch533BuyCross = prevK533 <= 20.0 && sK533 > 20.0;
     const stoch533SellCross = (prevK533 >= 80.0 && sK533 < 80.0) || (prevK533 >= 50.0 && sK533 < 50.0);
 
-    if (buyStateArmed && stoch533BuyCross) {
+    if (buyStateArmed && (stoch533BuyCross || state.latchStoch533_BUY)) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
-    } else if (sellStateArmed && stoch533SellCross) {
+    } else if (sellStateArmed && (stoch533SellCross || state.latchStoch533_SELL)) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
     }
@@ -1662,6 +1684,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.nextPhase = null;
       state.v100_1s_armed = false;
       state.v100_1s_armDir = null;
+      state.latchStoch533_BUY = false;
+      state.latchStoch533_SELL = false;
       state.latchFib_BUY = false;
       state.latchFib_SELL = false;
       state.latchCci_BUY = false;
