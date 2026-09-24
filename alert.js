@@ -1497,16 +1497,28 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         const histTouched = isLevelTouched(item.lvl, histCurr);
 
         if (histCrossed || histTouched) {
-          const candidateArm = resolveFibSetup(item.lvl, m15Close);
+          // Resolve direction using the historical bar close that generated the cross/touch
+          const candidateArm = resolveFibSetup(item.lvl, hCurrClose);
           if (candidateArm) {
-            // Validate that price has not already reached the target
-            const isBuyValid = candidateArm.dir === "BUY" && (!candidateArm.tp || m15Close < candidateArm.tp);
-            const isSellValid = candidateArm.dir === "SELL" && (!candidateArm.tp || m15Close > candidateArm.tp);
+            // Check if setup is currently active without having breached the anchor level or reached TP
+            const isBuyActive = candidateArm.dir === "BUY" && m15Close >= candidateArm.lvl && (!candidateArm.tp || m15Close < candidateArm.tp);
+            const isSellActive = candidateArm.dir === "SELL" && m15Close <= candidateArm.lvl && (!candidateArm.tp || m15Close > candidateArm.tp);
 
-            if (isBuyValid || isSellValid) {
-              dbg(`[STARTUP RECOVERY] Found active structural Fib state from M15 candle at epoch ${histCurr.epoch}: ${candidateArm.lbl}`);
+            if (isBuyActive || isSellActive) {
+              dbg(`[STARTUP RECOVERY] Restored active structural Fib state from M15 candle at epoch ${histCurr.epoch}: ${candidateArm.lbl}`);
               newArm = candidateArm;
               break;
+            } else if (candidateArm.tp) {
+              // If target was reached during the move, transition the reached target level to the new anchor
+              const reachedTarget = (candidateArm.dir === "BUY" && m15Close >= candidateArm.tp) || (candidateArm.dir === "SELL" && m15Close <= candidateArm.tp);
+              if (reachedTarget) {
+                const transitionedArm = resolveFibSetup(candidateArm.tp, m15Close);
+                if (transitionedArm) {
+                  dbg(`[STARTUP RECOVERY] Target ${candidateArm.tp} reached from epoch ${histCurr.epoch}. Transitioning to: ${transitionedArm.lbl}`);
+                  newArm = transitionedArm;
+                  break;
+                }
+              }
             }
           }
         }
@@ -1514,17 +1526,32 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       if (newArm) break;
     }
 
-    // Fallback: If no recent candle crossed, determine position relative to closest Fibonacci boundary
+    // Fallback: If no recent candle crossed, determine corridor state relative to closest Fibonacci boundaries
     if (!newArm) {
       const sortedValid = Array.from(new Set(keyLevels.map(k => k.lvl).filter(Boolean))).sort((a, b) => a - b);
-      for (let i = 0; i < sortedValid.length; i++) {
-        const lvl = sortedValid[i];
-        if (m15Close >= lvl && (i === sortedValid.length - 1 || m15Close < sortedValid[i + 1])) {
-          const candidate = resolveFibSetup(lvl, m15Close);
-          if (candidate) {
-            dbg(`[STRUCTURAL FIB STATE] Price (${m15Close.toFixed(2)}) positioned above Fib level ${lvl.toFixed(2)}. Arming: ${candidate.lbl}`);
-            newArm = candidate;
-            break;
+      if (sortedValid.length > 0) {
+        if (m15Close < sortedValid[0]) {
+          // Below lowest boundary
+          newArm = resolveFibSetup(sortedValid[0], m15Close);
+        } else if (m15Close >= sortedValid[sortedValid.length - 1]) {
+          // Above highest boundary
+          newArm = resolveFibSetup(sortedValid[sortedValid.length - 1], m15Close);
+        } else {
+          for (let i = 0; i < sortedValid.length - 1; i++) {
+            const lowerLvl = sortedValid[i];
+            const upperLvl = sortedValid[i + 1];
+            if (m15Close >= lowerLvl && m15Close < upperLvl) {
+              // Price is inside corridor [lowerLvl, upperLvl]
+              // Check M15 direction/momentum: if bullish bar moving up -> BUY from lowerLvl; if bearish -> SELL from upperLvl
+              const isBullishBar = currM15.close >= currM15.open;
+              const anchorLvl = isBullishBar ? lowerLvl : upperLvl;
+              const candidate = resolveFibSetup(anchorLvl, m15Close);
+              if (candidate) {
+                dbg(`[CORRIDOR RESOLUTION] Price (${m15Close.toFixed(2)}) in [${lowerLvl.toFixed(2)}, ${upperLvl.toFixed(2)}], M15 ${isBullishBar ? "BULL" : "BEAR"}. Arming: ${candidate.lbl}`);
+                newArm = candidate;
+                break;
+              }
+            }
           }
         }
       }
@@ -1551,15 +1578,31 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         state.armedTime = null;
       }
     } else if (state.armed.dir === "BUY" && state.armed.tp && m15Close >= state.armed.tp) {
-      dbg(`[EXPIRED] M15 reached armed BUY target ${state.armed.tp}. Disarming.`);
-      state.armed = null;
-      state.armedEpoch = null;
-      state.armedTime = null;
+      dbg(`[TARGET REACHED] M15 reached armed BUY target ${state.armed.tp}. Transitioning to ${state.armed.tp}.`);
+      const nextSetup = resolveFibSetup(state.armed.tp, m15Close);
+      if (nextSetup) {
+        state.armed = nextSetup;
+        state.armedEpoch = m5BoundaryEpoch;
+        state.armedTime = new Date(m5BoundaryEpoch * 1000).toISOString().substring(11, 16) + " UTC";
+        state.confirm = { label: nextSetup.lbl, dir: nextSetup.dir, gate: GATE_TYPE };
+      } else {
+        state.armed = null;
+        state.armedEpoch = null;
+        state.armedTime = null;
+      }
     } else if (state.armed.dir === "SELL" && state.armed.tp && m15Close <= state.armed.tp) {
-      dbg(`[EXPIRED] M15 reached armed SELL target ${state.armed.tp}. Disarming.`);
-      state.armed = null;
-      state.armedEpoch = null;
-      state.armedTime = null;
+      dbg(`[TARGET REACHED] M15 reached armed SELL target ${state.armed.tp}. Transitioning to ${state.armed.tp}.`);
+      const nextSetup = resolveFibSetup(state.armed.tp, m15Close);
+      if (nextSetup) {
+        state.armed = nextSetup;
+        state.armedEpoch = m5BoundaryEpoch;
+        state.armedTime = new Date(m5BoundaryEpoch * 1000).toISOString().substring(11, 16) + " UTC";
+        state.confirm = { label: nextSetup.lbl, dir: nextSetup.dir, gate: GATE_TYPE };
+      } else {
+        state.armed = null;
+        state.armedEpoch = null;
+        state.armedTime = null;
+      }
     }
   }
 
