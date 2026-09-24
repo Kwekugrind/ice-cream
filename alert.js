@@ -1477,6 +1477,59 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
   }
 
+  // ── HISTORICAL STATE RESOLUTION (STARTUP / POST-RESTART RECOVERY) ──
+  // If no immediate M15 crossover occurred on the latest bar and state is un-armed,
+  // scan recent M15 bars to identify the current structural Fibonacci state of the market.
+  if (!newArm && !state.armed && m15Candles && m15Candles.length >= 3) {
+    const maxLookback = Math.min(32, m15Candles.length - 2); // Scan up to past ~8 hours of M15 candles
+    for (let i = m15Candles.length - 2; i >= m15Candles.length - 2 - maxLookback; i--) {
+      if (i < 1) break;
+      const histPrev = m15Candles[i - 1];
+      const histCurr = m15Candles[i];
+      const hPrevClose = parseFloat(histPrev.close);
+      const hCurrClose = parseFloat(histCurr.close);
+      const hCurrOpen = parseFloat(histCurr.open);
+
+      for (const item of keyLevels) {
+        if (!item.lvl) continue;
+        const histCrossed = checkCrossover(item.lvl, hPrevClose, hCurrClose, hCurrOpen);
+        const histTouched = isLevelTouched(item.lvl, histCurr);
+
+        if (histCrossed || histTouched) {
+          const candidateArm = resolveFibSetup(item.lvl, m15Close);
+          if (candidateArm) {
+            // Validate that price has not already reached the target
+            const isBuyValid = candidateArm.dir === "BUY" && (!candidateArm.tp || m15Close < candidateArm.tp);
+            const isSellValid = candidateArm.dir === "SELL" && (!candidateArm.tp || m15Close > candidateArm.tp);
+
+            if (isBuyValid || isSellValid) {
+              dbg(`[STARTUP RECOVERY] Found active structural Fib state from M15 candle at epoch ${histCurr.epoch}: ${candidateArm.lbl}`);
+              newArm = candidateArm;
+              break;
+            }
+          }
+        }
+      }
+      if (newArm) break;
+    }
+
+    // Fallback: If no recent candle crossed, determine position relative to closest Fibonacci boundary
+    if (!newArm) {
+      const sortedValid = Array.from(new Set(keyLevels.map(k => k.lvl).filter(Boolean))).sort((a, b) => a - b);
+      for (let i = 0; i < sortedValid.length; i++) {
+        const lvl = sortedValid[i];
+        if (m15Close >= lvl && (i === sortedValid.length - 1 || m15Close < sortedValid[i + 1])) {
+          const candidate = resolveFibSetup(lvl, m15Close);
+          if (candidate) {
+            dbg(`[STRUCTURAL FIB STATE] Price (${m15Close.toFixed(2)}) positioned above Fib level ${lvl.toFixed(2)}. Arming: ${candidate.lbl}`);
+            newArm = candidate;
+            break;
+          }
+        }
+      }
+    }
+  }
+
   // Active M15 Dynamic Invalidation & Direction Transition
   if (state.armed) {
     const isBuyFlipped = state.armed.dir === "BUY" && m15Close < state.armed.lvl;
