@@ -1405,43 +1405,33 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   function resolveFibSetup(level, price) {
     if (!level) return null;
     const closedAbove = price >= level;
-    let s = null;
+    const dir = closedAbove ? "BUY" : "SELL";
 
-    if (fib.bullish) {
-      if (level === fib.fib0) {
-        s = closedAbove ? { type: "CONT", dir: "BUY", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_BUY (0 to -50)" }
-                        : { type: "REV", dir: "SELL", tp: fib.fib50, lvl: fib.fib0, lbl: "REV_SELL (0 to 50)" };
-      } else if (level === fib.fib50 && !PROFILE.excludeFib50) {
-        s = (closedAbove && state.last50Origin === "fib0") ? { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_BUY (50 to 0)" }
-          : (!closedAbove && state.last50Origin === "fib100") ? { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_SELL (50 to 100)" } : null;
-      } else if (level === fib.fib79) {
-        if (closedAbove) s = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fib79, lbl: "REV_BUY (79 to 0)" };
-      } else if (level === fib.fib100) {
-        s = closedAbove ? { type: "REV", dir: "BUY", tp: fib.fib50, lvl: fib.fib100, lbl: "REV_BUY (100 to 50)" }
-                        : { type: "CONT", dir: "SELL", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_SELL (100 to 161.8)" };
-      } else if (level === fib.fibM50 && !closedAbove) {
-        s = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fibM50, lbl: "REV_SELL (-50 to 0)" };
-      } else if (level === fib.fib1618 && closedAbove) {
-        s = { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib1618, lbl: "REV_BUY (161.8 to 100)" };
-      }
-    } else {
-      if (level === fib.fib0) {
-        s = !closedAbove ? { type: "CONT", dir: "SELL", tp: fib.fibM50, lvl: fib.fib0, lbl: "CONT_SELL (0 to -50)" }
-                         : { type: "REV", dir: "BUY", tp: fib.fib50, lvl: fib.fib0, lbl: "REV_BUY (0 to 50)" };
-      } else if (level === fib.fib50 && !PROFILE.excludeFib50) {
-        s = (!closedAbove && state.last50Origin === "fib0") ? { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib50, lbl: "REV_SELL (50 to 0)" }
-          : (closedAbove && state.last50Origin === "fib100") ? { type: "REV", dir: "BUY", tp: fib.fib100, lvl: fib.fib50, lbl: "REV_BUY (50 to 100)" } : null;
-      } else if (level === fib.fib79) {
-        if (!closedAbove) s = { type: "REV", dir: "SELL", tp: fib.fib0, lvl: fib.fib79, lbl: "REV_SELL (79 to 0)" };
-      } else if (level === fib.fib100) {
-        s = closedAbove ? { type: "CONT", dir: "BUY", tp: fib.fib1618, lvl: fib.fib100, lbl: "CONT_BUY (100 to 161.8)" }
-                        : { type: "REV", dir: "SELL", tp: fib.fib50, lvl: fib.fib100, lbl: "REV_SELL (100 to 50)" };
-      } else if (level === fib.fibM50 && closedAbove) {
-        s = { type: "REV", dir: "BUY", tp: fib.fib0, lvl: fib.fibM50, lbl: "REV_BUY (-50 to 0)" };
-      } else if (level === fib.fib1618 && !closedAbove) {
-        s = { type: "REV", dir: "SELL", tp: fib.fib100, lvl: fib.fib1618, lbl: "REV_SELL (161.8 to 100)" };
+    // Sort distinct valid price levels in ascending order to find natural adjacent target
+    const sortedLevels = Array.from(new Set(keyLevels.map(k => k.lvl).filter(Boolean))).sort((a, b) => a - b);
+    const currIdx = sortedLevels.findIndex(l => Math.abs(l - level) < 1e-6);
+
+    let tp = null;
+    if (currIdx !== -1) {
+      if (dir === "BUY") {
+        tp = currIdx < sortedLevels.length - 1 ? sortedLevels[currIdx + 1] : null;
+      } else {
+        tp = currIdx > 0 ? sortedLevels[currIdx - 1] : null;
       }
     }
+
+    const matchedKey = keyLevels.find(k => Math.abs(k.lvl - level) < 1e-6);
+    const lvlName = matchedKey ? matchedKey.name : level.toFixed(2);
+    const targetKey = tp ? keyLevels.find(k => Math.abs(k.lvl - tp) < 1e-6) : null;
+    const tpName = targetKey ? targetKey.name : (tp ? tp.toFixed(2) : "OPEN");
+
+    const s = {
+      type: "REV",
+      dir,
+      tp,
+      lvl: level,
+      lbl: `${dir} (${lvlName} to ${tpName})`
+    };
 
     if (s && !MODES_ALLOWED.includes(s.type)) return null;
     return s;
