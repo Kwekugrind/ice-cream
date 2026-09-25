@@ -344,8 +344,25 @@ async function getContractProfitFromHistory(contractId, approxOpenEpoch) {
   };
 }
 
-// ==================== MARKET DATA FETCHERS (EXACT HANDBOOK SPEC) ====================
+// ==================== MARKET DATA FETCHERS (GATEWAY MULTIPLEXED + WS FALLBACK) ====================
 async function fetchAllData() {
+  // 1. Primary Path: Query authenticated deriv-gateway (0ms connection overhead, zero Cloudflare blocks)
+  try {
+    const [resM5, resM15, resM30, resD1] = await Promise.all([
+      gatewayFetch("/ticks_history", "POST", { ticks_history: SYMBOL, granularity: M5,  count: 220, end: "latest", style: "candles" }),
+      gatewayFetch("/ticks_history", "POST", { ticks_history: SYMBOL, granularity: M15, count: 250, end: "latest", style: "candles" }),
+      gatewayFetch("/ticks_history", "POST", { ticks_history: SYMBOL, granularity: M30, count: 120, end: "latest", style: "candles" }),
+      gatewayFetch("/ticks_history", "POST", { ticks_history: SYMBOL, granularity: D1,  count: 5,   end: "latest", style: "candles" })
+    ]);
+
+    if (resM5?.candles && resM15?.candles && resM30?.candles && resD1?.candles) {
+      return { m5: resM5.candles, m15: resM15.candles, m30: resM30.candles, d1: resD1.candles };
+    }
+  } catch (gwErr) {
+    dbg(`[GATEWAY CANDLES] Gateway query failed (${gwErr.message}). Trying direct WS fallback...`);
+  }
+
+  // 2. Fallback Path: Direct standard WebSocket query
   const endpoints = [
     `wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`,
     `wss://ws.derivws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`
@@ -442,6 +459,15 @@ async function fetchAllData() {
 }
 
 async function fetchCurrentSpotPrice() {
+  // 1. Primary Path: Query authenticated deriv-gateway
+  try {
+    const res = await gatewayFetch("/ticks_history", "POST", { ticks_history: SYMBOL, count: 1, end: "latest", style: "ticks" });
+    if (res?.history?.prices?.length > 0) {
+      return parseFloat(res.history.prices[res.history.prices.length - 1]);
+    }
+  } catch (e) {}
+
+  // 2. Fallback Path: Direct standard WebSocket query
   const endpoints = [
     `wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`,
     `wss://ws.derivws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`
