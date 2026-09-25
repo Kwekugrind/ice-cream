@@ -343,157 +343,189 @@ async function getContractProfitFromHistory(contractId, approxOpenEpoch) {
   };
 }
 
-// ==================== MARKET DATA FETCHERS ====================
+// ==================== MARKET DATA FETCHERS (HANDBOOK SPECIFICATION) ====================
 async function fetchAllData() {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
-    const results = {};
-    let timer = null;
-    let isSettled = false;
+  const endpoints = [
+    `wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`,
+    `wss://ws.derivws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`
+  ];
 
-    const cleanup = () => {
-      if (timer) clearTimeout(timer);
-      try {
-        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-          if (typeof ws.terminate === "function") ws.terminate();
-          else ws.close();
-        }
-      } catch (e) {}
-    };
+  let lastError = null;
+  for (const endpointUrl of endpoints) {
+    try {
+      return await new Promise((resolve, reject) => {
+        const ws = new WebSocket(endpointUrl);
+        const results = {};
+        let timer = null;
+        let isSettled = false;
 
-    timer = setTimeout(() => {
-      if (!isSettled) {
-        isSettled = true;
-        cleanup();
-        reject(new Error("fetchAllData timeout (15s exceeded)"));
-      }
-    }, 15000);
+        const cleanup = () => {
+          if (timer) clearTimeout(timer);
+          try {
+            if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+              if (typeof ws.terminate === "function") ws.terminate();
+              else ws.close();
+            }
+          } catch (e) {}
+        };
 
-    ws.on("open", () => {
-      try {
-        ws.send(JSON.stringify({ req_id: 1, ticks_history: SYMBOL, granularity: M5,  count: 220, end: "latest", style: "candles" }));
-        ws.send(JSON.stringify({ req_id: 4, ticks_history: SYMBOL, granularity: M15, count: 250, end: "latest", style: "candles" }));
-        ws.send(JSON.stringify({ req_id: 6, ticks_history: SYMBOL, granularity: M30, count: 120, end: "latest", style: "candles" }));
-        ws.send(JSON.stringify({ req_id: 5, ticks_history: SYMBOL, granularity: D1,  count: 5,   end: "latest", style: "candles" }));
-      } catch (err) {
-        if (!isSettled) {
-          isSettled = true;
-          cleanup();
-          reject(err);
-        }
-      }
-    });
-
-    ws.on("message", d => {
-      try {
-        const msg = JSON.parse(d);
-        if (msg.error) {
+        timer = setTimeout(() => {
           if (!isSettled) {
             isSettled = true;
             cleanup();
-            reject(new Error(`Deriv WS error: ${msg.error.message || msg.error.code}`));
+            reject(new Error(`fetchAllData timeout on ${endpointUrl} (15s exceeded)`));
           }
-          return;
-        }
-        if (msg.req_id === 1) results.m5  = msg.candles;
-        if (msg.req_id === 4) results.m15 = msg.candles;
-        if (msg.req_id === 6) results.m30 = msg.candles;
-        if (msg.req_id === 5) results.d1  = msg.candles;
-        if (results.m5 && results.m15 && results.m30 && results.d1) {
+        }, 15000);
+
+        ws.on("open", () => {
+          try {
+            ws.send(JSON.stringify({ req_id: 1, ticks_history: SYMBOL, granularity: M5,  count: 220, end: "latest", style: "candles" }));
+            ws.send(JSON.stringify({ req_id: 4, ticks_history: SYMBOL, granularity: M15, count: 250, end: "latest", style: "candles" }));
+            ws.send(JSON.stringify({ req_id: 6, ticks_history: SYMBOL, granularity: M30, count: 120, end: "latest", style: "candles" }));
+            ws.send(JSON.stringify({ req_id: 5, ticks_history: SYMBOL, granularity: D1,  count: 5,   end: "latest", style: "candles" }));
+          } catch (err) {
+            if (!isSettled) {
+              isSettled = true;
+              cleanup();
+              reject(err);
+            }
+          }
+        });
+
+        ws.on("message", d => {
+          try {
+            const msg = JSON.parse(d);
+            if (msg.error) {
+              if (!isSettled) {
+                isSettled = true;
+                cleanup();
+                reject(new Error(`Deriv WS error: ${msg.error.message || msg.error.code}`));
+              }
+              return;
+            }
+            if (msg.req_id === 1) results.m5  = msg.candles;
+            if (msg.req_id === 4) results.m15 = msg.candles;
+            if (msg.req_id === 6) results.m30 = msg.candles;
+            if (msg.req_id === 5) results.d1  = msg.candles;
+            if (results.m5 && results.m15 && results.m30 && results.d1) {
+              if (!isSettled) {
+                isSettled = true;
+                cleanup();
+                resolve(results);
+              }
+            }
+          } catch (err) {
+            if (!isSettled) {
+              isSettled = true;
+              cleanup();
+              reject(err);
+            }
+          }
+        });
+
+        ws.on("error", err => {
           if (!isSettled) {
             isSettled = true;
             cleanup();
-            resolve(results);
+            reject(err);
           }
-        }
-      } catch (err) {
-        if (!isSettled) {
-          isSettled = true;
-          cleanup();
-          reject(err);
-        }
-      }
-    });
-
-    ws.on("error", err => {
-      if (!isSettled) {
-        isSettled = true;
-        cleanup();
-        reject(err);
-      }
-    });
-  });
+        });
+      });
+    } catch (err) {
+      lastError = err;
+      dbg(`[MARKET DATA] Endpoint ${endpointUrl} failed (${err.message}). Trying fallback...`);
+      await sleep(500);
+    }
+  }
+  throw lastError || new Error("All Deriv market data endpoints failed");
 }
 
 async function fetchCurrentSpotPrice() {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`);
-    let timer = null;
-    let isSettled = false;
+  const endpoints = [
+    `wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`,
+    `wss://ws.derivws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`
+  ];
 
-    const cleanup = () => {
-      if (timer) clearTimeout(timer);
-      try {
-        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-          if (typeof ws.terminate === "function") ws.terminate();
-          else ws.close();
-        }
-      } catch (e) {}
-    };
+  let lastError = null;
+  for (const endpointUrl of endpoints) {
+    try {
+      return await new Promise((resolve, reject) => {
+        const ws = new WebSocket(endpointUrl);
+        let timer = null;
+        let isSettled = false;
 
-    timer = setTimeout(() => {
-      if (!isSettled) {
-        isSettled = true;
-        cleanup();
-        reject(new Error("fetchCurrentSpotPrice timeout (4s exceeded)"));
-      }
-    }, 4000); // 4-second strict network timeout safeguard to prevent hung sockets
+        const cleanup = () => {
+          if (timer) clearTimeout(timer);
+          try {
+            if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+              if (typeof ws.terminate === "function") ws.terminate();
+              else ws.close();
+            }
+          } catch (e) {}
+        };
 
-    ws.on("open", () => {
-      try {
-        ws.send(JSON.stringify({ req_id: 3, ticks_history: SYMBOL, count: 1, end: "latest", style: "ticks" }));
-      } catch (err) {
-        if (!isSettled) {
-          isSettled = true;
-          cleanup();
-          reject(err);
-        }
-      }
-    });
-    ws.on("message", d => {
-      try {
-        const msg = JSON.parse(d);
-        if (msg.error) {
+        timer = setTimeout(() => {
           if (!isSettled) {
             isSettled = true;
             cleanup();
-            reject(new Error(`Deriv WS spot error: ${msg.error.message || msg.error.code}`));
+            reject(new Error(`fetchCurrentSpotPrice timeout on ${endpointUrl} (4s exceeded)`));
           }
-          return;
-        }
-        if (msg.req_id === 3 && msg.history && msg.history.prices && msg.history.prices.length > 0) {
+        }, 4000);
+
+        ws.on("open", () => {
+          try {
+            ws.send(JSON.stringify({ req_id: 3, ticks_history: SYMBOL, count: 1, end: "latest", style: "ticks" }));
+          } catch (err) {
+            if (!isSettled) {
+              isSettled = true;
+              cleanup();
+              reject(err);
+            }
+          }
+        });
+
+        ws.on("message", d => {
+          try {
+            const msg = JSON.parse(d);
+            if (msg.error) {
+              if (!isSettled) {
+                isSettled = true;
+                cleanup();
+                reject(new Error(`Deriv WS spot error: ${msg.error.message || msg.error.code}`));
+              }
+              return;
+            }
+            if (msg.req_id === 3 && msg.history && msg.history.prices && msg.history.prices.length > 0) {
+              if (!isSettled) {
+                isSettled = true;
+                cleanup();
+                resolve(parseFloat(msg.history.prices[msg.history.prices.length - 1]));
+              }
+            }
+          } catch (err) {
+            if (!isSettled) {
+              isSettled = true;
+              cleanup();
+              reject(err);
+            }
+          }
+        });
+
+        ws.on("error", err => {
           if (!isSettled) {
             isSettled = true;
             cleanup();
-            resolve(parseFloat(msg.history.prices[msg.history.prices.length - 1]));
+            reject(err);
           }
-        }
-      } catch (err) {
-        if (!isSettled) {
-          isSettled = true;
-          cleanup();
-          reject(err);
-        }
-      }
-    });
-    ws.on("error", err => {
-      if (!isSettled) {
-        isSettled = true;
-        cleanup();
-        reject(err);
-      }
-    });
-  });
+        });
+      });
+    } catch (err) {
+      lastError = err;
+      dbg(`[SPOT PRICE] Endpoint ${endpointUrl} failed (${err.message}). Trying fallback...`);
+      await sleep(300);
+    }
+  }
+  throw lastError || new Error("All Deriv spot price endpoints failed");
 }
 
 // ==================== TECHNICAL ANALYSIS ====================
@@ -1028,8 +1060,6 @@ async function checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch
 // ==================== SLOW PATH (RUNS ON CLOSED M5 CANDLE) ====================
 async function runSlowPathScan(m5BoundaryEpoch) {
   console.log(`[${REPO_LABEL}] Scanning closed M5 candle: ${new Date(m5BoundaryEpoch * 1000).toISOString()}`);
-  state.lastProcessedEpoch = m5BoundaryEpoch;
-  saveState();
   let trades = loadTrades();
 
   // Daily UTC Rollover Reset for Target Cap
