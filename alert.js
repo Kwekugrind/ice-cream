@@ -1807,11 +1807,6 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       signalTriggered = true;
       state.lastTriggeredSetup = entryType;
       state.lastTriggeredEpoch = m5BoundaryEpoch;
-      state.armed = null;
-      state.armedEpoch = null;
-      state.armedTime = null;
-      state.confirm = null;
-      state.nextPhase = null;
       state.v100_1s_armed = false;
       state.v100_1s_armDir = null;
       state.latchStoch533_BUY = false;
@@ -1832,10 +1827,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     trades = loadTrades();
     const activeTrade = trades.find(t => !t.result && !t.pending);
     if (activeTrade) {
-      console.log(`[EXECUTION GATED] Signal ${entryType} confirmed, but contract ${activeTrade.contractId} (${activeTrade.direction}) is active. Resetting armed state.`);
-      state.armed = null;
-      state.armedEpoch = null;
-      state.armedTime = null;
+      console.log(`[EXECUTION GATED] Signal ${entryType} confirmed, but contract ${activeTrade.contractId} (${activeTrade.direction}) is active. Maintaining active trade.`);
       state.lastProcessedEpoch = m5BoundaryEpoch;
       saveState();
       return;
@@ -1925,12 +1917,17 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       if (!contractId) {
         trades.splice(trades.findIndex(t => t.id === pendingTradeRecord.id), 1); saveTrades(trades);
         await sendTelegram(`❌ *${REPO_LABEL}* — Signal triggered, but broker returned no contract ID. Aborted.`);
-        return;
+      } else {
+        pendingTradeRecord.contractId = contractId;
+        pendingTradeRecord.pending = false;
+        saveTrades(trades);
+        state.armed = null;
+        state.armedEpoch = null;
+        state.armedTime = null;
+        state.confirm = null;
+        state.nextPhase = null;
+        await sendTelegram(message);
       }
-      pendingTradeRecord.contractId = contractId;
-      pendingTradeRecord.pending = false;
-      saveTrades(trades);
-      await sendTelegram(message);
     } catch (execErr) {
       trades.splice(trades.findIndex(t => t.id === pendingTradeRecord.id), 1); saveTrades(trades);
       await sendTelegram(`❌ *${REPO_LABEL}* — Live execution failed: ${execErr.message}`);
