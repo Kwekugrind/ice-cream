@@ -1421,12 +1421,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   ];
 
   function resolveFibSetup(level, price) {
-    if (!level) return null;
+    if (typeof level !== "number" || isNaN(level)) return null;
     const closedAbove = price >= level;
     const dir = closedAbove ? "BUY" : "SELL";
 
     // Sort distinct valid price levels in ascending order to find natural adjacent target
-    const sortedLevels = Array.from(new Set(keyLevels.map(k => k.lvl).filter(Boolean))).sort((a, b) => a - b);
+    const sortedLevels = Array.from(new Set(keyLevels.map(k => k.lvl).filter(v => typeof v === "number" && !isNaN(v)))).sort((a, b) => a - b);
     const currIdx = sortedLevels.findIndex(l => Math.abs(l - level) < 1e-6);
 
     let tp = null;
@@ -1440,8 +1440,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     const matchedKey = keyLevels.find(k => Math.abs(k.lvl - level) < 1e-6);
     const lvlName = matchedKey ? matchedKey.name : level.toFixed(2);
-    const targetKey = tp ? keyLevels.find(k => Math.abs(k.lvl - tp) < 1e-6) : null;
-    const tpName = targetKey ? targetKey.name : (tp ? tp.toFixed(2) : "OPEN");
+    const targetKey = tp !== null ? keyLevels.find(k => Math.abs(k.lvl - tp) < 1e-6) : null;
+    const tpName = targetKey ? targetKey.name : (tp !== null ? tp.toFixed(2) : "OPEN");
 
     const setupType = MODES_ALLOWED.includes("CONT") ? "CONT" : (MODES_ALLOWED.includes("REV") ? "REV" : "CONT");
 
@@ -1457,7 +1457,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   }
 
   for (const item of keyLevels) {
-    if (!item.lvl) continue;
+    if (typeof item.lvl !== "number" || isNaN(item.lvl)) continue;
     const crossed = checkCrossover(item.lvl, prevM15Close, m15Close, m15Open);
     const touched = isLevelTouched(item.lvl, currM15);
 
@@ -1488,7 +1488,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const hCurrOpen = parseFloat(histCurr.open);
 
       for (const item of keyLevels) {
-        if (!item.lvl) continue;
+        if (typeof item.lvl !== "number" || isNaN(item.lvl)) continue;
         const histCrossed = checkCrossover(item.lvl, hPrevClose, hCurrClose, hCurrOpen);
         const histTouched = isLevelTouched(item.lvl, histCurr);
 
@@ -1497,14 +1497,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           const candidateArm = resolveFibSetup(item.lvl, hCurrClose);
           if (candidateArm) {
             // Check if setup is currently active without having breached the anchor level or reached TP
-            const isBuyActive = candidateArm.dir === "BUY" && m15Close >= candidateArm.lvl && (!candidateArm.tp || m15Close < candidateArm.tp);
-            const isSellActive = candidateArm.dir === "SELL" && m15Close <= candidateArm.lvl && (!candidateArm.tp || m15Close > candidateArm.tp);
+            const isBuyActive = candidateArm.dir === "BUY" && m15Close >= candidateArm.lvl && (candidateArm.tp === null || m15Close < candidateArm.tp);
+            const isSellActive = candidateArm.dir === "SELL" && m15Close <= candidateArm.lvl && (candidateArm.tp === null || m15Close > candidateArm.tp);
 
             if (isBuyActive || isSellActive) {
               dbg(`[STARTUP RECOVERY] Restored active structural Fib state from M15 candle at epoch ${histCurr.epoch}: ${candidateArm.lbl}`);
               newArm = candidateArm;
               break;
-            } else if (candidateArm.tp) {
+            } else if (candidateArm.tp !== null) {
               // If target was reached during the move, transition the reached target level to the new anchor
               const reachedTarget = (candidateArm.dir === "BUY" && m15Close >= candidateArm.tp) || (candidateArm.dir === "SELL" && m15Close <= candidateArm.tp);
               if (reachedTarget) {
@@ -1524,7 +1524,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     // Fallback: If no recent candle crossed, determine corridor state relative to closest Fibonacci boundaries
     if (!newArm) {
-      const sortedValid = Array.from(new Set(keyLevels.map(k => k.lvl).filter(Boolean))).sort((a, b) => a - b);
+      const sortedValid = Array.from(new Set(keyLevels.map(k => k.lvl).filter(v => typeof v === "number" && !isNaN(v)))).sort((a, b) => a - b);
       if (sortedValid.length > 0) {
         if (m15Close < sortedValid[0]) {
           // Below lowest boundary
