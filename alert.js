@@ -343,19 +343,15 @@ async function getContractProfitFromHistory(contractId, approxOpenEpoch) {
   };
 }
 
-// ==================== MARKET DATA FETCHERS (HANDBOOK SPECIFICATION) ====================
+// ==================== MARKET DATA FETCHERS (EXACT HANDBOOK SPEC) ====================
 async function fetchAllData() {
   const endpoints = [
     `wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`,
     `wss://ws.derivws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`
   ];
 
-  // Jitter guard: stagger simultaneous bot startup across the server to prevent Cloudflare 520 edge bursts
-  await sleep(Math.floor(Math.random() * 800) + 200);
-
   let lastError = null;
-  for (let attempt = 0; attempt < endpoints.length; attempt++) {
-    const endpointUrl = endpoints[attempt];
+  for (const endpointUrl of endpoints) {
     try {
       return await new Promise((resolve, reject) => {
         const ws = new WebSocket(endpointUrl);
@@ -384,9 +380,9 @@ async function fetchAllData() {
         ws.on("open", () => {
           try {
             ws.send(JSON.stringify({ req_id: 1, ticks_history: SYMBOL, granularity: M5,  count: 220, end: "latest", style: "candles" }));
-            setTimeout(() => { if (!isSettled && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ req_id: 4, ticks_history: SYMBOL, granularity: M15, count: 250, end: "latest", style: "candles" })); }, 50);
-            setTimeout(() => { if (!isSettled && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ req_id: 6, ticks_history: SYMBOL, granularity: M30, count: 120, end: "latest", style: "candles" })); }, 100);
-            setTimeout(() => { if (!isSettled && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ req_id: 5, ticks_history: SYMBOL, granularity: D1,  count: 5,   end: "latest", style: "candles" })); }, 150);
+            ws.send(JSON.stringify({ req_id: 4, ticks_history: SYMBOL, granularity: M15, count: 250, end: "latest", style: "candles" }));
+            ws.send(JSON.stringify({ req_id: 6, ticks_history: SYMBOL, granularity: M30, count: 120, end: "latest", style: "candles" }));
+            ws.send(JSON.stringify({ req_id: 5, ticks_history: SYMBOL, granularity: D1,  count: 5,   end: "latest", style: "candles" }));
           } catch (err) {
             if (!isSettled) {
               isSettled = true;
@@ -438,7 +434,7 @@ async function fetchAllData() {
     } catch (err) {
       lastError = err;
       dbg(`[MARKET DATA] Endpoint ${endpointUrl} failed (${err.message}). Trying fallback...`);
-      await sleep(1500);
+      await sleep(1000);
     }
   }
   throw lastError || new Error("All Deriv market data endpoints failed");
@@ -1064,6 +1060,8 @@ async function checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch
 // ==================== SLOW PATH (RUNS ON CLOSED M5 CANDLE) ====================
 async function runSlowPathScan(m5BoundaryEpoch) {
   console.log(`[${REPO_LABEL}] Scanning closed M5 candle: ${new Date(m5BoundaryEpoch * 1000).toISOString()}`);
+  state.lastProcessedEpoch = m5BoundaryEpoch;
+  saveState();
   let trades = loadTrades();
 
   // Daily UTC Rollover Reset for Target Cap
