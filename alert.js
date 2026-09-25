@@ -192,7 +192,8 @@ const SOFTWARE_SL_USD = -3.60;
 const SERVER_TP_USD = 10.00;
 const CATASTROPHIC_PNL_FLOOR = -5.50;
 const DAILY_PROFIT_TARGET_USD = 10.00;
-const MARKET_DATA_APP_ID = process.env.DERIV_APP_ID || process.env.APP_ID || "1089";
+const rawAppId = String(process.env.DERIV_APP_ID || process.env.APP_ID || "1089").trim();
+const MARKET_DATA_APP_ID = /^\d+$/.test(rawAppId) ? rawAppId : "1089";
 const TARGET_MIN_PROFIT = PROFILE.minTakeProfitUsd || 4.00;
 
 // Continuous Dollar Trailing Stop Settings
