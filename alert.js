@@ -120,13 +120,13 @@ export const INSTRUMENT_PROFILES = {
     gateType: "ASYNC_3WAY_LATCH",
     stochParams: { k: 18, d: 12, slowing: 25 },
     cciPeriod: 100,
-    minTakeProfitPoints: 15.0,
-    minTakeProfitUsd: 8.00,
-    trailActivationUsd: 5.00,
-    maxHardStopPoints: 3.50,
+    minTakeProfitPoints: 5.52,
+    minTakeProfitUsd: 4.00,
+    trailActivationUsd: 4.00,
+    maxHardStopPoints: 18.00,
     modesAllowed: ["CONT", "REV"],
-    slType: "HARD_POINTS",
-    notes: "400x multiplier ($1.38 pts/$1); Out-of-order independent 3-condition latching (M15 Fib + M5 CCI 100 + M5 Stoch 18,12,25) + $8-$10 TP."
+    slType: "M15_FRACTAL",
+    notes: "400x multiplier ($1.38 pts/$1); Out-of-order independent 3-condition latching (M15 Fib + M5 CCI 100 + M5 Stoch 18,12,25) + Previous M15 Fractal SL + $4.00 TP & Trailing."
   },
   "R_50": {
     symbol: "R_50",
