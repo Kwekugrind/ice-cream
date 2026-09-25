@@ -84,7 +84,7 @@ export const INSTRUMENT_PROFILES = {
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 4.00,
     maxHardStopPoints: 3.00,
-    modesAllowed: ["CONT"],
+    modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
     notes: "40x multiplier; M15 Fib + M5 Stoch 50 Midline Cross + Envelope 200 breakout filter + Previous M15 Fractal SL + $4.00 TP & Trailing."
   },
@@ -124,7 +124,7 @@ export const INSTRUMENT_PROFILES = {
     minTakeProfitUsd: 8.00,
     trailActivationUsd: 5.00,
     maxHardStopPoints: 3.50,
-    modesAllowed: ["REV"],
+    modesAllowed: ["CONT", "REV"],
     slType: "HARD_POINTS",
     notes: "400x multiplier ($1.38 pts/$1); Out-of-order independent 3-condition latching (M15 Fib + M5 CCI 100 + M5 Stoch 18,12,25) + $8-$10 TP."
   },
@@ -139,14 +139,13 @@ export const INSTRUMENT_PROFILES = {
     strategyProfile: "PROFILE_V50_STOCH_BOUNDARIES",
     gateType: "STOCH_BOUNDARIES_20_80",
     stochParams: { k: 18, d: 12, slowing: 25 },
-    excludeFib50: true, // 50% Fib level explicitly excluded
     minTakeProfitPoints: 0.93,
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 4.00,
     maxHardStopPoints: 0.20,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "80x multiplier; M15 Fib (excluding 50%) + M5 Stoch (18,12,25) 20/80 boundary cross + Previous M15 Fractal SL + $4.00 TP & Trailing."
+    notes: "80x multiplier; M15 Fib + M5 Stoch (18,12,25) 20/80 boundary cross + Previous M15 Fractal SL + $4.00 TP & Trailing."
   },
   "R_10": {
     symbol: "R_10",
@@ -1411,18 +1410,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   let newArm = null;
 
-  // Build Key Levels Array (Explicitly exclude 50% for Volatility 50)
+  // Universal Key Levels Array (Uniform across all instruments: 0%, 50%, 79%, 100%, -50%, 161.8%)
   const keyLevels = [
     { lvl: fib.fib0,    name: "0%" },
-    ...(PROFILE.excludeFib50 ? [] : [{ lvl: fib.fib50, name: "50%" }]),
+    { lvl: fib.fib50,   name: "50%" },
     { lvl: fib.fib79,   name: "79%" },
     { lvl: fib.fib100,  name: "100%" },
     { lvl: fib.fibM50,  name: "-50%" },
     { lvl: fib.fib1618, name: "161.8%" }
   ];
-
-  if (isLevelTouched(fib.fib0, currM15)) state.last50Origin = "fib0";
-  if (isLevelTouched(fib.fib100, currM15)) state.last50Origin = "fib100";
 
   function resolveFibSetup(level, price) {
     if (!level) return null;
@@ -1711,7 +1707,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       if (cVal > 100.0) state.latchCci_SELL = false;
     }
 
-    // Condition 3: M5 Stochastic (18,12,25) Crossing
+    // Condition 3: M5 Stochastic (18,12,25) Crossing (20 / 80 Boundaries)
     const stochBuyCross = (prevK <= 20.0 && sK > 20.0) || (prevK <= prevD && sK > sD && sK <= 20.0);
     const stochSellCross = (prevK >= 80.0 && sK < 80.0) || (prevK >= prevD && sK < sD && sK >= 80.0);
     if (stochBuyCross) state.latchStoch_BUY = true;
