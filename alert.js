@@ -1339,7 +1339,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   // Fast Stoch (5,3,3) status, directional latching & persistent cross epoch
   const stoch533BuyCross = prevK533 <= 20.0 && sK533 > 20.0;
-  const stoch533SellCross = (prevK533 >= 80.0 && sK533 < 80.0) || (prevK533 >= 50.0 && sK533 < 50.0);
+  const stoch533SellCross = prevK533 >= 80.0 && sK533 < 80.0;
 
   if (stoch533BuyCross) {
     state.latchStoch533_BUY = true;
@@ -1358,7 +1358,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   // De-alignment Protocol: If SELL-latched and candle closes back above 50, disarm immediately
   if (state.latchStoch533_SELL && sK533 > 50.0) {
     state.latchStoch533_SELL = false;
-    dbg(`[STOCH 5,3,3 DISARM] Fast Stoch %K (${sK533.toFixed(2)}) closed back above 50. SELL trigger disarmed; awaiting fresh cross < 80/50.`);
+    dbg(`[STOCH 5,3,3 DISARM] Fast Stoch %K (${sK533.toFixed(2)}) closed back above 50. SELL trigger disarmed; awaiting fresh cross < 80.`);
   }
 
   state.stoch533BuyCross = Boolean(stoch533BuyCross || state.latchStoch533_BUY);
@@ -1739,7 +1739,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     // Stage 2: Execution Trigger (Fast M5 Stoch 5,3,3 with 50 De-alignment)
     const stoch533BuyCross = prevK533 <= 20.0 && sK533 > 20.0;
-    const stoch533SellCross = (prevK533 >= 80.0 && sK533 < 80.0) || (prevK533 >= 50.0 && sK533 < 50.0);
+    const stoch533SellCross = prevK533 >= 80.0 && sK533 < 80.0;
 
     if (buyStateArmed && (stoch533BuyCross || state.latchStoch533_BUY)) {
       indicatorsSatisfied = true;
@@ -1900,7 +1900,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     let confluenceLines = `• Gate Engine: *${GATE_TYPE}*\n`;
     if (STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533") {
       confluenceLines += `• M5 EMA 100: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > EMA" : "Price < EMA"} [ALIGNED])\n` +
-                         `• Fast Stoch (5,3,3): *%K ${(sK533 !== null ? sK533.toFixed(1) : "N/A")}* | *%D ${(sD533 !== null ? sD533.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">20 Cross" : "<80/50 Cross"} [TRIGGERED])\n`;
+                         `• Fast Stoch (5,3,3): *%K ${(sK533 !== null ? sK533.toFixed(1) : "N/A")}* | *%D ${(sD533 !== null ? sD533.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">20 Cross" : "<80 Cross"} [TRIGGERED])\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV") {
       confluenceLines += `• M5 Stoch (18,12,25): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 Midline Cross" : "<50 Midline Cross"} [ALIGNED])\n` +
                          `• Envelope 200 (0.05%): *${direction === "BUY" ? "Price > Upper (" + eUp.toFixed(4) + ")" : "Price < Lower (" + eLo.toFixed(4) + ")"}* [BREAKOUT]\n`;
