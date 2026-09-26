@@ -41,13 +41,13 @@ export const INSTRUMENT_PROFILES = {
     strategyProfile: "PROFILE_V75_MIDLINE_FRACTAL",
     gateType: "STOCH_50_MIDLINE",
     stochParams: { k: 18, d: 12, slowing: 25 },
-    minTakeProfitPoints: 760.0,
-    minTakeProfitUsd: 4.00,
-    trailActivationUsd: 4.00,
+    minTakeProfitPoints: 1330.0,
+    minTakeProfitUsd: 7.00,
+    trailActivationUsd: 5.00,
     maxHardStopPoints: 180.0,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "V75 Heavyweight; M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $4.00 TP & Trailing."
+    notes: "V75 Heavyweight; M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $7.00 TP & Trailing ($5.00 act / $1.50 buffer)."
   },
   "1HZ75V": {
     symbol: "1HZ75V",
@@ -60,13 +60,13 @@ export const INSTRUMENT_PROFILES = {
     strategyProfile: "PROFILE_V75_1S_MIDLINE_FRACTAL",
     gateType: "STOCH_50_MIDLINE",
     stochParams: { k: 18, d: 12, slowing: 25 },
-    minTakeProfitPoints: 5.08,
-    minTakeProfitUsd: 4.00,
-    trailActivationUsd: 4.00,
+    minTakeProfitPoints: 8.89,
+    minTakeProfitUsd: 7.00,
+    trailActivationUsd: 5.00,
     maxHardStopPoints: 18.0,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "1s tick speed; 100x multiplier; M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $4.00 TP & Trailing."
+    notes: "1s tick speed; 100x multiplier; M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $7.00 TP & Trailing ($5.00 act / $1.50 buffer)."
   },
   "R_100": {
     symbol: "R_100",
@@ -80,13 +80,13 @@ export const INSTRUMENT_PROFILES = {
     gateType: "STOCH_50_ENV200",
     stochParams: { k: 18, d: 12, slowing: 25 },
     envParams: { period: 200, devPct: 0.05 }, // Mandatory Envelope 200 breakout trend filter
-    minTakeProfitPoints: 10.70,
-    minTakeProfitUsd: 4.00,
-    trailActivationUsd: 4.00,
+    minTakeProfitPoints: 18.70,
+    minTakeProfitUsd: 7.00,
+    trailActivationUsd: 5.00,
     maxHardStopPoints: 3.00,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "40x multiplier; M15 Fib + M5 Stoch 50 Midline Cross + Envelope 200 breakout filter + Previous M15 Fractal SL + $4.00 TP & Trailing."
+    notes: "40x multiplier; M15 Fib + M5 Stoch 50 Midline Cross + Envelope 200 breakout filter + Previous M15 Fractal SL + $7.00 TP & Trailing ($5.00 act / $1.50 buffer)."
   },
   "1HZ100V": {
     symbol: "1HZ100V",
@@ -100,13 +100,13 @@ export const INSTRUMENT_PROFILES = {
     gateType: "EMA100_STOCH533",
     stochParams: { k: 5, d: 3, slowing: 3 }, // Fast M5 Stoch (5,3,3)
     emaPeriod: 100, // M5 EMA 100
-    minTakeProfitPoints: 17.60,
-    minTakeProfitUsd: 4.00,
-    trailActivationUsd: 4.00,
+    minTakeProfitPoints: 30.80,
+    minTakeProfitUsd: 7.00,
+    trailActivationUsd: 5.00,
     maxHardStopPoints: 5.50,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "Two-stage state machine: Stage 1: M15 Fib + M5 EMA 100 direction arming lock; Stage 2: Fast Stoch (5,3,3) 20/80 cross trigger + Previous M15 Fractal SL + $4.00 TP."
+    notes: "Two-stage state machine: Stage 1: M15 Fib + M5 EMA 100 direction arming lock; Stage 2: Fast Stoch (5,3,3) 20/80 cross trigger + Previous M15 Fractal SL + $7.00 TP ($5.00 act / $1.50 buffer)."
   },
   "R_25": {
     symbol: "R_25",
@@ -120,13 +120,13 @@ export const INSTRUMENT_PROFILES = {
     gateType: "ASYNC_3WAY_LATCH",
     stochParams: { k: 18, d: 12, slowing: 25 },
     cciPeriod: 100,
-    minTakeProfitPoints: 5.52,
-    minTakeProfitUsd: 4.00,
-    trailActivationUsd: 4.00,
+    minTakeProfitPoints: 9.66,
+    minTakeProfitUsd: 7.00,
+    trailActivationUsd: 5.00,
     maxHardStopPoints: 18.00,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "400x multiplier ($1.38 pts/$1); Out-of-order independent 3-condition latching (M15 Fib + M5 CCI 100 + M5 Stoch 18,12,25) + Previous M15 Fractal SL + $4.00 TP & Trailing."
+    notes: "400x multiplier ($1.38 pts/$1); Out-of-order independent 3-condition latching (M15 Fib + M5 CCI 100 + M5 Stoch 18,12,25) + Previous M15 Fractal SL + $7.00 TP & Trailing ($5.00 act / $1.50 buffer)."
   },
   "R_50": {
     symbol: "R_50",
@@ -139,13 +139,13 @@ export const INSTRUMENT_PROFILES = {
     strategyProfile: "PROFILE_V50_STOCH_BOUNDARIES",
     gateType: "STOCH_BOUNDARIES_20_80",
     stochParams: { k: 18, d: 12, slowing: 25 },
-    minTakeProfitPoints: 0.93,
-    minTakeProfitUsd: 4.00,
-    trailActivationUsd: 4.00,
+    minTakeProfitPoints: 1.63,
+    minTakeProfitUsd: 7.00,
+    trailActivationUsd: 5.00,
     maxHardStopPoints: 0.20,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "80x multiplier; M15 Fib + M5 Stoch (18,12,25) 20/80 boundary cross + Previous M15 Fractal SL + $4.00 TP & Trailing."
+    notes: "80x multiplier; M15 Fib + M5 Stoch (18,12,25) 20/80 boundary cross + Previous M15 Fractal SL + $7.00 TP & Trailing ($5.00 act / $1.50 buffer)."
   },
   "R_10": {
     symbol: "R_10",
@@ -158,13 +158,13 @@ export const INSTRUMENT_PROFILES = {
     strategyProfile: "PROFILE_V10_MIDLINE_FRACTAL",
     gateType: "STOCH_50_MIDLINE",
     stochParams: { k: 18, d: 12, slowing: 25 },
-    minTakeProfitPoints: 9.60,
-    minTakeProfitUsd: 4.00,
-    trailActivationUsd: 4.00,
+    minTakeProfitPoints: 16.80,
+    minTakeProfitUsd: 7.00,
+    trailActivationUsd: 5.00,
     maxHardStopPoints: 8.00,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "400x multiplier ($2.40 pts/$1); M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $4.00 TP & Trailing."
+    notes: "400x multiplier ($2.40 pts/$1); M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $7.00 TP & Trailing ($5.00 act / $1.50 buffer)."
   }
 };
 
@@ -191,15 +191,15 @@ const TRADING_SYMBOL = SYMBOL;
 const SOFTWARE_SL_USD = -3.60;
 const SERVER_TP_USD = 10.00;
 const CATASTROPHIC_PNL_FLOOR = -5.50;
-const DAILY_PROFIT_TARGET_USD = 10.00;
+const DAILY_PROFIT_TARGET_USD = 7.00;
 const rawAppId = String(process.env.DERIV_APP_ID || process.env.APP_ID || "1089").trim();
 const MARKET_DATA_APP_ID = /^\d+$/.test(rawAppId) ? rawAppId : "1089";
-const TARGET_MIN_PROFIT = PROFILE.minTakeProfitUsd || 4.00;
+const TARGET_MIN_PROFIT = PROFILE.minTakeProfitUsd || 7.00;
 
-// Continuous Dollar Trailing Stop Settings
-const TRAIL_ACTIVATION_USD = PROFILE.trailActivationUsd || 4.00; // Activated once profit reaches +$4.00 net
-const TRAIL_BUFFER_USD = 1.00;     // Trail $1.00 behind peak unrealized profit
-const TRAIL_INITIAL_FLOOR_USD = 0.20; // Initial guaranteed lock at activation (+$0.20 covers commissions)
+// Continuous Dollar Trailing Stop Settings (Option A Calibrated Matrix)
+const TRAIL_ACTIVATION_USD = PROFILE.trailActivationUsd || 5.00; // Activated once profit reaches +$5.00 net
+const TRAIL_BUFFER_USD = 1.50;     // Trail $1.50 behind peak unrealized profit
+const TRAIL_INITIAL_FLOOR_USD = 3.50; // Initial guaranteed lock at activation (+$5.00 peak - $1.50 buffer = +$3.50)
 
 const STOCH_MIDLINE_FALLBACK_SYMBOLS = ["R_50", "R_10"];
 
@@ -826,7 +826,7 @@ async function manageOpenTradesFastPath() {
 
     // =========================================================================
     // 🛡️ CONTINUOUS DOLLAR TRAILING STOP (Ratchet Behind Peak Unrealized Profit)
-    // Activated once profit reaches minimum threshold (+$4.00 net across fleet)
+    // Activated once profit reaches minimum threshold (+$5.00 net across fleet)
     // =========================================================================
     if (pnl >= TRAIL_ACTIVATION_USD) {
       if (!openTrade.maxUnrealizedPnl || pnl > openTrade.maxUnrealizedPnl) {
@@ -901,7 +901,7 @@ async function manageOpenTradesFastPath() {
       if (state.dailyNetPnl >= DAILY_PROFIT_TARGET_USD) {
         state.dailyTargetReached = true;
         state.dailyTargetDate = new Date().toISOString().split("T")[0];
-        console.log(`[DAILY TARGET] +$10.00 Daily Goal Achieved ($${state.dailyNetPnl.toFixed(2)}). Switching to IDLE_DAILY_TARGET_REACHED.`);
+        console.log(`[DAILY TARGET] +$${DAILY_PROFIT_TARGET_USD.toFixed(2)} Daily Goal Achieved ($${state.dailyNetPnl.toFixed(2)}). Switching to IDLE_DAILY_TARGET_REACHED.`);
         await sendTelegram(`🎯 *${REPO_LABEL} — DAILY TARGET ACHIEVED!* 🎯\n\nDaily Net Profit: *+$${state.dailyNetPnl.toFixed(2)}*\nBot is now locked in profit protection until 00:00 UTC rollover.`);
       }
 
@@ -1863,7 +1863,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
     const entry = currentPrice;
 
-    // Calibrated Minimum Take Profit Engine ($4.00 TP Floor Across Fleet)
+    // Calibrated Minimum Take Profit Engine ($7.00 TP Floor Across Fleet)
     let calibratedMinPts = MIN_TP_POINTS_FLOOR;
     const requiredRawPnl = TARGET_MIN_PROFIT + COMMISSION_USD;
     const priceMoveFraction = requiredRawPnl / (STAKE_USD * MULTIPLIER);
@@ -1873,9 +1873,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const minRequiredTp = direction === "BUY" ? Math.max(pointsTpPrice, dollarTpPrice) : Math.min(pointsTpPrice, dollarTpPrice);
 
     if (!fibTpPrice || (direction === "BUY" && minRequiredTp > fibTpPrice)) {
-      fibTpPrice = minRequiredTp; entryType = entryType + " ($4.00 TP Floor)";
+      fibTpPrice = minRequiredTp; entryType = entryType + " ($7.00 TP Floor)";
     } else if (direction === "SELL" && minRequiredTp < fibTpPrice) {
-      fibTpPrice = minRequiredTp; entryType = entryType + " ($4.00 TP Floor)";
+      fibTpPrice = minRequiredTp; entryType = entryType + " ($7.00 TP Floor)";
     }
 
     // Initial Stop Loss Anchor: Previous M15 Institutional Fractal
