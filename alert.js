@@ -1934,7 +1934,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     const pendingTradeRecord = {
       id: `${SYMBOL}-${Date.now()}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, rr: null, entryType, brokerSlAmount: STAKE_USD,
-      entryEpoch: m5BoundaryEpoch, fractalSl: initialM15Fractal, fractalEpoch: null, fractalTimeframe: initialM15Fractal ? "M15" : null, m30FractalUpgraded: false, fibTpPrice,
+      entryEpoch: m5BoundaryEpoch, purchaseTimeEpoch: m5BoundaryEpoch, purchase_time: m5BoundaryEpoch, fractalSl: initialM15Fractal, fractalEpoch: null, fractalTimeframe: initialM15Fractal ? "M15" : null, m30FractalUpgraded: false, fibTpPrice,
       keyLevel: entryKeyLevel,
       openTime: timeFormatted, closeTime: null, result: null
     };
