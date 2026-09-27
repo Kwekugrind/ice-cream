@@ -1239,7 +1239,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           if (t.direction === "BUY") {
             const isBottom = parseFloat(c[k].low) === Math.min(parseFloat(c[k-2].low), parseFloat(c[k-1].low), parseFloat(c[k].low), parseFloat(c[k+1].low), parseFloat(c[k+2].low));
             const frac = parseFloat(c[k].low);
-            if (isBottom && frac > t.sl && frac < t.entry) { 
+            if (isBottom && frac > t.sl) { 
               t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); 
               console.log(`[TRAIL SL] Upgraded BUY SL to M15 Bottom Fractal: ${frac.toFixed(4)}`); 
               break; 
@@ -1247,7 +1247,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           } else if (t.direction === "SELL") {
             const isTop = parseFloat(c[k].high) === Math.max(parseFloat(c[k-2].high), parseFloat(c[k-1].high), parseFloat(c[k].high), parseFloat(c[k+1].high), parseFloat(c[k+2].high));
             const frac = parseFloat(c[k].high);
-            if (isTop && frac < t.sl && frac > t.entry) { 
+            if (isTop && frac < t.sl) { 
               t.sl = frac; t.fractalTimeframe = "M15"; saveTrades(trades); 
               console.log(`[TRAIL SL] Upgraded SELL SL to M15 Top Fractal: ${frac.toFixed(4)}`); 
               break; 
