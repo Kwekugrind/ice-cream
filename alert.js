@@ -1350,13 +1350,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.latchStoch533_BUY = false;
   }
 
-  // De-alignment Protocol: If BUY-latched and candle closes back below 50, disarm immediately
-  if (state.latchStoch533_BUY && sK533 < 50.0) {
+  // De-alignment Protocol: If BUY-latched and candle subsequently closes back below 50, disarm
+  if (state.latchStoch533_BUY && prevK533 >= 50.0 && sK533 < 50.0) {
     state.latchStoch533_BUY = false;
     dbg(`[STOCH 5,3,3 DISARM] Fast Stoch %K (${sK533.toFixed(2)}) closed back below 50. BUY trigger disarmed; awaiting fresh cross > 20.`);
   }
-  // De-alignment Protocol: If SELL-latched and candle closes back above 50, disarm immediately
-  if (state.latchStoch533_SELL && sK533 > 50.0) {
+  // De-alignment Protocol: If SELL-latched and candle subsequently closes back above 50, disarm
+  if (state.latchStoch533_SELL && prevK533 <= 50.0 && sK533 > 50.0) {
     state.latchStoch533_SELL = false;
     dbg(`[STOCH 5,3,3 DISARM] Fast Stoch %K (${sK533.toFixed(2)}) closed back above 50. SELL trigger disarmed; awaiting fresh cross < 80.`);
   }
@@ -1691,9 +1691,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       STRATEGY_PROFILE === "PROFILE_V75_1S_MIDLINE_FRACTAL" || 
       STRATEGY_PROFILE === "PROFILE_V10_MIDLINE_FRACTAL") {
     
-    // Strict Stoch (18,12,25) Level 50 Midline Cross (Current cross OR 8-Hour Lookback)
-    const stoch50CrossUp = (prevK <= 50.0 && sK > 50.0) || checkStochastic8HrLookback(candles, stoch, "BUY", "MIDLINE");
-    const stoch50CrossDown = (prevK >= 50.0 && sK < 50.0) || checkStochastic8HrLookback(candles, stoch, "SELL", "MIDLINE");
+    // Strict Stoch (18,12,25) Level 50 Midline Crossover
+    const stoch50CrossUp = prevK <= 50.0 && sK > 50.0;
+    const stoch50CrossDown = prevK >= 50.0 && sK < 50.0;
 
     if (state.armed) {
       if (state.armed.dir === "BUY" && stoch50CrossUp) {
@@ -1707,8 +1707,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   }
   // 2. VOLATILITY 100 (R_100) MIDLINE & ENVELOPE 200 ENGINE
   else if (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV") {
-    const stoch50CrossUp = (prevK <= 50.0 && sK > 50.0) || checkStochastic8HrLookback(candles, stoch, "BUY", "MIDLINE");
-    const stoch50CrossDown = (prevK >= 50.0 && sK < 50.0) || checkStochastic8HrLookback(candles, stoch, "SELL", "MIDLINE");
+    const stoch50CrossUp = prevK <= 50.0 && sK > 50.0;
+    const stoch50CrossDown = prevK >= 50.0 && sK < 50.0;
     const env200Upper = eUp; // Computed with period 200
     const env200Lower = eLo;
 
@@ -1788,9 +1788,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   }
   // 5. VOLATILITY 50 STOCHASTIC BOUNDARIES (20 / 80) ENGINE
   else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES") {
-    // BUY: Stoch crosses > 20; SELL: Stoch crosses < 80 (Current cross OR 8-Hour Lookback)
-    const stoch20CrossUp = (prevK <= 20.0 && sK > 20.0) || checkStochastic8HrLookback(candles, stoch, "BUY", "BOUNDARIES_20_80");
-    const stoch80CrossDown = (prevK >= 80.0 && sK < 80.0) || checkStochastic8HrLookback(candles, stoch, "SELL", "BOUNDARIES_20_80");
+    // BUY: Stoch crosses > 20; SELL: Stoch crosses < 80
+    const stoch20CrossUp = prevK <= 20.0 && sK > 20.0;
+    const stoch80CrossDown = prevK >= 80.0 && sK < 80.0;
 
     if (state.armed) {
       if (state.armed.dir === "BUY" && stoch20CrossUp) {
