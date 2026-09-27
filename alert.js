@@ -1275,6 +1275,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const cVal = cci[si], prevCci = cci[si - 1];
   const eUp = env.upper[si], eLo = env.lower[si];
   const sK = stoch.k[si], sD = stoch.d[si], prevK = stoch.k[si - 1], prevD = stoch.d[si - 1];
+  const prevPrevK = (si >= 2 && stoch.k[si - 2] !== null) ? stoch.k[si - 2] : prevK;
   const sK533 = stoch533.k[si], prevK533 = stoch533.k[si - 1];
 
   if (sK === null || sD === null || prevK === null || prevD === null) return;
@@ -1522,13 +1523,6 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     if (crossed || touched) {
       newArm = resolveFibSetup(item.lvl, m15Close);
-
-      // 30-Minute Execution Latch: Prevent re-arming duplicate setup
-      if (newArm && state.lastTriggeredSetup === newArm.lbl && (m5BoundaryEpoch - (state.lastTriggeredEpoch || 0)) < 1800) {
-        dbg(`[COOLDOWN LATCH] Setup ${newArm.lbl} executed within 30 mins. Suppressing duplicate re-arm.`);
-        newArm = null;
-      }
-
       if (newArm) break;
     }
   }
@@ -1597,12 +1591,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             const upperLvl = sortedValid[i + 1];
             if (m15Close >= lowerLvl && m15Close < upperLvl) {
               // Price is inside corridor [lowerLvl, upperLvl]
-              // Check M15 direction/momentum: if bullish bar moving up -> BUY from lowerLvl; if bearish -> SELL from upperLvl
-              const isBullishBar = currM15.close >= currM15.open;
-              const anchorLvl = isBullishBar ? lowerLvl : upperLvl;
+              // If Stochastic is aligned BUY or candle is bullish, arm BUY from lowerLvl to upperLvl
+              const stochBuy = state.stochAligned === "BUY" || (sK !== null && sK >= 50.0);
+              const anchorLvl = stochBuy ? lowerLvl : (currM15.close >= currM15.open ? lowerLvl : upperLvl);
               const candidate = resolveFibSetup(anchorLvl, m15Close);
               if (candidate) {
-                dbg(`[CORRIDOR RESOLUTION] Price (${m15Close.toFixed(2)}) in [${lowerLvl.toFixed(2)}, ${upperLvl.toFixed(2)}], M15 ${isBullishBar ? "BULL" : "BEAR"}. Arming: ${candidate.lbl}`);
+                dbg(`[CORRIDOR RESOLUTION] Price (${m15Close.toFixed(2)}) in [${lowerLvl.toFixed(2)}, ${upperLvl.toFixed(2)}]. Arming: ${candidate.lbl}`);
                 newArm = candidate;
                 break;
               }
@@ -1691,9 +1685,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       STRATEGY_PROFILE === "PROFILE_V75_1S_MIDLINE_FRACTAL" || 
       STRATEGY_PROFILE === "PROFILE_V10_MIDLINE_FRACTAL") {
     
-    // Strict Stoch (18,12,25) Level 50 Midline Crossover
-    const stoch50CrossUp = prevK <= 50.0 && sK > 50.0;
-    const stoch50CrossDown = prevK >= 50.0 && sK < 50.0;
+    // Stoch (18,12,25) Level 50 Midline Alignment
+    const stoch50CrossUp = (prevK <= 50.0 && sK > 50.0) || (sK !== null && sK >= 50.0);
+    const stoch50CrossDown = (prevK >= 50.0 && sK < 50.0) || (sK !== null && sK <= 50.0);
 
     if (state.armed) {
       if (state.armed.dir === "BUY" && stoch50CrossUp) {
@@ -1707,8 +1701,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   }
   // 2. VOLATILITY 100 (R_100) MIDLINE & ENVELOPE 200 ENGINE
   else if (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV") {
-    const stoch50CrossUp = prevK <= 50.0 && sK > 50.0;
-    const stoch50CrossDown = prevK >= 50.0 && sK < 50.0;
+    const stoch50CrossUp = (prevK <= 50.0 && sK > 50.0) || (sK !== null && sK >= 50.0);
+    const stoch50CrossDown = (prevK >= 50.0 && sK < 50.0) || (sK !== null && sK <= 50.0);
     const env200Upper = eUp; // Computed with period 200
     const env200Lower = eLo;
 
@@ -1737,14 +1731,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.v100_1s_armed = buyStateArmed || sellStateArmed;
     state.v100_1s_armDir = buyStateArmed ? "BUY" : (sellStateArmed ? "SELL" : null);
 
-    // Stage 2: Execution Trigger (Fast M5 Stoch 5,3,3 with 50 De-alignment)
-    const stoch533BuyCross = prevK533 <= 20.0 && sK533 > 20.0;
-    const stoch533SellCross = prevK533 >= 80.0 && sK533 < 80.0;
+    // Stage 2: Fast M5 Stoch (5,3,3) Execution Trigger
+    const stoch533BuyActive = sK533 !== null && sK533 >= 20.0 && sK533 <= 95.0;
+    const stoch533SellActive = sK533 !== null && sK533 <= 80.0 && sK533 >= 5.0;
 
-    if (buyStateArmed && (stoch533BuyCross || state.latchStoch533_BUY)) {
+    if (buyStateArmed && stoch533BuyActive) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
-    } else if (sellStateArmed && (stoch533SellCross || state.latchStoch533_SELL)) {
+    } else if (sellStateArmed && stoch533SellActive) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
     }
@@ -1788,9 +1782,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   }
   // 5. VOLATILITY 50 STOCHASTIC BOUNDARIES (20 / 80) ENGINE
   else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES") {
-    // BUY: Stoch crosses > 20; SELL: Stoch crosses < 80
-    const stoch20CrossUp = prevK <= 20.0 && sK > 20.0;
-    const stoch80CrossDown = prevK >= 80.0 && sK < 80.0;
+    // BUY: Stoch > 20; SELL: Stoch < 80
+    const stoch20CrossUp = (prevK <= 20.0 && sK > 20.0) || (sK !== null && sK >= 20.0);
+    const stoch80CrossDown = (prevK >= 80.0 && sK < 80.0) || (sK !== null && sK <= 80.0);
 
     if (state.armed) {
       if (state.armed.dir === "BUY" && stoch20CrossUp) {
@@ -1829,26 +1823,19 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   let entryKeyLevel = state.armed?.lvl || null;
 
   if (indicatorsSatisfied && direction) {
-    const isPriceValid = (direction === "BUY" && (entryKeyLevel === null || currentPrice >= entryKeyLevel)) ||
-                         (direction === "SELL" && (entryKeyLevel === null || currentPrice <= entryKeyLevel));
-
-    if (isPriceValid) {
-      signalTriggered = true;
-      state.lastTriggeredSetup = entryType;
-      state.lastTriggeredEpoch = m5BoundaryEpoch;
-      state.v100_1s_armed = false;
-      state.v100_1s_armDir = null;
-      state.latchStoch533_BUY = false;
-      state.latchStoch533_SELL = false;
-      state.latchFib_BUY = false;
-      state.latchFib_SELL = false;
-      state.latchCci_BUY = false;
-      state.latchCci_SELL = false;
-      state.latchStoch_BUY = false;
-      state.latchStoch_SELL = false;
-    } else {
-      dbg(`[PENDING PRICE CONFIRMATION] Price ${currentPrice} is waiting to cross level ${entryKeyLevel} for ${direction}. Maintaining armed state.`);
-    }
+    signalTriggered = true;
+    state.lastTriggeredSetup = entryType;
+    state.lastTriggeredEpoch = m5BoundaryEpoch;
+    state.v100_1s_armed = false;
+    state.v100_1s_armDir = null;
+    state.latchStoch533_BUY = false;
+    state.latchStoch533_SELL = false;
+    state.latchFib_BUY = false;
+    state.latchFib_SELL = false;
+    state.latchCci_BUY = false;
+    state.latchCci_SELL = false;
+    state.latchStoch_BUY = false;
+    state.latchStoch_SELL = false;
   }
 
   if (signalTriggered) {
@@ -2043,8 +2030,8 @@ export async function startContinuousEngine() {
       isScanning = false;
     }
 
-    // Adaptive Risk Pulse: 2 seconds when managing an active live trade, 10 seconds when idle
-    await sleep(hasOpenTrade ? 2000 : 10000);
+    // Adaptive Risk Pulse: 2 seconds when managing an active live trade, 3 seconds when idle
+    await sleep(hasOpenTrade ? 2000 : 3000);
   }
 }
 
