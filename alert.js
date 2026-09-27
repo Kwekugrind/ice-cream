@@ -1201,18 +1201,18 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   for (const t of openTrades) {
     if (closingContracts.has(t.contractId)) continue;
 
-    // Fractal SL Market Structure Break (Evaluated strictly on Candle Close)
-    const m5ClosePrice = currentPrice;
-    if (t.sl) {
+    // Fractal SL Market Structure Break (Evaluated strictly on M15 Candle Close)
+    const isM15CloseBoundary = m5BoundaryEpoch % 900 === 0;
+    if (t.sl && isM15CloseBoundary) {
       const isBuy = t.direction === "BUY";
-      const structureBroken = isBuy ? m5ClosePrice < t.sl : m5ClosePrice > t.sl;
+      const structureBroken = isBuy ? m15Close < t.sl : m15Close > t.sl;
       if (structureBroken) {
         closingContracts.add(t.contractId);
-        console.log(`[STRUCTURE] M5 candle closed at ${m5ClosePrice.toFixed(4)} breaking ${t.fractalTimeframe || "M15"} fractal SL ${t.sl.toFixed(4)}. Exiting.`);
+        console.log(`[STRUCTURE] M15 candle closed at ${m15Close.toFixed(4)} breaking ${t.fractalTimeframe || "M15"} fractal SL ${t.sl.toFixed(4)}. Exiting.`);
         try {
           await closeContract(t.contractId);
           const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
-          const pnl = calcUnrealizedPnL(t, m5ClosePrice);
+          const pnl = calcUnrealizedPnL(t, m15Close);
           t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
           t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
           t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
@@ -1222,7 +1222,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           saveState();
           const icon = t.result === "WIN" ? "✅" : "❌";
           const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
-          await sendTelegram(`${icon} *${REPO_LABEL} — ${t.fractalTimeframe || "M15"} Structure Break*\n\nM5 Candle closed at *${m5ClosePrice.toFixed(4)}* breaking fractal SL *${t.sl.toFixed(4)}*.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+          await sendTelegram(`${icon} *${REPO_LABEL} — ${t.fractalTimeframe || "M15"} Structure Break*\n\nM15 Candle closed at *${m15Close.toFixed(4)}* breaking fractal SL *${t.sl.toFixed(4)}*.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
         } catch (e) {
           console.error(`[STRUCTURE] Failed to close contract ${t.contractId}:`, e.message);
         }
@@ -1782,9 +1782,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   }
   // 5. VOLATILITY 50 STOCHASTIC BOUNDARIES (20 / 80) ENGINE
   else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES") {
-    // BUY: Stoch > 20; SELL: Stoch < 80
-    const stoch20CrossUp = (prevK <= 20.0 && sK > 20.0) || (sK !== null && sK >= 20.0);
-    const stoch80CrossDown = (prevK >= 80.0 && sK < 80.0) || (sK !== null && sK <= 80.0);
+    // BUY: Stoch fresh cross > 20; SELL: Stoch fresh cross < 80
+    const stoch20CrossUp = (prevK <= 20.0 && sK > 20.0) || (prevPrevK <= 20.0 && prevK > 20.0 && sK > 20.0);
+    const stoch80CrossDown = (prevK >= 80.0 && sK < 80.0) || (prevPrevK >= 80.0 && prevK < 80.0 && sK < 80.0);
 
     if (state.armed) {
       if (state.armed.dir === "BUY" && stoch20CrossUp) {
