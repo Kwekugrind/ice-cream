@@ -43,11 +43,11 @@ export const INSTRUMENT_PROFILES = {
     stochParams: { k: 18, d: 12, slowing: 25 },
     minTakeProfitPoints: 1330.0,
     minTakeProfitUsd: 7.00,
-    trailActivationUsd: 5.00,
+    trailActivationUsd: 3.00,
     maxHardStopPoints: 180.0,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "V75 Heavyweight; M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $7.00 TP & Trailing ($5.00 act / $1.50 buffer)."
+    notes: "V75 Heavyweight; M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $7.00 TP & Trailing ($3.00 act / $1.50 buffer)."
   },
   "1HZ75V": {
     symbol: "1HZ75V",
@@ -62,11 +62,11 @@ export const INSTRUMENT_PROFILES = {
     stochParams: { k: 18, d: 12, slowing: 25 },
     minTakeProfitPoints: 8.89,
     minTakeProfitUsd: 7.00,
-    trailActivationUsd: 5.00,
+    trailActivationUsd: 3.00,
     maxHardStopPoints: 18.0,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "1s tick speed; 100x multiplier; M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $7.00 TP & Trailing ($5.00 act / $1.50 buffer)."
+    notes: "1s tick speed; 100x multiplier; M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $7.00 TP & Trailing ($3.00 act / $1.50 buffer)."
   },
   "R_100": {
     symbol: "R_100",
@@ -82,11 +82,11 @@ export const INSTRUMENT_PROFILES = {
     envParams: { period: 200, devPct: 0.05 }, // Mandatory Envelope 200 breakout trend filter
     minTakeProfitPoints: 18.70,
     minTakeProfitUsd: 7.00,
-    trailActivationUsd: 5.00,
+    trailActivationUsd: 3.00,
     maxHardStopPoints: 3.00,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "40x multiplier; M15 Fib + M5 Stoch 50 Midline Cross + Envelope 200 breakout filter + Previous M15 Fractal SL + $7.00 TP & Trailing ($5.00 act / $1.50 buffer)."
+    notes: "40x multiplier; M15 Fib + M5 Stoch 50 Midline Cross + Envelope 200 breakout filter + Previous M15 Fractal SL + $7.00 TP & Trailing ($3.00 act / $1.50 buffer)."
   },
   "1HZ100V": {
     symbol: "1HZ100V",
@@ -102,11 +102,11 @@ export const INSTRUMENT_PROFILES = {
     emaPeriod: 100, // M5 EMA 100
     minTakeProfitPoints: 30.80,
     minTakeProfitUsd: 7.00,
-    trailActivationUsd: 5.00,
+    trailActivationUsd: 3.00,
     maxHardStopPoints: 5.50,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "Two-stage state machine: Stage 1: M15 Fib + M5 EMA 100 direction arming lock; Stage 2: Fast Stoch (5,3,3) 20/80 cross trigger + Previous M15 Fractal SL + $7.00 TP ($5.00 act / $1.50 buffer)."
+    notes: "Two-stage state machine: Stage 1: M15 Fib + M5 EMA 100 direction arming lock; Stage 2: Fast Stoch (5,3,3) 20/80 cross trigger + Previous M15 Fractal SL + $7.00 TP ($3.00 act / $1.50 buffer)."
   },
   "R_25": {
     symbol: "R_25",
@@ -122,11 +122,11 @@ export const INSTRUMENT_PROFILES = {
     cciPeriod: 100,
     minTakeProfitPoints: 9.66,
     minTakeProfitUsd: 7.00,
-    trailActivationUsd: 5.00,
+    trailActivationUsd: 3.00,
     maxHardStopPoints: 18.00,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "400x multiplier ($1.38 pts/$1); Out-of-order independent 3-condition latching (M15 Fib + M5 CCI 100 + M5 Stoch 18,12,25) + Previous M15 Fractal SL + $7.00 TP & Trailing ($5.00 act / $1.50 buffer)."
+    notes: "400x multiplier ($1.38 pts/$1); Out-of-order independent 3-condition latching (M15 Fib + M5 CCI 100 + M5 Stoch 18,12,25) + Previous M15 Fractal SL + $7.00 TP & Trailing ($3.00 act / $1.50 buffer)."
   },
   "R_50": {
     symbol: "R_50",
@@ -141,11 +141,11 @@ export const INSTRUMENT_PROFILES = {
     stochParams: { k: 18, d: 12, slowing: 25 },
     minTakeProfitPoints: 1.63,
     minTakeProfitUsd: 7.00,
-    trailActivationUsd: 5.00,
+    trailActivationUsd: 3.00,
     maxHardStopPoints: 0.20,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "80x multiplier; M15 Fib + M5 Stoch (18,12,25) 20/80 boundary cross + Previous M15 Fractal SL + $7.00 TP & Trailing ($5.00 act / $1.50 buffer)."
+    notes: "80x multiplier; M15 Fib + M5 Stoch (18,12,25) 20/80 boundary cross + Previous M15 Fractal SL + $7.00 TP & Trailing ($3.00 act / $1.50 buffer)."
   },
   "R_10": {
     symbol: "R_10",
@@ -160,11 +160,11 @@ export const INSTRUMENT_PROFILES = {
     stochParams: { k: 18, d: 12, slowing: 25 },
     minTakeProfitPoints: 16.80,
     minTakeProfitUsd: 7.00,
-    trailActivationUsd: 5.00,
+    trailActivationUsd: 3.00,
     maxHardStopPoints: 8.00,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "400x multiplier ($2.40 pts/$1); M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $7.00 TP & Trailing ($5.00 act / $1.50 buffer)."
+    notes: "400x multiplier ($2.40 pts/$1); M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $7.00 TP & Trailing ($3.00 act / $1.50 buffer)."
   }
 };
 
@@ -196,10 +196,10 @@ const rawAppId = String(process.env.DERIV_APP_ID || process.env.APP_ID || "1089"
 const MARKET_DATA_APP_ID = /^\d+$/.test(rawAppId) ? rawAppId : "1089";
 const TARGET_MIN_PROFIT = PROFILE.minTakeProfitUsd || 7.00;
 
-// Continuous Dollar Trailing Stop Settings (Option A Calibrated Matrix)
-const TRAIL_ACTIVATION_USD = PROFILE.trailActivationUsd || 5.00; // Activated once profit reaches +$5.00 net
+// Continuous Dollar Trailing Stop Settings (High Activation + Wide Buffer Calibration)
+const TRAIL_ACTIVATION_USD = PROFILE.trailActivationUsd || 3.00; // Activated once profit reaches +$3.00 net
 const TRAIL_BUFFER_USD = 1.50;     // Trail $1.50 behind peak unrealized profit
-const TRAIL_INITIAL_FLOOR_USD = 3.50; // Initial guaranteed lock at activation (+$5.00 peak - $1.50 buffer = +$3.50)
+const TRAIL_INITIAL_FLOOR_USD = 1.50; // Initial guaranteed lock at activation (+$3.00 peak - $1.50 buffer = +$1.50)
 
 const STOCH_MIDLINE_FALLBACK_SYMBOLS = ["R_50", "R_10"];
 
