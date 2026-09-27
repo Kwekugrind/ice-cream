@@ -188,7 +188,7 @@ const STRATEGY_PROFILE = PROFILE.strategyProfile;
 
 const TRADING_SYMBOL = SYMBOL;
 
-const SOFTWARE_SL_USD = -3.60;
+const SOFTWARE_SL_USD = -2.50;
 const SERVER_TP_USD = 10.00;
 const CATASTROPHIC_PNL_FLOOR = -5.50;
 const DAILY_PROFIT_TARGET_USD = 7.00;
@@ -2043,8 +2043,8 @@ export async function startContinuousEngine() {
       isScanning = false;
     }
 
-    // Adaptive Risk Pulse: 3 seconds when managing an active live trade, 10 seconds when idle
-    await sleep(hasOpenTrade ? 3000 : 10000);
+    // Adaptive Risk Pulse: 2 seconds when managing an active live trade, 10 seconds when idle
+    await sleep(hasOpenTrade ? 2000 : 10000);
   }
 }
 
