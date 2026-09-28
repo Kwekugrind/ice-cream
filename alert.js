@@ -1856,7 +1856,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
     const entry = currentPrice;
 
-    // Calibrated Minimum Take Profit Engine ($7.00 TP Floor Across Fleet)
+    // Calibrated Minimum Take Profit Engine ($4.00 TP Floor Across Fleet)
     let calibratedMinPts = MIN_TP_POINTS_FLOOR;
     const requiredRawPnl = TARGET_MIN_PROFIT + COMMISSION_USD;
     const priceMoveFraction = requiredRawPnl / (STAKE_USD * MULTIPLIER);
@@ -1866,9 +1866,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const minRequiredTp = direction === "BUY" ? Math.max(pointsTpPrice, dollarTpPrice) : Math.min(pointsTpPrice, dollarTpPrice);
 
     if (!fibTpPrice || (direction === "BUY" && minRequiredTp > fibTpPrice)) {
-      fibTpPrice = minRequiredTp; entryType = entryType + " ($7.00 TP Floor)";
+      fibTpPrice = minRequiredTp; entryType = entryType + " ($4.00 TP Floor)";
     } else if (direction === "SELL" && minRequiredTp < fibTpPrice) {
-      fibTpPrice = minRequiredTp; entryType = entryType + " ($7.00 TP Floor)";
+      fibTpPrice = minRequiredTp; entryType = entryType + " ($4.00 TP Floor)";
     }
 
     // Initial Stop Loss Anchor: Previous M15 Institutional Fractal
