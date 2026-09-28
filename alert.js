@@ -42,12 +42,12 @@ export const INSTRUMENT_PROFILES = {
     gateType: "STOCH_50_MIDLINE",
     stochParams: { k: 18, d: 12, slowing: 25 },
     minTakeProfitPoints: 1330.0,
-    minTakeProfitUsd: 7.00,
+    minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 180.0,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "V75 Heavyweight; M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $7.00 TP & Trailing ($3.00 act / $1.50 buffer)."
+    notes: "V75 Heavyweight; M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $4.00 TP & Trailing ($3.00 act / $1.50 buffer)."
   },
   "1HZ75V": {
     symbol: "1HZ75V",
@@ -61,12 +61,12 @@ export const INSTRUMENT_PROFILES = {
     gateType: "STOCH_50_MIDLINE",
     stochParams: { k: 18, d: 12, slowing: 25 },
     minTakeProfitPoints: 8.89,
-    minTakeProfitUsd: 7.00,
+    minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 18.0,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "1s tick speed; 100x multiplier; M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $7.00 TP & Trailing ($3.00 act / $1.50 buffer)."
+    notes: "1s tick speed; 100x multiplier; M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $4.00 TP & Trailing ($3.00 act / $1.50 buffer)."
   },
   "R_100": {
     symbol: "R_100",
@@ -81,12 +81,12 @@ export const INSTRUMENT_PROFILES = {
     stochParams: { k: 18, d: 12, slowing: 25 },
     envParams: { period: 200, devPct: 0.05 }, // Mandatory Envelope 200 breakout trend filter
     minTakeProfitPoints: 18.70,
-    minTakeProfitUsd: 7.00,
+    minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 3.00,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "40x multiplier; M15 Fib + M5 Stoch 50 Midline Cross + Envelope 200 breakout filter + Previous M15 Fractal SL + $7.00 TP & Trailing ($3.00 act / $1.50 buffer)."
+    notes: "40x multiplier; M15 Fib + M5 Stoch 50 Midline Cross + Envelope 200 breakout filter + Previous M15 Fractal SL + $4.00 TP & Trailing ($3.00 act / $1.50 buffer)."
   },
   "1HZ100V": {
     symbol: "1HZ100V",
@@ -101,12 +101,12 @@ export const INSTRUMENT_PROFILES = {
     stochParams: { k: 5, d: 3, slowing: 3 }, // Fast M5 Stoch (5,3,3)
     emaPeriod: 100, // M5 EMA 100
     minTakeProfitPoints: 30.80,
-    minTakeProfitUsd: 7.00,
+    minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 5.50,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "Two-stage state machine: Stage 1: M15 Fib + M5 EMA 100 direction arming lock; Stage 2: Fast Stoch (5,3,3) 20/80 cross trigger + Previous M15 Fractal SL + $7.00 TP ($3.00 act / $1.50 buffer)."
+    notes: "Two-stage state machine: Stage 1: M15 Fib + M5 EMA 100 direction arming lock; Stage 2: Fast Stoch (5,3,3) 20/80 cross trigger + Previous M15 Fractal SL + $4.00 TP ($3.00 act / $1.50 buffer)."
   },
   "R_25": {
     symbol: "R_25",
@@ -116,17 +116,18 @@ export const INSTRUMENT_PROFILES = {
     multiplier: 400,
     stakeUsd: 5.0,
     commissionUsd: 0.32,
-    strategyProfile: "PROFILE_V25_ASYNC_3WAY",
-    gateType: "ASYNC_3WAY_LATCH",
-    stochParams: { k: 18, d: 12, slowing: 25 },
-    cciPeriod: 100,
-    minTakeProfitPoints: 9.66,
-    minTakeProfitUsd: 7.00,
+    strategyProfile: "PROFILE_V25_EMA_STOCH15",
+    gateType: "EMA_STOCH15_CROSS",
+    stochParams: { k: 15, d: 5, slowing: 8 },
+    emaFastPeriod: 100,
+    emaSlowPeriod: 200,
+    minTakeProfitPoints: 5.52,
+    minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 18.00,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "400x multiplier ($1.38 pts/$1); Out-of-order independent 3-condition latching (M15 Fib + M5 CCI 100 + M5 Stoch 18,12,25) + Previous M15 Fractal SL + $7.00 TP & Trailing ($3.00 act / $1.50 buffer)."
+    notes: "400x multiplier ($1.38 pts/$1); M15 Fib Key Level + M5 EMA 100/200 trend alignment + M5 Stoch (15,5,8) Level 50 cross trigger + M15 Fractal / $2.50 SL + M5 EMA 100 & 200 combined close exit."
   },
   "R_50": {
     symbol: "R_50",
@@ -140,12 +141,12 @@ export const INSTRUMENT_PROFILES = {
     gateType: "STOCH_BOUNDARIES_20_80",
     stochParams: { k: 18, d: 12, slowing: 25 },
     minTakeProfitPoints: 1.63,
-    minTakeProfitUsd: 7.00,
+    minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 0.20,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "80x multiplier; M15 Fib + M5 Stoch (18,12,25) 20/80 boundary cross + Previous M15 Fractal SL + $7.00 TP & Trailing ($3.00 act / $1.50 buffer)."
+    notes: "80x multiplier; M15 Fib + M5 Stoch (18,12,25) 20/80 boundary cross + Previous M15 Fractal SL + $4.00 TP & Trailing ($3.00 act / $1.50 buffer)."
   },
   "R_10": {
     symbol: "R_10",
@@ -159,12 +160,12 @@ export const INSTRUMENT_PROFILES = {
     gateType: "STOCH_50_MIDLINE",
     stochParams: { k: 18, d: 12, slowing: 25 },
     minTakeProfitPoints: 16.80,
-    minTakeProfitUsd: 7.00,
+    minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 8.00,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "400x multiplier ($2.40 pts/$1); M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $7.00 TP & Trailing ($3.00 act / $1.50 buffer)."
+    notes: "400x multiplier ($2.40 pts/$1); M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $4.00 TP & Trailing ($3.00 act / $1.50 buffer)."
   }
 };
 
@@ -1233,6 +1234,43 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
 
+    // Active Trade M5 EMA 100 & EMA 200 Combined Opposite Close Exit (PROFILE_V25_EMA_STOCH15)
+    if (STRATEGY_PROFILE === "PROFILE_V25_EMA_STOCH15") {
+      const ema100Arr = calculateEMA(candles, 100);
+      const ema200Arr = calculateEMA(candles, 200);
+      const cEma100 = ema100Arr[si];
+      const cEma200 = ema200Arr[si];
+      if (cEma100 !== null && cEma200 !== null) {
+        const isBuy = t.direction === "BUY";
+        const combinedEmaExit = isBuy
+          ? (currentPrice < cEma100 && currentPrice < cEma200)
+          : (currentPrice > cEma100 && currentPrice > cEma200);
+        if (combinedEmaExit) {
+          closingContracts.add(t.contractId);
+          console.log(`[EMA EXIT] M5 candle closed at ${currentPrice.toFixed(4)} opposite both M5 EMA 100 (${cEma100.toFixed(4)}) and EMA 200 (${cEma200.toFixed(4)}). Exiting.`);
+          try {
+            await closeContract(t.contractId);
+            const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
+            const pnl = calcUnrealizedPnL(t, currentPrice);
+            t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
+            t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
+            t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
+            t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+            state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+            saveTrades(trades);
+            saveState();
+            const icon = t.result === "WIN" ? "✅" : "❌";
+            const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
+            await sendTelegram(`${icon} *${REPO_LABEL} — M5 EMA 100/200 Exit*\n\nM5 Candle closed at *${currentPrice.toFixed(4)}* opposite both EMA 100 (${cEma100.toFixed(4)}) and EMA 200 (${cEma200.toFixed(4)}).\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+          } catch (e) {
+            console.error(`[EMA EXIT] Failed to close contract ${t.contractId}:`, e.message);
+          }
+          closingContracts.delete(t.contractId);
+          continue;
+        }
+      }
+    }
+
     // Upgrade M15 Fractal SL if new favorable M15 structure forms
     if (m15Candles.length >= 5) {
       for (let k = 2; k <= m15Candles.length - 4; k++) {
@@ -1267,9 +1305,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const envParams = PROFILE.envParams || { period: 50, devPct: 0.05 };
   const env = calculateEnvelopes(candles, envParams.period, envParams.devPct);
 
-  // EMA 100 for V100 (1s) Two-Stage State Arming
+  // EMA 100 & EMA 200 for Trend Filters & Active Exits
   const ema100 = calculateEMA(candles, 100);
+  const ema200 = calculateEMA(candles, 200);
   const currentEma100 = ema100[si];
+  const currentEma200 = ema200[si];
 
   // Secondary Fast Stoch (5,3,3) for V100 (1s)
   const stoch533 = calculateStoch(candles, 5, 3, 3);
@@ -1290,6 +1330,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   state.envUpper = eUp;
   state.envLower = eLo;
   state.ema100Val = currentEma100;
+  state.ema200Val = currentEma200;
   state.stoch533Val = sK533;
 
   // Stoch 50 cross & status (Current cross OR 8-Hour Rolling Lookback OR Position Relative to 50)
@@ -1748,41 +1789,32 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       signalDirection = "SELL";
     }
   }
-  // 4. VOLATILITY 25 OUT-OF-ORDER 3-WAY INDEPENDENT LATCHING ENGINE
-  else if (STRATEGY_PROFILE === "PROFILE_V25_ASYNC_3WAY") {
-    // Condition 1: M15 Key Level Interaction
+  // 4. VOLATILITY 25 (R_25) M5 EMA 100/200 TREND & M5 STOCH (15,5,8) LEVEL 50 ENGINE
+  else if (STRATEGY_PROFILE === "PROFILE_V25_EMA_STOCH15") {
+    // Condition 1: M15 Fib Key Level armed (state.armed)
+    // Condition 2: M5 EMA 100 vs M5 EMA 200 trend alignment (BUY: EMA 100 > EMA 200; SELL: EMA 100 < EMA 200)
+    const ema100Above200 = currentEma100 !== null && currentEma200 !== null && currentEma100 > currentEma200;
+    const ema100Below200 = currentEma100 !== null && currentEma200 !== null && currentEma100 < currentEma200;
+
+    // Condition 3: Price vs M5 EMA 100 (BUY: Price > EMA 100; SELL: Price < EMA 100)
+    const priceAboveEma100 = currentEma100 !== null && currentPrice > currentEma100;
+    const priceBelowEma100 = currentEma100 !== null && currentPrice < currentEma100;
+
+    // Condition 4: M5 Stoch (15,5,8) Level 50 Cross Trigger (%K fresh cross Level 50 up for BUY, down for SELL)
+    const isInitialArmBar = state.armedEpoch === m5BoundaryEpoch;
+    const stoch15BuyCross = (prevK <= 50.0 && sK > 50.0) || (isInitialArmBar && sK !== null && sK >= 50.0);
+    const stoch15SellCross = (prevK >= 50.0 && sK < 50.0) || (isInitialArmBar && sK !== null && sK <= 50.0);
+
     if (state.armed) {
-      if (state.armed.dir === "BUY") state.latchFib_BUY = true;
-      if (state.armed.dir === "SELL") state.latchFib_SELL = true;
-    }
-
-    // Condition 2: M5 CCI 100 Crossing (-100 / +100)
-    if (cVal !== null && prevCci !== null) {
-      if (prevCci <= -100.0 && cVal > -100.0) state.latchCci_BUY = true;
-      if (prevCci >= 100.0 && cVal < 100.0) state.latchCci_SELL = true;
-      // Selective Reset: if CCI re-crosses back into adverse territory
-      if (cVal < -100.0) state.latchCci_BUY = false;
-      if (cVal > 100.0) state.latchCci_SELL = false;
-    }
-
-    // Condition 3: M5 Stochastic (18,12,25) Crossing (20 / 80 Boundaries)
-    const stochBuyCross = (prevK <= 20.0 && sK > 20.0) || (prevK <= prevD && sK > sD && sK <= 20.0);
-    const stochSellCross = (prevK >= 80.0 && sK < 80.0) || (prevK >= prevD && sK < sD && sK >= 80.0);
-    if (stochBuyCross) state.latchStoch_BUY = true;
-    if (stochSellCross) state.latchStoch_SELL = true;
-    // Selective Reset: if Stoch crosses adversely
-    if (sK > 80.0) state.latchStoch_BUY = false;
-    if (sK < 20.0) state.latchStoch_SELL = false;
-
-    // Confluence: All 3 latches aligned
-    if (state.latchFib_BUY && state.latchCci_BUY && state.latchStoch_BUY) {
-      indicatorsSatisfied = true;
-      signalDirection = "BUY";
-      setupLabel = "V25_ASYNC_3WAY (REV_BUY)";
-    } else if (state.latchFib_SELL && state.latchCci_SELL && state.latchStoch_SELL) {
-      indicatorsSatisfied = true;
-      signalDirection = "SELL";
-      setupLabel = "V25_ASYNC_3WAY (REV_SELL)";
+      if (state.armed.dir === "BUY" && ema100Above200 && priceAboveEma100 && stoch15BuyCross) {
+        indicatorsSatisfied = true;
+        signalDirection = "BUY";
+        setupLabel = "V25_EMA_STOCH15 (BUY)";
+      } else if (state.armed.dir === "SELL" && ema100Below200 && priceBelowEma100 && stoch15SellCross) {
+        indicatorsSatisfied = true;
+        signalDirection = "SELL";
+        setupLabel = "V25_EMA_STOCH15 (SELL)";
+      }
     }
   }
   // 5. VOLATILITY 50 STOCHASTIC BOUNDARIES (20 / 80) ENGINE
@@ -1897,10 +1929,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     } else if (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV") {
       confluenceLines += `• M5 Stoch (18,12,25): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 Midline Cross" : "<50 Midline Cross"} [ALIGNED])\n` +
                          `• Envelope 200 (0.05%): *${direction === "BUY" ? "Price > Upper (" + eUp.toFixed(4) + ")" : "Price < Lower (" + eLo.toFixed(4) + ")"}* [BREAKOUT]\n`;
-    } else if (STRATEGY_PROFILE === "PROFILE_V25_ASYNC_3WAY") {
-      confluenceLines += `• M5 CCI (100): *${cVal !== null ? cVal.toFixed(1) : "N/A"}* (${direction === "BUY" ? ">-100 Latch" : "<+100 Latch"} [ACTIVE])\n` +
-                         `• M5 Stoch (18,12,25): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">20 Boundary Latch" : "<80 Boundary Latch"} [ACTIVE])\n` +
-                         `• 3-Way Async State: *[FIB + CCI + STOCH LATCHED]*\n`;
+    } else if (STRATEGY_PROFILE === "PROFILE_V25_EMA_STOCH15") {
+      confluenceLines += `• M5 EMA 100/200: *${currentEma100 ? currentEma100.toFixed(2) : "N/A"} / ${currentEma200 ? currentEma200.toFixed(2) : "N/A"}* (${direction === "BUY" ? "EMA 100 > EMA 200 & Price > EMA 100" : "EMA 100 < EMA 200 & Price < EMA 100"} [ALIGNED])\n` +
+                         `• M5 Stoch (15,5,8): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 Midline Cross" : "<50 Midline Cross"} [TRIGGERED])\n` +
+                         `• M15 Key Fib Level: *${entryKeyLevel ? entryKeyLevel.toFixed(4) : "N/A"}* [CLOSE-SIDE QUALIFIED]\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES") {
       confluenceLines += `• M5 Stoch (18,12,25): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">20 Oversold Boundary Cross" : "<80 Overbought Boundary Cross"} [TRIGGERED])\n` +
                          `• M15 Key Fib Level: *${entryKeyLevel ? entryKeyLevel.toFixed(4) : "N/A"}* (Excludes 50% Rebound)\n`;
