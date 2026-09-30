@@ -106,7 +106,7 @@ export const INSTRUMENT_PROFILES = {
     maxHardStopPoints: 5.50,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "Two-stage state machine: Stage 1: M15 Fib + M5 EMA 100 direction arming lock; Stage 2: Fast Stoch (5,3,3) 20/80 cross trigger + Previous M15 Fractal SL + $4.00 TP ($3.00 act / $1.50 buffer)."
+    notes: "Two-stage state machine: Stage 1: M5 EMA 100 direction arming lock (Fib key level entry bypassed); Stage 2: Fast Stoch (5,3,3) 20/80 cross trigger + M15 Fib levels for TP target + Fast Stoch 50 adverse cross / EMA 100 early exit + Previous M15 Fractal SL + $4.00 TP ($3.00 act / $1.50 buffer)."
   },
   "R_25": {
     symbol: "R_25",
@@ -127,7 +127,7 @@ export const INSTRUMENT_PROFILES = {
     maxHardStopPoints: 18.00,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "400x multiplier ($1.38 pts/$1); M15 Fib Key Level + M5 EMA 100/200 trend alignment + M5 Stoch (15,5,8) Level 50 cross trigger + M15 Fractal / $2.50 SL + M5 EMA 100 & 200 combined close exit."
+    notes: "400x multiplier ($1.38 pts/$1); M5 EMA 100/200 trend alignment + M5 Stoch (15,5,8) Level 50 fresh cross trigger + M15 Fractal / $2.50 SL + Stoch 50 adverse cross early exit + M5 EMA 100/200 combined close exit + Fib TP grid."
   },
   "R_50": {
     symbol: "R_50",
@@ -1199,7 +1199,31 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const m15Close     = parseFloat(currM15.close);
   const m15Open      = parseFloat(currM15.open);
 
-  // 4. Manage Structure on Active Trades
+  // 4. Calculate Technical Indicators Based on Active Instrument Architecture
+  const cci = calculateCCI(candles, 100);
+  const stochParams = PROFILE.stochParams || { k: 18, d: 12, slowing: 25 };
+  const stoch = calculateStoch(candles, stochParams.k, stochParams.d, stochParams.slowing);
+  const envParams = PROFILE.envParams || { period: 50, devPct: 0.05 };
+  const env = calculateEnvelopes(candles, envParams.period, envParams.devPct);
+
+  // EMA 100 & EMA 200 for Trend Filters & Active Exits
+  const ema100 = calculateEMA(candles, 100);
+  const ema200 = calculateEMA(candles, 200);
+  const currentEma100 = ema100[si];
+  const currentEma200 = ema200[si];
+
+  // Secondary Fast Stoch (5,3,3) for V100 (1s)
+  const stoch533 = calculateStoch(candles, 5, 3, 3);
+
+  const cVal = cci[si], prevCci = cci[si - 1];
+  const eUp = env.upper[si], eLo = env.lower[si];
+  const sK = stoch.k[si], sD = stoch.d[si], prevK = stoch.k[si - 1], prevD = stoch.d[si - 1];
+  const prevPrevK = (si >= 2 && stoch.k[si - 2] !== null) ? stoch.k[si - 2] : prevK;
+  const sK533 = stoch533.k[si], prevK533 = stoch533.k[si - 1];
+
+  if (sK === null || sD === null || prevK === null || prevD === null) return;
+
+  // 5. Manage Structure & Early Exits on Active Trades
   const openTrades = trades.filter(t => !t.result && !t.pending);
   for (const t of openTrades) {
     if (closingContracts.has(t.contractId)) continue;
@@ -1234,20 +1258,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
 
-    // Active Trade M5 EMA 100 & EMA 200 Combined Opposite Close Exit (PROFILE_V25_EMA_STOCH15)
-    if (STRATEGY_PROFILE === "PROFILE_V25_EMA_STOCH15") {
-      const ema100Arr = calculateEMA(candles, 100);
-      const ema200Arr = calculateEMA(candles, 200);
-      const cEma100 = ema100Arr[si];
-      const cEma200 = ema200Arr[si];
-      if (cEma100 !== null && cEma200 !== null) {
+    // Active Trade Exits for PROFILE_V100_1S_EMA_STOCH533
+    if (STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533") {
+      // Early Exit #1: Fast M5 Stoch (5,3,3) Adverse Cross back over Level 50
+      if (sK533 !== null && prevK533 !== null) {
         const isBuy = t.direction === "BUY";
-        const combinedEmaExit = isBuy
-          ? (currentPrice < cEma100 && currentPrice < cEma200)
-          : (currentPrice > cEma100 && currentPrice > cEma200);
-        if (combinedEmaExit) {
+        const stochAdverseCross = isBuy ? (prevK533 >= 50.0 && sK533 < 50.0) : (prevK533 <= 50.0 && sK533 > 50.0);
+        if (stochAdverseCross) {
           closingContracts.add(t.contractId);
-          console.log(`[EMA EXIT] M5 candle closed at ${currentPrice.toFixed(4)} opposite both M5 EMA 100 (${cEma100.toFixed(4)}) and EMA 200 (${cEma200.toFixed(4)}). Exiting.`);
+          console.log(`[STOCH 50 EXIT] Fast M5 Stoch (5,3,3) %K crossed back ${isBuy ? "below" : "above"} 50.0 (${sK533.toFixed(1)}). Exiting early.`);
           try {
             await closeContract(t.contractId);
             const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
@@ -1261,7 +1280,99 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             saveState();
             const icon = t.result === "WIN" ? "✅" : "❌";
             const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
-            await sendTelegram(`${icon} *${REPO_LABEL} — M5 EMA 100/200 Exit*\n\nM5 Candle closed at *${currentPrice.toFixed(4)}* opposite both EMA 100 (${cEma100.toFixed(4)}) and EMA 200 (${cEma200.toFixed(4)}).\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+            await sendTelegram(`${icon} *${REPO_LABEL} — Fast Stoch 50 Adverse Cross Early Exit*\n\nFast M5 Stoch (5,3,3) %K crossed back *${isBuy ? "below" : "above"} 50.0* (${sK533.toFixed(1)}).\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+          } catch (e) {
+            console.error(`[STOCH 50 EXIT] Failed to close contract ${t.contractId}:`, e.message);
+          }
+          closingContracts.delete(t.contractId);
+          continue;
+        }
+      }
+
+      // Early Exit #2: Price Closed Opposite M5 EMA 100
+      if (currentEma100 !== null) {
+        const isBuy = t.direction === "BUY";
+        const emaExit = isBuy ? (currentPrice < currentEma100) : (currentPrice > currentEma100);
+        if (emaExit) {
+          closingContracts.add(t.contractId);
+          console.log(`[EMA EXIT] M5 candle closed at ${currentPrice.toFixed(4)} opposite M5 EMA 100 (${currentEma100.toFixed(4)}). Exiting.`);
+          try {
+            await closeContract(t.contractId);
+            const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
+            const pnl = calcUnrealizedPnL(t, currentPrice);
+            t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
+            t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
+            t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
+            t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+            state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+            saveTrades(trades);
+            saveState();
+            const icon = t.result === "WIN" ? "✅" : "❌";
+            const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
+            await sendTelegram(`${icon} *${REPO_LABEL} — M5 EMA 100 Early Exit*\n\nM5 Candle closed at *${currentPrice.toFixed(4)}* opposite M5 EMA 100 (${currentEma100.toFixed(4)}).\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+          } catch (e) {
+            console.error(`[EMA EXIT] Failed to close contract ${t.contractId}:`, e.message);
+          }
+          closingContracts.delete(t.contractId);
+          continue;
+        }
+      }
+    }
+
+    // Active Trade Exits for PROFILE_V25_EMA_STOCH15
+    if (STRATEGY_PROFILE === "PROFILE_V25_EMA_STOCH15") {
+      // Early Exit #1: M5 Stochastic (15,5,8) Adverse Cross over Level 50
+      if (sK !== null && prevK !== null) {
+        const isBuy = t.direction === "BUY";
+        const stochAdverseCross = isBuy ? (prevK >= 50.0 && sK < 50.0) : (prevK <= 50.0 && sK > 50.0);
+        if (stochAdverseCross) {
+          closingContracts.add(t.contractId);
+          console.log(`[STOCH 50 EXIT] M5 Stoch (15,5,8) %K crossed back ${isBuy ? "below" : "above"} 50.0 (${sK.toFixed(1)}). Exiting early.`);
+          try {
+            await closeContract(t.contractId);
+            const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
+            const pnl = calcUnrealizedPnL(t, currentPrice);
+            t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
+            t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
+            t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
+            t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+            state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+            saveTrades(trades);
+            saveState();
+            const icon = t.result === "WIN" ? "✅" : "❌";
+            const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
+            await sendTelegram(`${icon} *${REPO_LABEL} — Stoch 50 Adverse Cross Early Exit*\n\nM5 Stoch (15,5,8) %K crossed back *${isBuy ? "below" : "above"} 50.0* (${sK.toFixed(1)}).\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+          } catch (e) {
+            console.error(`[STOCH 50 EXIT] Failed to close contract ${t.contractId}:`, e.message);
+          }
+          closingContracts.delete(t.contractId);
+          continue;
+        }
+      }
+
+      // Early Exit #2: Combined M5 EMA 100 & EMA 200 Opposite Close
+      if (currentEma100 !== null && currentEma200 !== null) {
+        const isBuy = t.direction === "BUY";
+        const combinedEmaExit = isBuy
+          ? (currentPrice < currentEma100 && currentPrice < currentEma200)
+          : (currentPrice > currentEma100 && currentPrice > currentEma200);
+        if (combinedEmaExit) {
+          closingContracts.add(t.contractId);
+          console.log(`[EMA EXIT] M5 candle closed at ${currentPrice.toFixed(4)} opposite both M5 EMA 100 (${currentEma100.toFixed(4)}) and EMA 200 (${currentEma200.toFixed(4)}). Exiting.`);
+          try {
+            await closeContract(t.contractId);
+            const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
+            const pnl = calcUnrealizedPnL(t, currentPrice);
+            t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
+            t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
+            t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
+            t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+            state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+            saveTrades(trades);
+            saveState();
+            const icon = t.result === "WIN" ? "✅" : "❌";
+            const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
+            await sendTelegram(`${icon} *${REPO_LABEL} — M5 EMA 100/200 Exit*\n\nM5 Candle closed at *${currentPrice.toFixed(4)}* opposite both EMA 100 (${currentEma100.toFixed(4)}) and EMA 200 (${currentEma200.toFixed(4)}).\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
           } catch (e) {
             console.error(`[EMA EXIT] Failed to close contract ${t.contractId}:`, e.message);
           }
@@ -1297,30 +1408,6 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
   }
-
-  // 5. Calculate Technical Indicators Based on Active Instrument Architecture
-  const cci = calculateCCI(candles, 100);
-  const stochParams = PROFILE.stochParams || { k: 18, d: 12, slowing: 25 };
-  const stoch = calculateStoch(candles, stochParams.k, stochParams.d, stochParams.slowing);
-  const envParams = PROFILE.envParams || { period: 50, devPct: 0.05 };
-  const env = calculateEnvelopes(candles, envParams.period, envParams.devPct);
-
-  // EMA 100 & EMA 200 for Trend Filters & Active Exits
-  const ema100 = calculateEMA(candles, 100);
-  const ema200 = calculateEMA(candles, 200);
-  const currentEma100 = ema100[si];
-  const currentEma200 = ema200[si];
-
-  // Secondary Fast Stoch (5,3,3) for V100 (1s)
-  const stoch533 = calculateStoch(candles, 5, 3, 3);
-
-  const cVal = cci[si], prevCci = cci[si - 1];
-  const eUp = env.upper[si], eLo = env.lower[si];
-  const sK = stoch.k[si], sD = stoch.d[si], prevK = stoch.k[si - 1], prevD = stoch.d[si - 1];
-  const prevPrevK = (si >= 2 && stoch.k[si - 2] !== null) ? stoch.k[si - 2] : prevK;
-  const sK533 = stoch533.k[si], prevK533 = stoch533.k[si - 1];
-
-  if (sK === null || sD === null || prevK === null || prevD === null) return;
 
   // ── LIVE INDICATOR TELEMETRY UPDATES FOR DASHBOARD SYNCHRONIZATION ──
   state.strategyProfile = STRATEGY_PROFILE;
@@ -1722,6 +1809,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   let indicatorsSatisfied = false;
   let signalDirection = "";
   let setupLabel = state.armed ? state.armed.lbl : "";
+  let calculatedFibTp = null;
 
   // 1. UNIFIED V75 / V75 (1s) / V10 MIDLINE FRACTAL ENGINE
   if (STRATEGY_PROFILE === "PROFILE_V75_MIDLINE_FRACTAL" || 
@@ -1766,54 +1854,77 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   }
   // 3. VOLATILITY 100 (1s) TWO-STAGE STATE ARMING & FAST STOCH (5,3,3) ENGINE
   else if (STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533") {
-    // Stage 1: State Arming (M15 Key Level + M5 EMA 100 Direction)
-    const emaBuyArmed = currentPrice > currentEma100;
-    const emaSellArmed = currentPrice < currentEma100;
+    // Stage 1: State Arming based on M5 EMA 100 Direction alone (Fib key level entry requirement bypassed)
+    const emaBuyArmed = currentEma100 !== null && currentPrice > currentEma100;
+    const emaSellArmed = currentEma100 !== null && currentPrice < currentEma100;
 
-    const buyStateArmed = Boolean(state.armed && state.armed.dir === "BUY" && emaBuyArmed);
-    const sellStateArmed = Boolean(state.armed && state.armed.dir === "SELL" && emaSellArmed);
+    const buyStateArmed = Boolean(emaBuyArmed);
+    const sellStateArmed = Boolean(emaSellArmed);
 
     state.v100_1s_armed = buyStateArmed || sellStateArmed;
     state.v100_1s_armDir = buyStateArmed ? "BUY" : (sellStateArmed ? "SELL" : null);
 
-    // Stage 2: Fast M5 Stoch (5,3,3) Execution Trigger (Initial Arm Bar or Fresh Cross)
-    const isInitialArmBar = state.armedEpoch === m5BoundaryEpoch;
-    const stoch533BuyCross = (prevK533 <= 20.0 && sK533 > 20.0) || (isInitialArmBar && sK533 !== null && sK533 >= 20.0 && sK533 <= 95.0);
-    const stoch533SellCross = (prevK533 >= 80.0 && sK533 < 80.0) || (isInitialArmBar && sK533 !== null && sK533 <= 80.0 && sK533 >= 5.0);
+    // Stage 2: Fast M5 Stoch (5,3,3) Execution Trigger (Boundary Crossover 20 / 80)
+    // BUY: Fast Stoch %K crosses strictly above 20 (%K <= 20 to > 20)
+    // SELL: Fast Stoch %K crosses strictly below 80 (%K >= 80 to < 80)
+    const stoch533BuyCross = (prevK533 !== null && sK533 !== null) && (prevK533 <= 20.0 && sK533 > 20.0);
+    const stoch533SellCross = (prevK533 !== null && sK533 !== null) && (prevK533 >= 80.0 && sK533 < 80.0);
 
     if (buyStateArmed && stoch533BuyCross) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
+      setupLabel = "V100_1S_EMA_STOCH533 (BUY)";
     } else if (sellStateArmed && stoch533SellCross) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
+      setupLabel = "V100_1S_EMA_STOCH533 (SELL)";
+    }
+
+    // Determine Fib TP target from key levels grid
+    if (indicatorsSatisfied) {
+      const sortedLevels = Array.from(new Set(keyLevels.map(k => k.lvl).filter(v => typeof v === "number" && !isNaN(v)))).sort((a, b) => a - b);
+      if (signalDirection === "BUY") {
+        const higher = sortedLevels.filter(l => l > currentPrice);
+        calculatedFibTp = higher.length > 0 ? higher[0] : null;
+      } else if (signalDirection === "SELL") {
+        const lower = sortedLevels.filter(l => l < currentPrice);
+        calculatedFibTp = lower.length > 0 ? lower[lower.length - 1] : null;
+      }
     }
   }
   // 4. VOLATILITY 25 (R_25) M5 EMA 100/200 TREND & M5 STOCH (15,5,8) LEVEL 50 ENGINE
   else if (STRATEGY_PROFILE === "PROFILE_V25_EMA_STOCH15") {
-    // Condition 1: M15 Fib Key Level armed (state.armed)
-    // Condition 2: M5 EMA 100 vs M5 EMA 200 trend alignment (BUY: EMA 100 > EMA 200; SELL: EMA 100 < EMA 200)
+    // Condition 1: M5 EMA 100 vs M5 EMA 200 trend alignment (BUY: EMA 100 > EMA 200; SELL: EMA 100 < EMA 200)
     const ema100Above200 = currentEma100 !== null && currentEma200 !== null && currentEma100 > currentEma200;
     const ema100Below200 = currentEma100 !== null && currentEma200 !== null && currentEma100 < currentEma200;
 
-    // Condition 3: Price vs M5 EMA 100 (BUY: Price > EMA 100; SELL: Price < EMA 100)
+    // Condition 2: Price vs M5 EMA 100 (BUY: Price > EMA 100; SELL: Price < EMA 100)
     const priceAboveEma100 = currentEma100 !== null && currentPrice > currentEma100;
     const priceBelowEma100 = currentEma100 !== null && currentPrice < currentEma100;
 
-    // Condition 4: M5 Stoch (15,5,8) Level 50 Cross Trigger (%K fresh cross Level 50 up for BUY, down for SELL)
-    const isInitialArmBar = state.armedEpoch === m5BoundaryEpoch;
-    const stoch15BuyCross = (prevK <= 50.0 && sK > 50.0) || (isInitialArmBar && sK !== null && sK >= 50.0);
-    const stoch15SellCross = (prevK >= 50.0 && sK < 50.0) || (isInitialArmBar && sK !== null && sK <= 50.0);
+    // Condition 3: M5 Stoch (15,5,8) Level 50 Fresh Crossover Trigger
+    const stoch15BuyCross = prevK <= 50.0 && sK > 50.0;
+    const stoch15SellCross = prevK >= 50.0 && sK < 50.0;
 
-    if (state.armed) {
-      if (state.armed.dir === "BUY" && ema100Above200 && priceAboveEma100 && stoch15BuyCross) {
-        indicatorsSatisfied = true;
-        signalDirection = "BUY";
-        setupLabel = "V25_EMA_STOCH15 (BUY)";
-      } else if (state.armed.dir === "SELL" && ema100Below200 && priceBelowEma100 && stoch15SellCross) {
-        indicatorsSatisfied = true;
-        signalDirection = "SELL";
-        setupLabel = "V25_EMA_STOCH15 (SELL)";
+    if (ema100Above200 && priceAboveEma100 && stoch15BuyCross) {
+      indicatorsSatisfied = true;
+      signalDirection = "BUY";
+      setupLabel = "V25_EMA_STOCH15 (BUY)";
+    } else if (ema100Below200 && priceBelowEma100 && stoch15SellCross) {
+      indicatorsSatisfied = true;
+      signalDirection = "SELL";
+      setupLabel = "V25_EMA_STOCH15 (SELL)";
+    }
+
+    // Determine geometric Fib TP target from key levels grid
+    if (indicatorsSatisfied) {
+      const sortedLevels = Array.from(new Set(keyLevels.map(k => k.lvl).filter(v => typeof v === "number" && !isNaN(v)))).sort((a, b) => a - b);
+      if (signalDirection === "BUY") {
+        const higher = sortedLevels.filter(l => l > currentPrice);
+        calculatedFibTp = higher.length > 0 ? higher[0] : null;
+      } else if (signalDirection === "SELL") {
+        const lower = sortedLevels.filter(l => l < currentPrice);
+        calculatedFibTp = lower.length > 0 ? lower[lower.length - 1] : null;
       }
     }
   }
@@ -1856,7 +1967,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   // ── C. TRIGGER EXECUTION GATE & CONTRACT CREATION ──
   let signalTriggered = false;
   let direction = signalDirection;
-  let fibTpPrice = state.armed?.tp || null;
+  let fibTpPrice = calculatedFibTp || state.armed?.tp || null;
   let entryType = setupLabel || state.armed?.lbl || "STRATEGY_EXECUTION";
   let entryKeyLevel = state.armed?.lvl || null;
 
@@ -1903,18 +2014,24 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       fibTpPrice = minRequiredTp; entryType = entryType + " ($4.00 TP Floor)";
     }
 
-    // Initial Stop Loss Anchor: Previous M15 Institutional Fractal
+    // Initial Stop Loss Anchor: Previous M15 Institutional Fractal Capped at $2.50 SL
     let initialM15Fractal = findRecentFractalM15(m15Candles, direction);
-    const hardStopPrice = deriveHardStopPrice(entry, direction);
+    const hardStopPrice = deriveHardStopPrice(entry, direction); // -$5.00 broker hard stop
+    
+    // Calculate -$2.50 maximum initial Stop Loss price
+    const reqPnl250 = -2.50 + COMMISSION_USD;
+    const moveFrac250 = reqPnl250 / (STAKE_USD * MULTIPLIER);
+    const sl250Price = direction === "BUY" ? entry * (1 + moveFrac250) : entry * (1 - moveFrac250);
 
     let sl;
     if (PROFILE.slType === "HARD_POINTS") {
       sl = hardStopPrice;
     } else {
       if (direction === "BUY") {
-        sl = (initialM15Fractal && initialM15Fractal > hardStopPrice && initialM15Fractal < entry) ? initialM15Fractal : hardStopPrice;
+        // Use M15 Fractal ONLY IF it is tighter than $2.50 SL price
+        sl = (initialM15Fractal && initialM15Fractal > sl250Price && initialM15Fractal < entry) ? initialM15Fractal : sl250Price;
       } else {
-        sl = (initialM15Fractal && initialM15Fractal < hardStopPrice && initialM15Fractal > entry) ? initialM15Fractal : hardStopPrice;
+        sl = (initialM15Fractal && initialM15Fractal < sl250Price && initialM15Fractal > entry) ? initialM15Fractal : sl250Price;
       }
     }
 
