@@ -57,16 +57,17 @@ export const INSTRUMENT_PROFILES = {
     multiplier: 100,
     stakeUsd: 5.0,
     commissionUsd: 0.15,
-    strategyProfile: "PROFILE_V75_1S_MIDLINE_FRACTAL",
-    gateType: "STOCH_50_MIDLINE",
-    stochParams: { k: 18, d: 12, slowing: 25 },
-    minTakeProfitPoints: 8.89,
+    strategyProfile: "PROFILE_V75_1S_EMA_STOCH15",
+    gateType: "EMA_STOCH15_CROSS",
+    stochParams: { k: 15, d: 5, slowing: 8 },
+    emaPeriod: 100,
+    minTakeProfitPoints: 5.10,
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 18.0,
     modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
-    notes: "1s tick speed; 100x multiplier; M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $4.00 TP & Trailing ($3.00 act / $1.50 buffer)."
+    notes: "Condition 1: M5 EMA 100 > 200; Condition 2: Price > EMA 100; Condition 3: Retracement touch to EMA 100/200; Condition 4: Stoch (15,5,8) %K/%D cross out of 25/75 extreme zone + M5 EMA 200 opposite close early exit."
   },
   "R_100": {
     symbol: "R_100",
@@ -1319,6 +1320,38 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
 
+    // Active Trade Exits for PROFILE_V75_1S_EMA_STOCH15
+    if (STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15") {
+      // Early Exit: M5 Candle Closed Opposite M5 EMA 200
+      if (currentEma200 !== null) {
+        const isBuy = t.direction === "BUY";
+        const ema200Exit = isBuy ? (currentPrice < currentEma200) : (currentPrice > currentEma200);
+        if (ema200Exit) {
+          closingContracts.add(t.contractId);
+          console.log(`[EMA 200 EXIT] M5 candle closed at ${currentPrice.toFixed(4)} opposite M5 EMA 200 (${currentEma200.toFixed(4)}). Exiting.`);
+          try {
+            await closeContract(t.contractId);
+            const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
+            const pnl = calcUnrealizedPnL(t, currentPrice);
+            t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
+            t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
+            t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
+            t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+            state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+            saveTrades(trades);
+            saveState();
+            const icon = t.result === "WIN" ? "✅" : "❌";
+            const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
+            await sendTelegram(`${icon} *${REPO_LABEL} — M5 EMA 200 Early Exit*\n\nM5 Candle closed at *${currentPrice.toFixed(4)}* opposite M5 EMA 200 (${currentEma200.toFixed(4)}).\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+          } catch (e) {
+            console.error(`[EMA 200 EXIT] Failed to close contract ${t.contractId}:`, e.message);
+          }
+          closingContracts.delete(t.contractId);
+          continue;
+        }
+      }
+    }
+
     // Active Trade Exits for PROFILE_V25_EMA_STOCH15
     if (STRATEGY_PROFILE === "PROFILE_V25_EMA_STOCH15") {
       // Early Exit #1: M5 Stochastic (15,5,8) Adverse Cross over Level 50
@@ -1811,9 +1844,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   let setupLabel = state.armed ? state.armed.lbl : "";
   let calculatedFibTp = null;
 
-  // 1. UNIFIED V75 / V75 (1s) / V10 MIDLINE FRACTAL ENGINE
+  // 1. UNIFIED V75 / V10 MIDLINE FRACTAL ENGINE
   if (STRATEGY_PROFILE === "PROFILE_V75_MIDLINE_FRACTAL" || 
-      STRATEGY_PROFILE === "PROFILE_V75_1S_MIDLINE_FRACTAL" || 
       STRATEGY_PROFILE === "PROFILE_V10_MIDLINE_FRACTAL") {
     
     // Stoch (18,12,25) Level 50 Midline Crossover & Arming Bar Alignment
@@ -1881,6 +1913,54 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
 
     // Determine Fib TP target from key levels grid
+    if (indicatorsSatisfied) {
+      const sortedLevels = Array.from(new Set(keyLevels.map(k => k.lvl).filter(v => typeof v === "number" && !isNaN(v)))).sort((a, b) => a - b);
+      if (signalDirection === "BUY") {
+        const higher = sortedLevels.filter(l => l > currentPrice);
+        calculatedFibTp = higher.length > 0 ? higher[0] : null;
+      } else if (signalDirection === "SELL") {
+        const lower = sortedLevels.filter(l => l < currentPrice);
+        calculatedFibTp = lower.length > 0 ? lower[lower.length - 1] : null;
+      }
+    }
+  // 3.5 VOLATILITY 75 (1s) EMA 100/200 TREND, RETRACE TOUCH & STOCH (15,5,8) EXTREME CROSS ENGINE
+  else if (STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15") {
+    // Condition 1: M5 EMA 100 vs M5 EMA 200 Trend Filter
+    const ema100Above200 = currentEma100 !== null && currentEma200 !== null && currentEma100 > currentEma200;
+    const ema100Below200 = currentEma100 !== null && currentEma200 !== null && currentEma100 < currentEma200;
+
+    // Condition 2: Price vs M5 EMA 100 Position Filter
+    const priceAboveEma100 = currentEma100 !== null && currentPrice > currentEma100;
+    const priceBelowEma100 = currentEma100 !== null && currentPrice < currentEma100;
+
+    // Condition 3: M5 EMA 100 / EMA 200 Retracement Touch
+    const currCandle = candles[si];
+    const low = parseFloat(currCandle.low), high = parseFloat(currCandle.high);
+    const touchedBuyEma = (currentEma100 !== null && low <= currentEma100 && high >= currentEma100) || (currentEma200 !== null && low <= currentEma200 && high >= currentEma200);
+    const touchedSellEma = (currentEma100 !== null && low <= currentEma100 && high >= currentEma100) || (currentEma200 !== null && low <= currentEma200 && high >= currentEma200);
+
+    if (ema100Above200 && priceAboveEma100 && touchedBuyEma) state.v75_1s_emaTouched_BUY = true;
+    if (ema100Below200 && priceBelowEma100 && touchedSellEma) state.v75_1s_emaTouched_SELL = true;
+
+    // Reset touch latch if trend breaks
+    if (!ema100Above200 || !priceAboveEma100) state.v75_1s_emaTouched_BUY = false;
+    if (!ema100Below200 || !priceBelowEma100) state.v75_1s_emaTouched_SELL = false;
+
+    // Condition 4: M5 Stochastic (15,5,8) %K/%D Fresh Cross out of 25/75 Extreme Zone
+    const stochCrossBuy = (prevK <= prevD && sK > sD) && (prevK <= 25.0 || prevD <= 25.0 || sK <= 25.0);
+    const stochCrossSell = (prevK >= prevD && sK < sD) && (prevK >= 75.0 || prevD >= 75.0 || sK >= 75.0);
+
+    if (ema100Above200 && priceAboveEma100 && state.v75_1s_emaTouched_BUY && stochCrossBuy) {
+      indicatorsSatisfied = true;
+      signalDirection = "BUY";
+      setupLabel = "V75_1S_EMA_STOCH15 (BUY)";
+    } else if (ema100Below200 && priceBelowEma100 && state.v75_1s_emaTouched_SELL && stochCrossSell) {
+      indicatorsSatisfied = true;
+      signalDirection = "SELL";
+      setupLabel = "V75_1S_EMA_STOCH15 (SELL)";
+    }
+
+    // Determine Fib TP target from Daily Fibonacci Grid
     if (indicatorsSatisfied) {
       const sortedLevels = Array.from(new Set(keyLevels.map(k => k.lvl).filter(v => typeof v === "number" && !isNaN(v)))).sort((a, b) => a - b);
       if (signalDirection === "BUY") {
