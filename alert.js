@@ -795,10 +795,15 @@ let state = {
   latchStoch_BUY: false,
   latchStoch_SELL: false
 };
-try { state = { ...state, ...JSON.parse(fs.readFileSync("state.json")) }; } catch {}
-function saveState() { fs.writeFileSync("state.json", JSON.stringify(state, null, 2)); }
-function loadTrades() { try { return JSON.parse(fs.readFileSync("trades.json")); } catch { return []; } }
-function saveTrades(t) { fs.writeFileSync("trades.json", JSON.stringify(t, null, 2)); }
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const STATE_FILE_PATH = path.resolve(__dirname, "state.json");
+const TRADES_FILE_PATH = path.resolve(__dirname, "trades.json");
+
+try { state = { ...state, ...JSON.parse(fs.readFileSync(STATE_FILE_PATH, "utf8")) }; } catch {}
+function saveState() { fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2)); }
+function loadTrades() { try { return JSON.parse(fs.readFileSync(TRADES_FILE_PATH, "utf8")); } catch { return []; } }
+function saveTrades(t) { fs.writeFileSync(TRADES_FILE_PATH, JSON.stringify(t, null, 2)); }
 
 // ==================== FAST PATH: RISK MANAGEMENT (ADAPTIVE: 3S IN-TRADE / 10S IDLE) ====================
 const closingContracts = new Set();
