@@ -17,8 +17,8 @@ try {
       if (reloadTimer) clearTimeout(reloadTimer);
       console.log(`[AUTO-RELOAD] Code update detected on disk for ${path.basename(SCRIPT_PATH)}. Scheduling clean PM2 restart in 2s...`);
       reloadTimer = setTimeout(() => {
-        console.log(`[AUTO-RELOAD] Exiting process cleanly now. PM2 will immediately respawn with updated code.`);
-        process.exit(0);
+        console.log(`[AUTO-RELOAD] Exiting process cleanly now (code 1 for PM2 auto-respawn). PM2 will immediately respawn with updated code.`);
+        process.exit(1);
       }, 2000);
     }
   });
@@ -1222,7 +1222,19 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const prevPrevK = (si >= 2 && stoch.k[si - 2] !== null) ? stoch.k[si - 2] : prevK;
   const sK533 = stoch533.k[si], prevK533 = stoch533.k[si - 1];
 
-  if (sK === null || sD === null || prevK === null || prevD === null) return;
+  if (STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533") {
+    if (sK533 === null || prevK533 === null) {
+      state.lastProcessedEpoch = m5BoundaryEpoch;
+      saveState();
+      return;
+    }
+  } else {
+    if (sK === null || sD === null || prevK === null || prevD === null) {
+      state.lastProcessedEpoch = m5BoundaryEpoch;
+      saveState();
+      return;
+    }
+  }
 
   // 5. Manage Structure & Early Exits on Active Trades
   const openTrades = trades.filter(t => !t.result && !t.pending);
