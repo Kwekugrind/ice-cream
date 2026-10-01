@@ -288,14 +288,23 @@ function writeToLedger(epoch, closePrice, cci, stochK, stochD, envUp, envLo, pha
 }
 
 // ==================== GATEWAY CLIENT CALLS ====================
-async function gatewayFetch(endpoint, method = "GET", body = null) {
-  const res = await fetch(`${GATEWAY_URL}${endpoint}`, {
-    method,
-    headers: { "Content-Type": "application/json", "x-gateway-secret": GATEWAY_SECRET },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  if (!res.ok) throw new Error(`Gateway HTTP error ${res.status}`);
-  return await res.json();
+async function gatewayFetch(endpoint, method = "GET", body = null, timeoutMs = 6000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${GATEWAY_URL}${endpoint}`, {
+      method,
+      headers: { "Content-Type": "application/json", "x-gateway-secret": GATEWAY_SECRET },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`Gateway HTTP error ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
 }
 
 async function getOpenPortfolio() {
