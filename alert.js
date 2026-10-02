@@ -661,6 +661,33 @@ export function findRecentFractalM15(m15Candles, direction) {
   return null;
 }
 
+// Finds if an opposing M15 swing fractal has formed after trade entry (Fakeout Detection)
+// For BUY trade: looks for an UPPER (Bearish swing high) fractal formed at or after entryEpoch
+// For SELL trade: looks for a LOWER (Bullish swing low) fractal formed at or after entryEpoch
+export function findNewOpposingFractalM15(m15Candles, direction, entryEpoch) {
+  if (!m15Candles || m15Candles.length < 5 || !entryEpoch) return null;
+  for (let k = m15Candles.length - 3; k >= 2; k--) {
+    const candleEpoch = m15Candles[k].epoch;
+    if (candleEpoch < (entryEpoch - 900)) break;
+
+    if (direction === "BUY") {
+      const high = parseFloat(m15Candles[k].high);
+      if (high > parseFloat(m15Candles[k - 1].high) && high > parseFloat(m15Candles[k - 2].high) &&
+          high > parseFloat(m15Candles[k + 1].high) && high > parseFloat(m15Candles[k + 2].high)) {
+        return { price: high, epoch: candleEpoch, type: "UPPER_BEARISH" };
+      }
+    } else {
+      const low = parseFloat(m15Candles[k].low);
+      if (low < parseFloat(m15Candles[k - 1].low) && low < parseFloat(m15Candles[k - 2].low) &&
+          low < parseFloat(m15Candles[k + 1].low) && low < parseFloat(m15Candles[k + 2].low)) {
+        return { price: low, epoch: candleEpoch, type: "LOWER_BULLISH" };
+      }
+    }
+  }
+  return null;
+}
+
+
 // Stochastic Continuous State-Based Arming (Unbounded by time: remains armed as long as %K is on the valid side of the threshold)
 function checkStochastic8HrLookback(candles, stoch, dir, type = "MIDLINE") {
   if (!candles || candles.length < 2 || !stoch || !stoch.k) return false;
@@ -878,12 +905,25 @@ async function manageOpenTradesFastPath() {
       }
     }
 
+    // 🛡️ Opposite M15 Fractal Fakeout Protection:
+    // If trade has an opposing M15 fractal detected and is retracing in loss (adverse to entry)
+    let fakeoutExitTriggered = false;
+    if (openTrade.opposingM15Fractal && pnl < 0) {
+      const isRetracing = isBuy ? currentPrice < openTrade.entry : currentPrice > openTrade.entry;
+      if (isRetracing) {
+        fakeoutExitTriggered = true;
+      }
+    }
+
     let reason = null;
     if (tpHit) { 
       reason = `Fib TP reached at ${currentPrice.toFixed(4)} (+ $${pnl.toFixed(2)})`; 
     } 
     else if (rescueBreakevenHit) {
       reason = `Rescue Retracement Target hit — Old position closed at +$${pnl.toFixed(2)} (>= +$0.20 profit) while rescue contract ${activeRescueTrade.contractId} runs to TP`;
+    }
+    else if (fakeoutExitTriggered) {
+      reason = `Opposite M15 Fractal Fakeout Exit — Closed at ${currentPrice.toFixed(4)} ($${pnl.toFixed(2)}) to avoid full -$2.50 SL (Opposing ${openTrade.opposingM15Fractal.type} at ${Number(openTrade.opposingM15Fractal.price).toFixed(4)})`;
     }
     else if (openTrade.lockedPnlFloor && pnl <= openTrade.lockedPnlFloor) { 
       reason = `Profit-Lock hit — Secured +$${openTrade.lockedPnlFloor.toFixed(2)}`; 
@@ -940,16 +980,103 @@ async function manageOpenTradesFastPath() {
 }
 
 // =========================================================================
+// 🛡️ OPPOSITE M15 FRACTAL FAKEOUT PROTECTION (STOCHASTIC 18,12,25 INSTRUMENTS)
+// If trade retraces immediately after entry and an M15 fractal draws on the opposite
+// side of the trade while in negative PnL, exit immediately to prevent hitting full -$2.50 SL.
+// =========================================================================
+async function checkOppositeFractalFakeoutExit(m15Candles, currentPrice) {
+  const isStoch18Profile = 
+    PROFILE.stochParams?.k === 18 && 
+    PROFILE.stochParams?.d === 12 && 
+    (STRATEGY_PROFILE === "PROFILE_V75_MIDLINE_FRACTAL" || 
+     STRATEGY_PROFILE === "PROFILE_V10_MIDLINE_FRACTAL" || 
+     STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" ||
+     STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES");
+
+  if (!isStoch18Profile || !m15Candles || m15Candles.length < 5) return;
+
+  let trades = loadTrades();
+  const openTrades = trades.filter(t => !t.result && !t.pending && !closingContracts.has(t.contractId));
+  if (openTrades.length === 0) return;
+
+  for (const openTrade of openTrades) {
+    if (!openTrade.contractId) continue;
+    const isBuy = openTrade.direction === "BUY";
+    const pnl = calcUnrealizedPnL(openTrade, currentPrice);
+
+    // Only triggers if trade is retracing in loss (floating loss, price adverse to entry)
+    const isRetracing = isBuy ? (currentPrice < openTrade.entry && pnl < 0) : (currentPrice > openTrade.entry && pnl < 0);
+
+    // Look for opposing M15 fractal formed after trade entry
+    const oppFractal = findNewOpposingFractalM15(m15Candles, openTrade.direction, openTrade.entryEpoch);
+    if (!oppFractal) continue;
+
+    // Tag opposing fractal on the trade record
+    openTrade.opposingM15Fractal = oppFractal;
+    saveTrades(trades);
+
+    if (!isRetracing) continue;
+
+    // Confirmed Fakeout: Opposite M15 fractal drawn while trade is retracing in loss
+    console.log(`[FAKEOUT PROTECTION] 🚨 ${SYMBOL} Trade #${openTrade.contractId} (${openTrade.direction}) Fakeout detected!`);
+    console.log(`  • Entry: ${Number(openTrade.entry).toFixed(4)} at epoch ${openTrade.entryEpoch}`);
+    console.log(`  • Current Price: ${currentPrice.toFixed(4)} (PnL: $${pnl.toFixed(2)})`);
+    console.log(`  • Opposing M15 Fractal: ${oppFractal.type} at ${oppFractal.price.toFixed(4)} (epoch ${oppFractal.epoch})`);
+    console.log(`  • Action: Executing early exit to prevent full -$2.50 SL hit.`);
+
+    closingContracts.add(openTrade.contractId);
+    let serverPnl = pnl, resultSource = "fakeout_exit_fallback";
+    try {
+      const closeRes = await closeContract(openTrade.contractId);
+      if (closeRes && !closeRes.error) {
+        serverPnl = closeRes.sell?.profit ?? pnl;
+        resultSource = "server_close_confirmed";
+      }
+    } catch (e) {
+      closingContracts.delete(openTrade.contractId);
+      continue;
+    }
+
+    openTrade.result = "LOSS";
+    openTrade.resultSource = resultSource;
+    openTrade.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+    openTrade.serverPnl = serverPnl;
+
+    state.dailyNetPnl = (state.dailyNetPnl || 0) + serverPnl;
+    saveTrades(trades);
+    saveState();
+    closingContracts.delete(openTrade.contractId);
+
+    const durationMs = new Date(openTrade.closeTime) - new Date(openTrade.openTime);
+    await sendTelegram(
+      `🛡️ *${REPO_LABEL} — OPPOSITE M15 FRACTAL FAKEOUT EXIT* 🛡️\n\n` +
+      `Direction: ${openTrade.direction}\n` +
+      `📍 Entry: ${Number(openTrade.entry).toFixed(4)}\n` +
+      `🏁 Early Exit: ${currentPrice.toFixed(4)}\n` +
+      `🛑 Avoided SL: -$2.50 Full Barrier\n\n` +
+      `💵 P&L: *-$${Math.abs(serverPnl).toFixed(2)}* (Capped Loss)\n` +
+      `Reason: Opposite M15 ${oppFractal.type} Fractal formed at ${oppFractal.price.toFixed(4)} while retracing. Structural fakeout confirmed.\n` +
+      `Duration: ${formatDuration(durationMs)}\n` +
+      `Daily Net Total: $${state.dailyNetPnl.toFixed(2)}\n` +
+      `Contract: \`${openTrade.contractId}\``
+    );
+  }
+}
+
+// =========================================================================
 // 🚑 LOSS RECOVERY / RESCUE ENTRY ENGINE (FOR STOCH 50 MIDLINE INSTRUMENTS)
 // =========================================================================
 async function checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch) {
-  const isMidlineProfile = 
-    STRATEGY_PROFILE === "PROFILE_V75_MIDLINE_FRACTAL" || 
-    STRATEGY_PROFILE === "PROFILE_V75_1S_MIDLINE_FRACTAL" || 
-    STRATEGY_PROFILE === "PROFILE_V10_MIDLINE_FRACTAL" || 
-    STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV";
+  // Early trade recovery applies EXCLUSIVELY to instruments utilizing Stochastic (18, 12, 25)
+  const isStoch18Profile = 
+    PROFILE.stochParams?.k === 18 && 
+    PROFILE.stochParams?.d === 12 && 
+    (STRATEGY_PROFILE === "PROFILE_V75_MIDLINE_FRACTAL" || 
+     STRATEGY_PROFILE === "PROFILE_V10_MIDLINE_FRACTAL" || 
+     STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" ||
+     STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES");
   
-  if (!isMidlineProfile) return;
+  if (!isStoch18Profile) return;
 
   let trades = loadTrades();
   const openTrades = trades.filter(t => !t.result && !t.pending);
@@ -1441,6 +1568,89 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
 
+    // =========================================================================
+    // ADVERSE M15 FRACTAL EARLY EXIT (FAKEOUT MITIGATION FOR STOCH 18,12,25 BOTS)
+    // =========================================================================
+    const isStoch18Asset = 
+      PROFILE.stochParams?.k === 18 && 
+      PROFILE.stochParams?.d === 12 && 
+      (STRATEGY_PROFILE === "PROFILE_V75_MIDLINE_FRACTAL" || 
+       STRATEGY_PROFILE === "PROFILE_V10_MIDLINE_FRACTAL" || 
+       STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV");
+
+    if (isStoch18Asset && m15Candles && m15Candles.length >= 5) {
+      const currentPnl = calcUnrealizedPnL(t, currentPrice);
+      
+      // Only evaluate if the trade is in floating loss (underwater)
+      if (currentPnl < 0) {
+        const c = m15Candles;
+        let adverseFractalDetected = false;
+        let adverseFractalPrice = 0;
+
+        for (let k = 2; k <= c.length - 3; k++) {
+          const confirmationBarEpoch = c[k + 2].epoch;
+
+          // The fractal must have completed after our entry was executed
+          if (confirmationBarEpoch > t.entryEpoch) {
+            if (t.direction === "BUY") {
+              // For BUY: An opposing TOP fractal (swing high) formed at or below entry price
+              const isTop = parseFloat(c[k].high) === Math.max(
+                parseFloat(c[k-2].high), parseFloat(c[k-1].high), 
+                parseFloat(c[k].high), parseFloat(c[k+1].high), parseFloat(c[k+2].high)
+              );
+              const fracHigh = parseFloat(c[k].high);
+              if (isTop && fracHigh <= t.entry && currentPrice < t.entry) {
+                adverseFractalDetected = true;
+                adverseFractalPrice = fracHigh;
+                break;
+              }
+            } else if (t.direction === "SELL") {
+              // For SELL: An opposing BOTTOM fractal (swing low) formed at or above entry price
+              const isBottom = parseFloat(c[k].low) === Math.min(
+                parseFloat(c[k-2].low), parseFloat(c[k-1].low), 
+                parseFloat(c[k].low), parseFloat(c[k+1].low), parseFloat(c[k+2].low)
+              );
+              const fracLow = parseFloat(c[k].low);
+              if (isBottom && fracLow >= t.entry && currentPrice > t.entry) {
+                adverseFractalDetected = true;
+                adverseFractalPrice = fracLow;
+                break;
+              }
+            }
+          }
+        }
+
+        if (adverseFractalDetected) {
+          closingContracts.add(t.contractId);
+          console.log(`[FAKEOUT MITIGATION] Adverse M15 ${t.direction === "BUY" ? "Top" : "Bottom"} Fractal formed at ${adverseFractalPrice.toFixed(4)} opposite ${t.direction} trade while underwater (Entry: ${t.entry.toFixed(4)}, Spot: ${currentPrice.toFixed(4)}). Closing early.`);
+          try {
+            await closeContract(t.contractId);
+            const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
+            const pnl = calcUnrealizedPnL(t, currentPrice);
+            t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
+            t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
+            t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
+            t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+            state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+            saveTrades(trades);
+            saveState();
+            const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
+            await sendTelegram(
+              `⚠️ *${REPO_LABEL} — Adverse M15 Fractal Early Exit (Fakeout Mitigated)*\n\n` +
+              `Opposing M15 ${t.direction === "BUY" ? "Top" : "Bottom"} Fractal formed at *${adverseFractalPrice.toFixed(4)}* opposite entry *${t.entry.toFixed(4)}* while in loss.\n` +
+              `Trade liquidated early to prevent -$2.50 full SL.\n` +
+              `💵 P&L: *${pnlStr}*\n` +
+              `Contract: \`${t.contractId}\``
+            );
+          } catch (e) {
+            console.error(`[FAKEOUT MITIGATION] Failed to close contract ${t.contractId}:`, e.message);
+          }
+          closingContracts.delete(t.contractId);
+          continue;
+        }
+      }
+    }
+
     // Upgrade M15 Fractal SL if new favorable M15 structure forms
     if (m15Candles.length >= 5) {
       for (let k = 2; k <= m15Candles.length - 4; k++) {
@@ -1637,6 +1847,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   saveState();
 
   writeToLedger(m5BoundaryEpoch, currentPrice, cVal, sK, sD, eUp, eLo, (state.armed && state.armed.lbl) ? state.armed.lbl : "IDLE", `EMA100:${currentEma100 ? currentEma100.toFixed(2) : "0"}`);
+
+  // Evaluate Opposite M15 Fractal Fakeout Early Exit for open trades on Stoch 18,12,25 instruments
+  await checkOppositeFractalFakeoutExit(m15Candles, currentPrice);
 
   // Evaluate Loss Recovery / Rescue Entry if parent trade is active and floating in loss
   await checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch);
@@ -1949,6 +2162,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         calculatedFibTp = lower.length > 0 ? lower[lower.length - 1] : null;
       }
     }
+  }
   // 3.5 VOLATILITY 75 (1s) EMA 100/200 TREND, RETRACE TOUCH & STOCH (15,5,8) EXTREME CROSS ENGINE
   else if (STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15") {
     // Condition 1: M5 EMA 100 vs M5 EMA 200 Trend Filter
@@ -2157,25 +2371,43 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const dirEmoji = direction === "BUY" ? "🟢 ⬆️ BUY" : "🔴 ⬇️ SELL";
 
     // Build Dynamic Confluence Verification Lines Matching Exact Instrument Strategy Profile
+    const matchedKey = keyLevels.find(k => entryKeyLevel !== null && Math.abs(k.lvl - entryKeyLevel) < 1e-4);
+    const exactKeyName = matchedKey ? matchedKey.name : (entryKeyLevel ? entryKeyLevel.toFixed(2) : "N/A");
+
+    const matchedTp = keyLevels.find(k => fibTpPrice !== null && Math.abs(k.lvl - fibTpPrice) < 1e-4);
+    const exactTpName = matchedTp ? matchedTp.name : (fibTpPrice ? fibTpPrice.toFixed(2) : "TP Target");
+
     let confluenceLines = `• Gate Engine: *${GATE_TYPE}*\n`;
     if (STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533") {
-      confluenceLines += `• M5 EMA 100: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > EMA" : "Price < EMA"} [ALIGNED])\n` +
-                         `• Fast Stoch (5,3,3): *%K ${(sK533 !== null ? sK533.toFixed(1) : "N/A")}* | *%D ${(sD533 !== null ? sD533.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">20 Cross" : "<80 Cross"} [TRIGGERED])\n`;
+      confluenceLines += `• M5 EMA 100: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > EMA 100 [BULLISH]" : "Price < EMA 100 [BEARISH]"})\n` +
+                         `• Fast Stoch (5,3,3): *%K ${(sK533 !== null ? sK533.toFixed(1) : "N/A")}* | *%D ${(sD533 !== null ? sD533.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">20 Oversold Cross [TRIGGERED]" : "<80 Overbought Cross [TRIGGERED]"})\n` +
+                         `• Target Fib Level: *${fibTpPrice ? fibTpPrice.toFixed(4) : "N/A"}* (${exactTpName} Target)\n`;
+    } else if (STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15") {
+      confluenceLines += `• M5 EMA 100 vs 200: *EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"}) ${direction === "BUY" ? ">" : "<"} EMA 200 (${currentEma200 ? currentEma200.toFixed(2) : "N/A"})* [${direction === "BUY" ? "UPTREND" : "DOWNTREND"}]\n` +
+                         `• M5 EMA Retracement: *EMA 100/200 Touch Verified* [LATCHED]\n` +
+                         `• M5 Candle Close: *Price (${currentPrice.toFixed(2)}) ${direction === "BUY" ? ">" : "<"} EMA 100* [RESUMPTION]\n` +
+                         `• M5 Stoch (15,5,8): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">D Oversold Cross (<=20)" : "<D Overbought Cross (>=80)"} [TRIGGERED])\n` +
+                         `• M15 Key Fib Target: *${fibTpPrice ? fibTpPrice.toFixed(2) : "N/A"}* (${exactTpName} Target)\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV") {
-      confluenceLines += `• M5 Stoch (18,12,25): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 Midline Cross" : "<50 Midline Cross"} [ALIGNED])\n` +
-                         `• Envelope 200 (0.05%): *${direction === "BUY" ? "Price > Upper (" + eUp.toFixed(4) + ")" : "Price < Lower (" + eLo.toFixed(4) + ")"}* [BREAKOUT]\n`;
+      confluenceLines += `• M15 Key Fib Level: *${entryKeyLevel ? entryKeyLevel.toFixed(4) : "N/A"}* (${exactKeyName} Anchor Level)\n` +
+                         `• M5 Stoch (18,12,25): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 Midline Cross [TRIGGERED]" : "<50 Midline Cross [TRIGGERED]"})\n` +
+                         `• Envelope 200 (0.05%): *${direction === "BUY" ? "Price > Upper (" + eUp.toFixed(4) + ")" : "Price < Lower (" + eLo.toFixed(4) + ")"}* [BREAKOUT]\n` +
+                         `• Target Fib Level: *${fibTpPrice ? fibTpPrice.toFixed(4) : "N/A"}* (${exactTpName} Target)\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V25_EMA_STOCH15") {
       confluenceLines += `• M5 EMA 100/200: *${currentEma100 ? currentEma100.toFixed(2) : "N/A"} / ${currentEma200 ? currentEma200.toFixed(2) : "N/A"}* (${direction === "BUY" ? "EMA 100 > EMA 200 & Price > EMA 100" : "EMA 100 < EMA 200 & Price < EMA 100"} [ALIGNED])\n` +
-                         `• M5 Stoch (15,5,8): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 Midline Cross" : "<50 Midline Cross"} [TRIGGERED])\n` +
-                         `• M15 Key Fib Level: *${entryKeyLevel ? entryKeyLevel.toFixed(4) : "N/A"}* [CLOSE-SIDE QUALIFIED]\n`;
+                         `• M5 Stoch (15,5,8): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 Midline Cross [TRIGGERED]" : "<50 Midline Cross [TRIGGERED]"})\n` +
+                         `• M15 Key Fib Target: *${fibTpPrice ? fibTpPrice.toFixed(4) : "N/A"}* (${exactTpName} Target)\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES") {
-      confluenceLines += `• M5 Stoch (18,12,25): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">20 Oversold Boundary Cross" : "<80 Overbought Boundary Cross"} [TRIGGERED])\n` +
-                         `• M15 Key Fib Level: *${entryKeyLevel ? entryKeyLevel.toFixed(4) : "N/A"}* (Excludes 50% Rebound)\n`;
+      confluenceLines += `• M15 Key Fib Level: *${entryKeyLevel ? entryKeyLevel.toFixed(4) : "N/A"}* (${exactKeyName} Anchor Level - Excludes 50%)\n` +
+                         `• M5 Stoch (18,12,25): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">20 Oversold Boundary Cross [TRIGGERED]" : "<80 Overbought Boundary Cross [TRIGGERED]"})\n` +
+                         `• Target Fib Level: *${fibTpPrice ? fibTpPrice.toFixed(4) : "N/A"}* (${exactTpName} Target)\n`;
     } else {
-      confluenceLines += `• M5 Stoch (18,12,25): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 Midline Cross" : "<50 Midline Cross"} [ALIGNED])\n` +
-                         `• M15 Key Fib Level: *${entryKeyLevel ? entryKeyLevel.toFixed(4) : "N/A"}* (50% Rebound / Discount / Premium)\n`;
+      // V75 (PROFILE_V75_MIDLINE_FRACTAL) and V10 (PROFILE_V10_MIDLINE_FRACTAL)
+      confluenceLines += `• M15 Key Fib Level: *${entryKeyLevel ? entryKeyLevel.toFixed(4) : "N/A"}* (${exactKeyName} Anchor Level)\n` +
+                         `• M5 Stoch (18,12,25): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 Midline Cross [TRIGGERED]" : "<50 Midline Cross [TRIGGERED]"})\n` +
+                         `• Target Fib Level: *${fibTpPrice ? fibTpPrice.toFixed(4) : "N/A"}* (${exactTpName} Target)\n`;
     }
-    confluenceLines += `• Daily Target Progress: *$${(state.dailyNetPnl || 0).toFixed(2)} / $10.00*`;
+    confluenceLines += `• Daily Target Progress: *$${(state.dailyNetPnl || 0).toFixed(2)} / $${DAILY_PROFIT_TARGET_USD.toFixed(2)}*`;
 
     const message = 
       `🚨 *${SYMBOL_NAME.toUpperCase()} SIGNAL* 🚨\n\n` +
