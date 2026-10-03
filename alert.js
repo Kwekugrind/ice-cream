@@ -867,15 +867,26 @@ let state = {
   latchCci_BUY: false,
   latchCci_SELL: false,
   latchStoch_BUY: false,
-  latchStoch_SELL: false
+  latchStoch_SELL: false,
+  engineVersion: "v6.2-master",
+  codeTimestamp: "2026-10-03T10:35:00Z"
 };
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const STATE_FILE_PATH = path.resolve(__dirname, "state.json");
 const TRADES_FILE_PATH = path.resolve(__dirname, "trades.json");
 
+const ENGINE_VERSION = "v6.2-master";
+const CODE_TIMESTAMP = "2026-10-03T10:35:00Z";
+
 try { state = { ...state, ...JSON.parse(fs.readFileSync(STATE_FILE_PATH, "utf8")) }; } catch {}
-function saveState() { fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2)); }
+state.engineVersion = ENGINE_VERSION;
+state.codeTimestamp = CODE_TIMESTAMP;
+function saveState() {
+  state.engineVersion = ENGINE_VERSION;
+  state.codeTimestamp = CODE_TIMESTAMP;
+  fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2));
+}
 function loadTrades() { try { return JSON.parse(fs.readFileSync(TRADES_FILE_PATH, "utf8")); } catch { return []; } }
 function saveTrades(t) { fs.writeFileSync(TRADES_FILE_PATH, JSON.stringify(t, null, 2)); }
 
