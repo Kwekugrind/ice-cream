@@ -1411,7 +1411,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       saveState();
       return;
     }
-  } else if (STRATEGY_PROFILE === "PROFILE_V25_STOCH45_VALIDATOR") {
+  } else if (STRATEGY_PROFILE === "PROFILE_V25_STOCH45_VALIDATOR" || STRATEGY_PROFILE === "PROFILE_V25_EMA_STOCH15") {
     if (sK === null || sD === null || prevK === null || prevD === null || sK533 === null || prevK533 === null) {
       state.lastProcessedEpoch = m5BoundaryEpoch;
       saveState();
@@ -2341,45 +2341,115 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     // If it closes above level 50, arm buy. If it closed below 50, arm sell.
     if (sK > 50.0) {
       state.v25_trendDirection = "BUY";
+      // Cancel opposing SELL timer if trend turned bullish
+      if (state.v25_validatorTimer_SELL) {
+        dbg(`[V25 TREND] Stoch (45,5,8) closed above 50 (%K ${sK.toFixed(1)}). Wiping opposing SELL timer.`);
+        state.v25_validatorTimer_SELL = 0;
+      }
     } else if (sK < 50.0) {
       state.v25_trendDirection = "SELL";
+      // Cancel opposing BUY timer if trend turned bearish
+      if (state.v25_validatorTimer_BUY) {
+        dbg(`[V25 TREND] Stoch (45,5,8) closed below 50 (%K ${sK.toFixed(1)}). Wiping opposing BUY timer.`);
+        state.v25_validatorTimer_BUY = 0;
+      }
     }
 
-    // Component 2: Pre Trigger indicator - M5 Stoch (5,3,3) Level 50 Fresh Cross Starts 20-min Validator Timer
-    // "the 20-minute timer must be initiated only on a fresh cross of Level 50 on Stoch (5,3,3). Every fresh cross initiates the timer."
+    // Component 2: Pre-Trigger Indicator - M5 Stoch (5,3,3) Level 50 Fresh Cross
+    // Initiated strictly on a fresh cross of Level 50 on Stoch (5,3,3). Every fresh cross initiates/refreshes the timer.
     const stoch533CrossUp50 = prevK533 !== null && prevK533 <= 50.0 && sK533 > 50.0;
     const stoch533CrossDown50 = prevK533 !== null && prevK533 >= 50.0 && sK533 < 50.0;
 
+    // Component 3: Trade Validator Conditions
+    // For BUY: M5 Stoch (45,5,8) %k > %d OR %k > 75.0
+    // For SELL: M5 Stoch (45,5,8) %k < %d OR %k < 25.0
+    const buyValidatorSatisfied = (sK > sD || sK > 75.0);
+    const sellValidatorSatisfied = (sK < sD || sK < 25.0);
+
+    // --- BUY PATH ---
     if (stoch533CrossUp50) {
-      state.v25_validatorTimer_BUY = m5BoundaryEpoch + 1200; // 20 minutes (4 M5 candles)
-      console.log(`[V25 PRE-TRIGGER] M5 Stoch (5,3,3) fresh cross >50 (%K ${sK533.toFixed(1)}). BUY 20-min validator timer active until epoch ${state.v25_validatorTimer_BUY}.`);
-    }
-    if (stoch533CrossDown50) {
-      state.v25_validatorTimer_SELL = m5BoundaryEpoch + 1200; // 20 minutes (4 M5 candles)
-      console.log(`[V25 PRE-TRIGGER] M5 Stoch (5,3,3) fresh cross <50 (%K ${sK533.toFixed(1)}). SELL 20-min validator timer active until epoch ${state.v25_validatorTimer_SELL}.`);
-    }
-
-    // Component 3: Trade Validator & Immediate Execution Trigger
-    // For BUY: M5 Stoch (45,5,8) Must be above level 75 or %k must be above %d. Must occur during the 20 mins.
-    // For SELL: M5 Stoch (45,5,8) Must be below level 25 or %k must be below %d. Must occur during the 20 mins.
-    const buyTimerActive = state.v25_validatorTimer_BUY && m5BoundaryEpoch <= state.v25_validatorTimer_BUY;
-    const sellTimerActive = state.v25_validatorTimer_SELL && m5BoundaryEpoch <= state.v25_validatorTimer_SELL;
-
-    const buyValidatorSatisfied = (sK > 75.0 || sK > sD);
-    const sellValidatorSatisfied = (sK < 25.0 || sK < sD);
-
-    if (state.v25_trendDirection === "BUY" && buyTimerActive && buyValidatorSatisfied) {
-      indicatorsSatisfied = true;
-      signalDirection = "BUY";
-      setupLabel = "V25_STOCH45_VALIDATOR (BUY)";
-      // Reset BUY timer once triggered
+      console.log(`[V25 PRE-TRIGGER] M5 Stoch (5,3,3) fresh cross >50 (%K ${sK533.toFixed(1)}, prev ${prevK533.toFixed(1)}). Main Trend: ${state.v25_trendDirection || "NEUTRAL"} (Stoch 45 %K ${sK.toFixed(1)}).`);
+      // When stoch 5,3,3 crosses level 50, the bot asks whether Stoch (45,5,8) %k is above %d or %k is above 75 for BUY.
+      if (state.v25_trendDirection === "BUY") {
+        if (buyValidatorSatisfied) {
+          // If satisfied on the fresh cross, fire immediately!
+          console.log(`[V25 TRIGGER] Stoch (5,3,3) cross >50 with Trend BUY and Stoch (45,5,8) Validator ALREADY SATISFIED (%K ${sK.toFixed(1)} vs %D ${sD.toFixed(1)}). FIRING BUY!`);
+          indicatorsSatisfied = true;
+          signalDirection = "BUY";
+          setupLabel = "V25_STOCH45_VALIDATOR (BUY)";
+          state.v25_validatorTimer_BUY = 0;
+        } else {
+          // If not, give a 20-minute window for that to happen
+          state.v25_validatorTimer_BUY = m5BoundaryEpoch + 1200; // 20 minutes (4 M5 candles)
+          console.log(`[V25 TIMER STARTED] BUY Validator pending. 20-min window open until epoch ${state.v25_validatorTimer_BUY}.`);
+        }
+      } else {
+        console.log(`[V25 SKIPPED] Stoch (5,3,3) crossed >50, but Main Trend is ${state.v25_trendDirection || "NEUTRAL"} (%K ${sK.toFixed(1)}).`);
+      }
+    } else if (state.v25_validatorTimer_BUY && m5BoundaryEpoch <= state.v25_validatorTimer_BUY) {
+      // During active 20-minute window, check if main trend is still BUY and validator has become satisfied
+      const remainingSec = state.v25_validatorTimer_BUY - m5BoundaryEpoch;
+      if (state.v25_trendDirection === "BUY") {
+        if (buyValidatorSatisfied) {
+          console.log(`[V25 TRIGGER] BUY 20-min window active (${Math.round(remainingSec/60)}m left) and Stoch (45,5,8) Validator NOW SATISFIED (%K ${sK.toFixed(1)} vs %D ${sD.toFixed(1)}). FIRING BUY!`);
+          indicatorsSatisfied = true;
+          signalDirection = "BUY";
+          setupLabel = "V25_STOCH45_VALIDATOR (BUY)";
+          state.v25_validatorTimer_BUY = 0;
+        } else {
+          console.log(`[V25 AWAITING VALIDATOR] BUY 20-min window active (${Math.round(remainingSec/60)}m left). Stoch 45 %K ${sK.toFixed(1)} vs %D ${sD.toFixed(1)} (Needs %K > %D or > 75).`);
+        }
+      } else {
+        console.log(`[V25 TIMER CANCELLED] Main trend broke below 50 during BUY window. Cancelling timer.`);
+        state.v25_validatorTimer_BUY = 0;
+      }
+    } else if (state.v25_validatorTimer_BUY && m5BoundaryEpoch > state.v25_validatorTimer_BUY) {
+      console.log(`[V25 TIMER EXPIRED] BUY 20-min window expired without validation.`);
       state.v25_validatorTimer_BUY = 0;
-    } else if (state.v25_trendDirection === "SELL" && sellTimerActive && sellValidatorSatisfied) {
-      indicatorsSatisfied = true;
-      signalDirection = "SELL";
-      setupLabel = "V25_STOCH45_VALIDATOR (SELL)";
-      // Reset SELL timer once triggered
-      state.v25_validatorTimer_SELL = 0;
+    }
+
+    // --- SELL PATH ---
+    if (!indicatorsSatisfied) {
+      if (stoch533CrossDown50) {
+        console.log(`[V25 PRE-TRIGGER] M5 Stoch (5,3,3) fresh cross <50 (%K ${sK533.toFixed(1)}, prev ${prevK533.toFixed(1)}). Main Trend: ${state.v25_trendDirection || "NEUTRAL"} (Stoch 45 %K ${sK.toFixed(1)}).`);
+        // When stoch 5,3,3 crosses level 50, the bot asks whether Stoch (45,5,8) %k is below %d or %k is below 25 for SELL.
+        if (state.v25_trendDirection === "SELL") {
+          if (sellValidatorSatisfied) {
+            // If satisfied on the fresh cross, fire immediately!
+            console.log(`[V25 TRIGGER] Stoch (5,3,3) cross <50 with Trend SELL and Stoch (45,5,8) Validator ALREADY SATISFIED (%K ${sK.toFixed(1)} vs %D ${sD.toFixed(1)}). FIRING SELL!`);
+            indicatorsSatisfied = true;
+            signalDirection = "SELL";
+            setupLabel = "V25_STOCH45_VALIDATOR (SELL)";
+            state.v25_validatorTimer_SELL = 0;
+          } else {
+            // If not, give a 20-minute window for that to happen
+            state.v25_validatorTimer_SELL = m5BoundaryEpoch + 1200; // 20 minutes (4 M5 candles)
+            console.log(`[V25 TIMER STARTED] SELL Validator pending. 20-min window open until epoch ${state.v25_validatorTimer_SELL}.`);
+          }
+        } else {
+          console.log(`[V25 SKIPPED] Stoch (5,3,3) crossed <50, but Main Trend is ${state.v25_trendDirection || "NEUTRAL"} (%K ${sK.toFixed(1)}).`);
+        }
+      } else if (state.v25_validatorTimer_SELL && m5BoundaryEpoch <= state.v25_validatorTimer_SELL) {
+        // During active 20-minute window, check if main trend is still SELL and validator has become satisfied
+        const remainingSec = state.v25_validatorTimer_SELL - m5BoundaryEpoch;
+        if (state.v25_trendDirection === "SELL") {
+          if (sellValidatorSatisfied) {
+            console.log(`[V25 TRIGGER] SELL 20-min window active (${Math.round(remainingSec/60)}m left) and Stoch (45,5,8) Validator NOW SATISFIED (%K ${sK.toFixed(1)} vs %D ${sD.toFixed(1)}). FIRING SELL!`);
+            indicatorsSatisfied = true;
+            signalDirection = "SELL";
+            setupLabel = "V25_STOCH45_VALIDATOR (SELL)";
+            state.v25_validatorTimer_SELL = 0;
+          } else {
+            console.log(`[V25 AWAITING VALIDATOR] SELL 20-min window active (${Math.round(remainingSec/60)}m left). Stoch 45 %K ${sK.toFixed(1)} vs %D ${sD.toFixed(1)} (Needs %K < %D or < 25).`);
+          }
+        } else {
+          console.log(`[V25 TIMER CANCELLED] Main trend broke above 50 during SELL window. Cancelling timer.`);
+          state.v25_validatorTimer_SELL = 0;
+        }
+      } else if (state.v25_validatorTimer_SELL && m5BoundaryEpoch > state.v25_validatorTimer_SELL) {
+        console.log(`[V25 TIMER EXPIRED] SELL 20-min window expired without validation.`);
+        state.v25_validatorTimer_SELL = 0;
+      }
     }
 
     // Determine geometric Fib TP target from key levels grid
