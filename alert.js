@@ -46,7 +46,6 @@ export const INSTRUMENT_PROFILES = {
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 180.0,
-    modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
     notes: "Condition 1: M5 EMA 100 vs 200 Trend Filter; Condition 2: M5 EMA 100/200 Pullback Retracement Touch; Condition 3: M5 Stoch (15,18,8, Exponential) %K/%D extreme zone 25/75 cross; Early Exit: Active trade in loss liquidates on opposite %K/%D crossover."
   },
@@ -66,7 +65,6 @@ export const INSTRUMENT_PROFILES = {
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 18.0,
-    modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
     notes: "Condition 1: M5 EMA 100 vs 200 Trend Filter; Condition 2: M5 EMA 100/200 Retracement Touch; Condition 3: M5 Candle Close > EMA 100 (Trend Resumption); Condition 4: Stoch (15,5,8) %K/%D cross out of 25/75 extreme zone + M5 EMA 200 opposite close early exit."
   },
@@ -86,7 +84,6 @@ export const INSTRUMENT_PROFILES = {
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 3.00,
-    modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
     notes: "40x multiplier; M15 Fib + M5 Stoch 50 Midline Cross + Envelope 200 breakout filter + Previous M15 Fractal SL + $4.00 TP & Trailing ($3.00 act / $1.50 buffer)."
   },
@@ -106,7 +103,6 @@ export const INSTRUMENT_PROFILES = {
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 5.50,
-    modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
     notes: "Two-stage state machine: Stage 1: M5 EMA 100 direction arming lock (Fib key level entry bypassed); Stage 2: Fast Stoch (5,3,3) 20/80 cross trigger + M15 Fib levels for TP target + Fast Stoch 50 adverse cross / EMA 100 early exit + Previous M15 Fractal SL + $4.00 TP ($3.00 act / $1.50 buffer)."
   },
@@ -126,7 +122,6 @@ export const INSTRUMENT_PROFILES = {
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 18.00,
-    modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
     notes: "400x multiplier ($1.38 pts/$1); Condition 1: M5 Stoch (45,5,8) Level 50 Trend Arming; Condition 2: M5 Fast Stoch (5,3,3) Level 50 Fresh Cross Pre-Trigger & 20-Min Timer; Condition 3: M5 Stoch (45,5,8) Trade Validator (>75 or %K>%D for BUY, <25 or %K<%D for SELL); Early Exit: Active trade in loss + M5 Stoch (45,5,8) opposite %K/%D cross; M15 Fractal SL / -$2.50 cap; Fib TP min $4.00."
   },
@@ -146,7 +141,6 @@ export const INSTRUMENT_PROFILES = {
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 0.20,
-    modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
     notes: "80x multiplier; M15 Fib + M5 Stoch (18,12,25) 20/80 boundary cross + Previous M15 Fractal SL + $4.00 TP & Trailing ($3.00 act / $1.50 buffer)."
   },
@@ -165,7 +159,6 @@ export const INSTRUMENT_PROFILES = {
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 8.00,
-    modesAllowed: ["CONT", "REV"],
     slType: "M15_FRACTAL",
     notes: "400x multiplier ($2.40 pts/$1); M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $4.00 TP & Trailing ($3.00 act / $1.50 buffer)."
   }
@@ -185,7 +178,6 @@ const STAKE_USD = PROFILE.stakeUsd || 5.0;
 const STOCH_SEPARATION_MIN = 0; // Pure directional crossover (zero separation barrier)
 const MIN_TP_POINTS_FLOOR = PROFILE.minTakeProfitPoints;
 const MAX_HARD_SL_POINTS = PROFILE.maxHardStopPoints;
-const MODES_ALLOWED = PROFILE.modesAllowed;
 const GATE_TYPE = PROFILE.gateType;
 const STRATEGY_PROFILE = PROFILE.strategyProfile;
 
@@ -942,7 +934,7 @@ async function manageOpenTradesFastPath() {
     }
     // =========================================================================
 
-    const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction, openTrade.entryType?.includes("REV") ? "REV" : "CONT");
+    const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction);
 
     const hardStopBreached = isBuy ? currentPrice <= hardStopPrice : currentPrice >= hardStopPrice;
     let tpHit = false;
@@ -1018,6 +1010,30 @@ async function manageOpenTradesFastPath() {
         console.log(`[DAILY TARGET] +$${DAILY_PROFIT_TARGET_USD.toFixed(2)} Daily Goal Achieved ($${state.dailyNetPnl.toFixed(2)}). Switching to IDLE_DAILY_TARGET_REACHED.`);
         await sendTelegram(`🎯 *${REPO_LABEL} — DAILY TARGET ACHIEVED!* 🎯\n\nDaily Net Profit: *+$${state.dailyNetPnl.toFixed(2)}*\nBot is now locked in profit protection until 00:00 UTC rollover.`);
       }
+
+      // Disarm setup upon trade exit to require a fresh key level re-test or fresh indicator reset
+      state.armed = null;
+      state.armedEpoch = null;
+      state.armedTime = null;
+      state.keyLevelTouched = false;
+      state.levelTouched = null;
+      state.v75_emaTouched_BUY = false;
+      state.v75_emaTouched_SELL = false;
+      state.v75_1s_emaTouched_BUY = false;
+      state.v75_1s_emaTouched_SELL = false;
+      state.v100_1s_armed = false;
+      state.v100_1s_armDir = null;
+      state.latchStoch533_BUY = false;
+      state.latchStoch533_SELL = false;
+      state.latchFib_BUY = false;
+      state.latchFib_SELL = false;
+      state.latchCci_BUY = false;
+      state.latchCci_SELL = false;
+      state.latchStoch_BUY = false;
+      state.latchStoch_SELL = false;
+      state.v25_validatorTimer_BUY = 0;
+      state.v25_validatorTimer_SELL = 0;
+      state.rescueStochArmed = false;
 
       saveTrades(trades);
       saveState();
@@ -1099,6 +1115,30 @@ async function checkOppositeFractalFakeoutExit(m15Candles, currentPrice) {
     openTrade.serverPnl = serverPnl;
 
     state.dailyNetPnl = (state.dailyNetPnl || 0) + serverPnl;
+    // Disarm setup upon fakeout exit to require a fresh key level re-test or fresh indicator reset
+    state.armed = null;
+    state.armedEpoch = null;
+    state.armedTime = null;
+    state.keyLevelTouched = false;
+    state.levelTouched = null;
+    state.v75_emaTouched_BUY = false;
+    state.v75_emaTouched_SELL = false;
+    state.v75_1s_emaTouched_BUY = false;
+    state.v75_1s_emaTouched_SELL = false;
+    state.v100_1s_armed = false;
+    state.v100_1s_armDir = null;
+    state.latchStoch533_BUY = false;
+    state.latchStoch533_SELL = false;
+    state.latchFib_BUY = false;
+    state.latchFib_SELL = false;
+    state.latchCci_BUY = false;
+    state.latchCci_SELL = false;
+    state.latchStoch_BUY = false;
+    state.latchStoch_SELL = false;
+    state.v25_validatorTimer_BUY = 0;
+    state.v25_validatorTimer_SELL = 0;
+    state.rescueStochArmed = false;
+
     saveTrades(trades);
     saveState();
     closingContracts.delete(openTrade.contractId);
@@ -1139,7 +1179,6 @@ async function checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch
   const parentTrade = openTrades.find(t => !t.isRescue);
 
   if (!parentTrade || !parentTrade.contractId) {
-    state.rescueEnvTouched = false;
     state.rescueStochArmed = false;
     return;
   }
@@ -1153,36 +1192,13 @@ async function checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch
   // Must be in floating loss
   const parentPnl = calcUnrealizedPnL(parentTrade, currentPrice);
   if (parentPnl >= 0) {
-    state.rescueEnvTouched = false;
     state.rescueStochArmed = false;
     return;
   }
 
-  // 1. Condition 1: Price must retrace to touch Envelope 50 (deviation 0.05%)
-  const env50 = calculateEnvelopes(candles, 50, 0.05);
   const si = candles.length - 2;
-  const env50Up = env50.upper[si];
-  const env50Lo = env50.lower[si];
-  const lastCandle = candles[si];
 
-  let touchedEnv50 = false;
-  if (parentTrade.direction === "BUY") {
-    touchedEnv50 = parseFloat(lastCandle.low) <= env50Lo || currentPrice <= env50Lo;
-  } else if (parentTrade.direction === "SELL") {
-    touchedEnv50 = parseFloat(lastCandle.high) >= env50Up || currentPrice >= env50Up;
-  }
-
-  if (touchedEnv50) {
-    state.rescueEnvTouched = true;
-    console.log(`[RESCUE ENGINE] ${SYMBOL} Parent trade #${parentTrade.contractId} (${parentTrade.direction}) touched Envelope 50 (Up: ${env50Up.toFixed(4)}, Lo: ${env50Lo.toFixed(4)}). Latched.`);
-  }
-
-  // If Envelope 50 has not been touched during this loss retracement, rescue cannot be triggered
-  if (!state.rescueEnvTouched && !touchedEnv50) {
-    return;
-  }
-
-  // 2. Condition 2: Fast Stoch (5,3,3) must retrace to 20/80 level and cross
+  // 1. Fast Stoch (5,3,3) Extreme Retracement & Level Crossing Trigger
   // For BUY: retrace to 20 level and cross > 20
   // For SELL: retrace to 80 level and cross < 80
   const stoch533 = calculateStoch(candles, 5, 3, 3);
@@ -1202,10 +1218,23 @@ async function checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch
     return;
   }
 
+  // 2. Main Stochastic Indicator %K vs %D Directional Alignment
+  // The bot can only enter a trade recovery if %K is below %D for a SELL and %K is above %D for a BUY on the Main Stoch
+  const mainStochParams = PROFILE.stochParams || { k: 18, d: 12, slowing: 25 };
+  const mainStoch = calculateStoch(candles, mainStochParams.k, mainStochParams.d, mainStochParams.slowing, mainStochParams.method || "Simple");
+  const mainK = mainStoch.k[si], mainD = mainStoch.d[si];
+  if (mainK === null || mainD === null) return;
+
+  const mainStochAligned = parentTrade.direction === "BUY" ? mainK > mainD : mainK < mainD;
+  if (!mainStochAligned) {
+    console.log(`[RESCUE ENGINE] ${SYMBOL} Fast Stoch (5,3,3) triggered, but Main Stoch (${mainStochParams.k},${mainStochParams.d},${mainStochParams.slowing}) is not aligned: %K ${mainK.toFixed(1)} vs %D ${mainD.toFixed(1)} (Requires ${parentTrade.direction === "BUY" ? "%K > %D" : "%K < %D"}). Rescue gated.`);
+    return;
+  }
+
   console.log(`[RESCUE ENGINE] 🚨 All conditions satisfied for ${SYMBOL} Loss Recovery / Rescue Entry!`);
   console.log(`  • Parent Trade: #${parentTrade.contractId} (${parentTrade.direction} @ ${Number(parentTrade.entry).toFixed(4)}, PnL: $${parentPnl.toFixed(2)})`);
-  console.log(`  • Envelope 50 Touch: CONFIRMED`);
-  console.log(`  • Fast Stoch (5,3,3) Cross: CONFIRMED (%K: ${sK533.toFixed(1)}, prev: ${prevK533.toFixed(1)})`);
+  console.log(`  • Fast Stoch (5,3,3) Trigger: CONFIRMED (%K: ${sK533.toFixed(1)}, prev: ${prevK533.toFixed(1)})`);
+  console.log(`  • Main Stoch (${mainStochParams.k},${mainStochParams.d},${mainStochParams.slowing}) Alignment: CONFIRMED (%K: ${mainK.toFixed(1)} ${parentTrade.direction === "BUY" ? ">" : "<"} %D: ${mainD.toFixed(1)})`);
 
   const direction = parentTrade.direction;
   const entry = currentPrice;
@@ -1224,7 +1253,7 @@ async function checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch
     entry,
     sl,
     rr: null,
-    entryType: "RESCUE_ENTRY_ENV50_STOCH533",
+    entryType: "RESCUE_ENTRY_STOCH533",
     brokerSlAmount: STAKE_USD,
     entryEpoch: m5BoundaryEpoch,
     fractalSl: parentTrade.fractalSl || parentTrade.sl,
@@ -1247,7 +1276,7 @@ async function checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch
   const rescueMessage = 
     `🚑 *${SYMBOL_NAME.toUpperCase()} — LOSS RECOVERY / RESCUE ENTRY* 🚑\n\n` +
     `Direction: *${dirEmoji}*\n` +
-    `Setup: *Loss Recovery (Env 50 Touch + Stoch 5,3,3 Cross)*\n` +
+    `Setup: *Loss Recovery (Fast Stoch 5,3,3 Cross + Main Stoch %K/%D Alignment)*\n` +
     `📍 Rescue Entry: *${entry.toFixed(4)}*\n` +
     `🛑 Stop Loss: *${Number(sl).toFixed(4)}* (Inherited from Parent Trade)\n` +
     `🎯 Take Profit: *${fibTpPrice ? Number(fibTpPrice).toFixed(4) : "Parent TP Target"}*\n` +
@@ -1255,8 +1284,8 @@ async function checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch
     `🔗 *Parent Trade Reference:*\n` +
     `• Parent Contract: \`${parentTrade.contractId}\` (${parentTrade.direction} @ ${Number(parentTrade.entry).toFixed(4)})\n` +
     `• Floating Loss at Rescue: *$${parentPnl.toFixed(2)}*\n` +
-    `• Envelope 50 Touch: *Confirmed*\n` +
     `• Fast Stoch (5,3,3): *%K ${sK533.toFixed(1)}* (${direction === "BUY" ? "> 20 Cross" : "< 80 Cross"})\n` +
+    `• Main Stoch (${mainStochParams.k},${mainStochParams.d},${mainStochParams.slowing}): *%K ${mainK.toFixed(1)}* ${direction === "BUY" ? ">" : "<"} *%D ${mainD.toFixed(1)}* (*Validated*)\n` +
     `• Strategy: *When price retraces to ${Number(parentTrade.entry).toFixed(4)}, parent trade will close at >= +$0.20 while this rescue position runs to TP.*\n\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `⏰ Time (UTC): ${timeFormatted}`;
@@ -1273,7 +1302,6 @@ async function checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch
     pendingRescueRecord.pending = false;
     saveTrades(trades);
 
-    state.rescueEnvTouched = false;
     state.rescueStochArmed = false;
     saveState();
 
@@ -1295,11 +1323,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   // Daily UTC Rollover Reset for Target Cap & PnL Accumulator
   const todayStr = new Date(m5BoundaryEpoch * 1000).toISOString().split("T")[0];
   if (!state.currentDayDate || state.currentDayDate !== todayStr) {
-    console.log(`[DAILY ROLLOVER] New UTC Day detected (${todayStr}). Resetting daily net PnL and target lock.`);
+    console.log(`[DAILY ROLLOVER] New UTC Day detected (${todayStr}). Resetting daily net PnL, target lock, and daily key level touch state.`);
     state.currentDayDate = todayStr;
     state.dailyTargetDate = todayStr;
     state.dailyTargetReached = false;
     state.dailyNetPnl = 0;
+    state.dailyKeyLevelTouchedToday = false;
     saveState();
   }
 
@@ -1988,10 +2017,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const targetKey = tp !== null ? keyLevels.find(k => Math.abs(k.lvl - tp) < 1e-6) : null;
     const tpName = targetKey ? targetKey.name : (tp !== null ? tp.toFixed(2) : "OPEN");
 
-    const setupType = MODES_ALLOWED.includes("CONT") ? "CONT" : (MODES_ALLOWED.includes("REV") ? "REV" : "CONT");
-
     const s = {
-      type: setupType,
       dir,
       tp,
       lvl: level,
@@ -2007,20 +2033,25 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const touched = isLevelTouched(item.lvl, currM15);
 
     if (crossed || touched) {
+      state.dailyKeyLevelTouchedToday = true;
       newArm = resolveFibSetup(item.lvl, m15Close);
       if (newArm) break;
     }
   }
 
-  // ── HISTORICAL STATE RESOLUTION (STARTUP / POST-RESTART RECOVERY) ──
-  // If no immediate M15 crossover occurred on the latest bar and state is un-armed,
-  // scan recent M15 bars to identify the current structural Fibonacci state of the market.
-  if (!newArm && !state.armed && m15Candles && m15Candles.length >= 3) {
-    const maxLookback = Math.min(32, m15Candles.length - 2); // Scan up to past ~8 hours of M15 candles
+  // ── DAILY STARTUP RECOVERY SCANNER (ACTIVE ONLY UNTIL FIRST KEY FIB TOUCH OF THE DAY) ──
+  // Activates if no key Fib level has been touched since the new day candle opened (00:00 UTC).
+  // Once the first key Fib level of the current day is touched, this mechanism permanently pauses until the next daily open.
+  if (!newArm && !state.armed && !state.dailyKeyLevelTouchedToday && m15Candles && m15Candles.length >= 3) {
+    const todayOpenEpoch = Math.floor(new Date(todayStr + "T00:00:00Z").getTime() / 1000);
+    const todaysCandles = m15Candles.filter(c => c.epoch >= todayOpenEpoch);
+    const maxLookback = Math.min(todaysCandles.length, m15Candles.length - 2);
+
     for (let i = m15Candles.length - 2; i >= m15Candles.length - 2 - maxLookback; i--) {
       if (i < 1) break;
       const histPrev = m15Candles[i - 1];
       const histCurr = m15Candles[i];
+      if (histCurr.epoch < todayOpenEpoch) break; // Lookback strictly within current day's trading
       const hPrevClose = parseFloat(histPrev.close);
       const hCurrClose = parseFloat(histCurr.close);
       const hCurrOpen = parseFloat(histCurr.open);
@@ -2039,8 +2070,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             const isSellActive = candidateArm.dir === "SELL" && m15Close <= candidateArm.lvl && (candidateArm.tp === null || m15Close > candidateArm.tp);
 
             if (isBuyActive || isSellActive) {
-              dbg(`[STARTUP RECOVERY] Restored active structural Fib state from M15 candle at epoch ${histCurr.epoch}: ${candidateArm.lbl}`);
+              dbg(`[DAILY RECOVERY] Restored active structural Fib state from today's M15 candle at epoch ${histCurr.epoch}: ${candidateArm.lbl}`);
               newArm = candidateArm;
+              state.dailyKeyLevelTouchedToday = true;
               break;
             } else if (candidateArm.tp !== null) {
               // If target was reached during the move, transition the reached target level to the new anchor
@@ -2048,8 +2080,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
               if (reachedTarget) {
                 const transitionedArm = resolveFibSetup(candidateArm.tp, m15Close);
                 if (transitionedArm) {
-                  dbg(`[STARTUP RECOVERY] Target ${candidateArm.tp} reached from epoch ${histCurr.epoch}. Transitioning to: ${transitionedArm.lbl}`);
+                  dbg(`[DAILY RECOVERY] Target ${candidateArm.tp} reached from today's epoch ${histCurr.epoch}. Transitioning to: ${transitionedArm.lbl}`);
                   newArm = transitionedArm;
+                  state.dailyKeyLevelTouchedToday = true;
                   break;
                 }
               }
@@ -2058,37 +2091,6 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
       }
       if (newArm) break;
-    }
-
-    // Fallback: If no recent candle crossed, determine corridor state relative to closest Fibonacci boundaries
-    if (!newArm) {
-      const sortedValid = Array.from(new Set(keyLevels.map(k => k.lvl).filter(v => typeof v === "number" && !isNaN(v)))).sort((a, b) => a - b);
-      if (sortedValid.length > 0) {
-        if (m15Close < sortedValid[0]) {
-          // Below lowest boundary
-          newArm = resolveFibSetup(sortedValid[0], m15Close);
-        } else if (m15Close >= sortedValid[sortedValid.length - 1]) {
-          // Above highest boundary
-          newArm = resolveFibSetup(sortedValid[sortedValid.length - 1], m15Close);
-        } else {
-          for (let i = 0; i < sortedValid.length - 1; i++) {
-            const lowerLvl = sortedValid[i];
-            const upperLvl = sortedValid[i + 1];
-            if (m15Close >= lowerLvl && m15Close < upperLvl) {
-              // Price is inside corridor [lowerLvl, upperLvl]
-              // If Stochastic is aligned BUY or candle is bullish, arm BUY from lowerLvl to upperLvl
-              const stochBuy = state.stochAligned === "BUY" || (sK !== null && sK >= 50.0);
-              const anchorLvl = stochBuy ? lowerLvl : (currM15.close >= currM15.open ? lowerLvl : upperLvl);
-              const candidate = resolveFibSetup(anchorLvl, m15Close);
-              if (candidate) {
-                dbg(`[CORRIDOR RESOLUTION] Price (${m15Close.toFixed(2)}) in [${lowerLvl.toFixed(2)}, ${upperLvl.toFixed(2)}]. Arming: ${candidate.lbl}`);
-                newArm = candidate;
-                break;
-              }
-            }
-          }
-        }
-      }
     }
   }
 
@@ -2714,7 +2716,7 @@ async function checkTelegramCommands() {
 
 export async function startContinuousEngine() {
   console.log(`[${REPO_LABEL}] 🚀 24/7 Continuous Master Trading Engine Initialized.`);
-  console.log(`[${REPO_LABEL}] ⚙️ Profile: ${STRATEGY_PROFILE} | Multiplier: ${MULTIPLIER}x | Modes: ${MODES_ALLOWED.join(",")}`);
+  console.log(`[${REPO_LABEL}] ⚙️ Profile: ${STRATEGY_PROFILE} | Multiplier: ${MULTIPLIER}x`);
   
   setInterval(checkTelegramCommands, 15000);
 
