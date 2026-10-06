@@ -946,19 +946,19 @@ async function manageOpenTradesFastPath() {
     const pnl = calcUnrealizedPnL(openTrade, currentPrice);
 
     // =========================================================================
-    // 🛡️ TWO-TIER DYNAMIC PROFIT RATCHET (Breakeven Shield at +$2.50 -> Full Trail at +$4.00)
+    // 🛡️ TWO-TIER DYNAMIC PROFIT RATCHET (Breakeven Shield at +$2.20 -> Target Trail at +$5.00)
     // =========================================================================
-    if (pnl >= 2.50) {
+    if (pnl >= 2.20) {
       if (!openTrade.maxUnrealizedPnl || pnl > openTrade.maxUnrealizedPnl) {
         openTrade.maxUnrealizedPnl = parseFloat(pnl.toFixed(2));
       }
       
-      // Tier 1 (+$2.50): Capital Shield — Locks +$0.50 net (covers commission), leaves generous breathing buffer
+      // Tier 1 (+$2.20): Capital Shield — Locks +$0.50 net (covers commission), leaves generous breathing buffer
       let targetFloor = 0.50;
       
-      // Tier 2 (+$4.00+): Target Trailing — Locks +$3.00 minimum, trails $1.00 behind peak profit
-      if (openTrade.maxUnrealizedPnl >= 4.00) {
-        targetFloor = Math.max(3.00, openTrade.maxUnrealizedPnl - 1.00);
+      // Tier 2 (+$5.00+): Target Trailing — Locks +$3.50 minimum, trails $1.50 behind peak profit
+      if (openTrade.maxUnrealizedPnl >= 5.00) {
+        targetFloor = Math.max(3.50, openTrade.maxUnrealizedPnl - 1.50);
       }
       
       targetFloor = parseFloat(targetFloor.toFixed(2));
