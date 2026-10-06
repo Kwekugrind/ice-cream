@@ -182,6 +182,10 @@ const STRATEGY_PROFILE = PROFILE.strategyProfile;
 
 const TRADING_SYMBOL = SYMBOL;
 
+// ── Execution Mode & Lot Size Configuration (Dual-Mode Architecture) ──
+const EXECUTION_MODE = (process.env.EXECUTION_MODE || "multiplier").toLowerCase();
+const CTRADER_LOT_SIZE = parseFloat(process.env.LOT_SIZE || (SYMBOL === "1HZ75V" || SYMBOL === "R_75" ? "0.05" : "0.50"));
+
 const SOFTWARE_SL_USD = -2.50;
 const SERVER_TP_USD = 10.00;
 const CATASTROPHIC_PNL_FLOOR = -5.50;
@@ -300,12 +304,44 @@ async function gatewayFetch(endpoint, method = "GET", body = null, timeoutMs = 6
 }
 
 async function getOpenPortfolio() {
+  if (EXECUTION_MODE === "ctrader") {
+    const res = await gatewayFetch("/ctrader/positions");
+    if (!res.ok) throw new Error("Gateway cTrader positions query failed");
+    return (res.positions || []).map(p => ({
+      contract_id: String(p.positionId),
+      symbol: SYMBOL,
+      underlying_symbol: TRADING_SYMBOL,
+      contract_type: p.tradeData?.tradeSide === 1 ? "MULTUP" : "MULTDOWN",
+      buy_price: p.price,
+      date_start: Math.floor((p.tradeData?.openTimestamp || Date.now()) / 1000)
+    }));
+  }
   const res = await gatewayFetch("/portfolio");
   if (!res.ok || !res.authorized) throw new Error("Gateway is currently disconnected");
   return res.portfolio || [];
 }
 
-async function executeTrade(direction) {
+async function executeTrade(direction, orderContext = {}) {
+  // Mode 1: Deriv cTrader (CFD Lot Sizes)
+  if (EXECUTION_MODE === "ctrader") {
+    const payload = {
+      symbol: SYMBOL_NAME || SYMBOL,
+      side: direction,
+      lots: CTRADER_LOT_SIZE,
+      slPrice: orderContext.slPrice || null,
+      tpPrice: orderContext.fibTpPrice || null,
+      slUsd: 3.60, // Fallback dollar SL target
+      tpUsd: 4.00, // Fallback dollar TP target
+      comment: `${REPO_LABEL} cTrader`
+    };
+    const res = await gatewayFetch("/ctrader/order", "POST", payload);
+    if (!res.ok || !res.order?.positionId) {
+      throw new Error(res.error || "cTrader order placement failed");
+    }
+    return String(res.order.positionId);
+  }
+
+  // Mode 2: Deriv Options (Multipliers - Existing Strategy Logic)
   const expectedContractType = direction === "BUY" ? "MULTUP" : "MULTDOWN";
   const slDollars = parseFloat(STAKE_USD.toFixed(2));
   const payload = {
@@ -326,6 +362,10 @@ async function executeTrade(direction) {
 }
 
 async function closeContract(contractId) {
+  if (EXECUTION_MODE === "ctrader") {
+    const res = await gatewayFetch("/ctrader/close", "POST", { positionId: Number(contractId) });
+    return res;
+  }
   const data = await gatewayFetch("/sell", "POST", { sell: contractId, price: 0 });
   if (data.error && data.error.code !== "ContractNotFound") throw new Error(data.error.message);
   return data;
@@ -1284,7 +1324,7 @@ async function checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch
     `⏰ Time (UTC): ${timeFormatted}`;
 
   try {
-    const contractId = await executeTrade(direction);
+    const contractId = await executeTrade(direction, { slPrice: sl, fibTpPrice });
     if (!contractId) {
       trades.splice(trades.findIndex(t => t.id === pendingRescueRecord.id), 1);
       saveTrades(trades);
@@ -2598,7 +2638,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     saveTrades(trades);
 
     try {
-      const contractId = await executeTrade(direction);
+      const contractId = await executeTrade(direction, { slPrice: sl, fibTpPrice });
       if (!contractId) {
         trades.splice(trades.findIndex(t => t.id === pendingTradeRecord.id), 1); saveTrades(trades);
         await sendTelegram(`❌ *${REPO_LABEL}* — Signal triggered, but broker returned no contract ID. Aborted.`);
