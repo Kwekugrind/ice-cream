@@ -1,3 +1,4 @@
+// Fleet Engine Signature: v6.2-master | Sync Trigger Build: 2026-10-10 21:24:00 UTC
 import WebSocket from "ws";
 import fetch from "node-fetch";
 import fs from "fs";
@@ -40,14 +41,14 @@ export const INSTRUMENT_PROFILES = {
     commissionUsd: 0.15,
     strategyProfile: "PROFILE_V75_EMA_STOCH15",
     gateType: "EMA_STOCH15_RETRACEMENT",
-    stochParams: { k: 15, d: 18, slowing: 8, method: "Exponential", levels: [25, 75] },
+    stochParams: { k: 15, d: 2, slowing: 5, method: "Simple", levels: [25, 75] },
     emaPeriod: 100,
     minTakeProfitPoints: 1330.0,
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 180.0,
     slType: "M15_FRACTAL",
-    notes: "Condition 1: M5 EMA 100 vs 200 Trend Filter; Condition 2: M5 EMA 100/200 Pullback Retracement Touch; Condition 3: M5 Stoch (15,18,8, Exponential) %K/%D extreme zone 25/75 cross; Early Exit: Active trade in loss liquidates on opposite %K/%D crossover."
+    notes: "Condition 1: M5 EMA 100 vs 200 Trend Filter; Condition 2: M5 EMA 100/200 Pullback Retracement Touch; Condition 3: M5 Stoch (15,2,5, Simple) %K/%D extreme zone 25/75 cross; Early Exit: Active trade in loss liquidates on opposite %K/%D crossover."
   },
   "1HZ75V": {
     symbol: "1HZ75V",
@@ -78,16 +79,16 @@ export const INSTRUMENT_PROFILES = {
     multiplier: 40,
     stakeUsd: 5.0,
     commissionUsd: 0.15,
-    strategyProfile: "PROFILE_V100_MIDLINE_ENV",
-    gateType: "STOCH_50_ENV200",
-    stochParams: { k: 18, d: 12, slowing: 25 },
-    envParams: { period: 200, devPct: 0.05 }, // Mandatory Envelope 200 breakout trend filter
-    minTakeProfitPoints: 18.70,
+    strategyProfile: "PROFILE_V100_STOCH200_STOCH15",
+    gateType: "STOCH200_STOCH15",
+    stoch200Params: { k: 200, d: 1, slowing: 1 },
+    stoch15Params: { k: 15, d: 2, slowing: 5 },
+    minTakeProfitPoints: 10.70,
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 3.00,
     slType: "M15_FRACTAL",
-    notes: "40x multiplier; M15 Fib + M5 Stoch 50 Midline Cross + Envelope 200 breakout filter + Previous M15 Fractal SL + $4.00 TP & Trailing ($3.00 act / $1.50 buffer)."
+    notes: "40x multiplier; Condition 1: M5 Stoch 200 (48/52) Main Trend Identifier; Condition 2: M5 Stoch (15,2,5) Initial (Lvl 50 +/-2 bars) & Re-Entry (Lvl 20/80); Early Exits: Opposite M5 Fractal Break & Entry-Hour H1 Adverse Close; Min $4.00 TP & Trailing ($3.00 act / $1.50 buffer)."
   },
   "1HZ100V": {
     symbol: "1HZ100V",
@@ -98,17 +99,17 @@ export const INSTRUMENT_PROFILES = {
     stakeUsd: 5.0,
     commissionUsd: 0.15,
     strategyProfile: "PROFILE_V100_1S_TREND_MACD_STOCH",
-    gateType: "STOCH200_MACD_EMA100",
+    gateType: "STOCH200_MACD_EMA100_STOCH533",
     stoch200Params: { k: 200, d: 1, slowing: 1 },
     macdParams: { fast: 25, slow: 75, signal: 1 },
-    stoch15Params: { k: 15, d: 5, slowing: 8 },
+    stoch533Params: { k: 5, d: 3, slowing: 3 },
     emaPeriod: 100, // M5 EMA 100
     minTakeProfitPoints: 30.80,
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 2.20,
     maxHardStopPoints: 5.50,
     slType: "M15_FRACTAL",
-    notes: "Macro Trend Stoch 200 Level 50 Gate + M5 MACD (25,75,1) Zero Line Alignment + M5 EMA 100 Baseline + M5 Stoch (15,5,8) Re-Entry Trigger + 3 Consecutive Adverse M5 Candle & Stoch 200 Invalidation Exits + $2.20/$5.00 Trailing Stop."
+    notes: "Macro Trend Stoch 200 Level 50 Gate & MACD Confirmation + M5 EMA 100 Baseline + M5 Fast Stoch (5,3,3) 20/80 Re-Entry Trigger + 3-Candle, Stoch 200 & Stoch 533 Midline Invalidation Exits + $2.20/$5.00 Trailing Stop."
   },
   "R_25": {
     symbol: "R_25",
@@ -136,16 +137,16 @@ export const INSTRUMENT_PROFILES = {
     multiplier: 80,
     stakeUsd: 5.0,
     commissionUsd: 0.16,
-    strategyProfile: "PROFILE_V50_STOCH_BOUNDARIES",
-    gateType: "STOCH_BOUNDARIES_20_80",
-    stochParams: { k: 18, d: 12, slowing: 25 },
-    excludeFib50: true,
+    strategyProfile: "PROFILE_V50_STOCH200_CCI150",
+    gateType: "STOCH200_CCI150_M5FRACTAL",
+    stochParams: { k: 200, d: 1, slowing: 1 },
+    cciPeriod: 150,
     minTakeProfitPoints: 1.63,
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 0.20,
-    slType: "M15_FRACTAL",
-    notes: "80x multiplier; M15 Fib + M5 Stoch (18,12,25) 20/80 boundary cross + Previous M15 Fractal SL + $4.00 TP & Trailing ($3.00 act / $1.50 buffer)."
+    slType: "M5_FRACTAL",
+    notes: "80x multiplier ($0.23 pts/$1); Condition 1: M5 Stoch (200,1,1) Main Trend Identifier (cross above 50 arms BUY, cross below 50 arms SELL); Condition 2: M5 CCI 150 zero-line cross execution (>0 for BUY, <0 for SELL); Condition 1 must happen before Condition 2, except simultaneous cross on same M5 candle close; Special Rule: If CCI crosses first, 15-minute timer waits for Stoch cross, else disarms; Early Exit: Previous M5 Fractal break in loss; Fib TP min $4.00."
   },
   "R_10": {
     symbol: "R_10",
@@ -155,15 +156,18 @@ export const INSTRUMENT_PROFILES = {
     multiplier: 400,
     stakeUsd: 5.0,
     commissionUsd: 0.80,
-    strategyProfile: "PROFILE_V10_MIDLINE_FRACTAL",
-    gateType: "STOCH_50_MIDLINE",
-    stochParams: { k: 18, d: 12, slowing: 25 },
-    minTakeProfitPoints: 16.80,
+    strategyProfile: "PROFILE_V10_TREND_MACD_STOCH533",
+    gateType: "STOCH200_MACD_EMA100_STOCH533",
+    stoch200Params: { k: 200, d: 1, slowing: 1 },
+    macdParams: { fast: 25, slow: 75, signal: 1 },
+    emaPeriod: 100,
+    stoch533Params: { k: 5, d: 3, slowing: 3 },
+    minTakeProfitPoints: 9.60,
     minTakeProfitUsd: 4.00,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 8.00,
     slType: "M15_FRACTAL",
-    notes: "400x multiplier ($2.40 pts/$1); M15 Fib + M5 Stoch 50 Midline Cross + Previous M15 Fractal SL + $4.00 TP & Trailing ($3.00 act / $1.50 buffer)."
+    notes: "Macro Trend Stoch (200,1,1) Level 50 Gate & Initial Trigger + M5 MACD (25,75,1) Zero Line Alignment + M5 EMA 100 Baseline + M5 Stoch (5,3,3) 20/80 Re-Entry Trigger + 3 Consecutive Adverse M5 Candle & Stoch 200 Invalidation Exits + Stoch 533 Level 50 Loss Exit + $3.00/$1.50 Trailing Stop (Mapped from V75 1s Institutional Model)."
   }
 };
 
@@ -203,7 +207,7 @@ const TRAIL_ACTIVATION_USD = PROFILE.trailActivationUsd || 3.00; // Activated on
 const TRAIL_BUFFER_USD = 1.50;     // Trail $1.50 behind peak unrealized profit
 const TRAIL_INITIAL_FLOOR_USD = 1.50; // Initial guaranteed lock at activation (+$3.00 peak - $1.50 buffer = +$1.50)
 
-const STOCH_MIDLINE_FALLBACK_SYMBOLS = ["R_50", "R_10"];
+const STOCH_MIDLINE_FALLBACK_SYMBOLS = ["R_50"];
 
 const GATEWAY_URL = process.env.GATEWAY_URL || process.env.PROXY_URL || "http://127.0.0.1:3000";
 const GATEWAY_SECRET = process.env.GATEWAY_SECRET || process.env.PROXY_SECRET;
@@ -322,7 +326,8 @@ async function getOpenPortfolio() {
   }
   const res = await gatewayFetch("/portfolio");
   if (!res.ok || !res.authorized) throw new Error("Gateway is currently disconnected");
-  return res.portfolio || [];
+  const rawList = res.portfolio?.contracts || res.portfolio || [];
+  return Array.isArray(rawList) ? rawList : (Array.isArray(rawList.contracts) ? rawList.contracts : []);
 }
 
 async function executeTrade(direction, orderContext = {}) {
@@ -370,7 +375,9 @@ async function closeContract(contractId) {
     const res = await gatewayFetch("/ctrader/close", "POST", { positionId: Number(contractId) });
     return res;
   }
-  const data = await gatewayFetch("/sell", "POST", { sell: contractId, price: 0 });
+  const numericId = Number(contractId);
+  const payloadSell = (!isNaN(numericId) && numericId > 0) ? numericId : contractId;
+  const data = await gatewayFetch("/sell", "POST", { sell: payloadSell, price: 0 });
   if (data.error && data.error.code !== "ContractNotFound") throw new Error(data.error.message);
   return data;
 }
@@ -916,6 +923,9 @@ let state = {
   v75_emaTouched_SELL: false,
   // V25 Stoch (200,1,1) Trend Indicator Arming
   v25_trendDirection: null,
+  // V50 Stoch (200,1,1) Trend Indicator & Pending CCI 15m Timer
+  v50_trendDirection: null,
+  v50_pending_cci: null,
   // V25 Out-of-Order 3-way latches
   latchFib_BUY: false,
   latchFib_SELL: false,
@@ -951,6 +961,51 @@ const closingContracts = new Set();
 async function manageOpenTradesFastPath() {
   let trades = loadTrades();
   let openTrades = trades.filter(t => !t.result && !t.pending);
+
+  // 🛡️ Universal Live Portfolio Adoption & Self-Healing: Always query deriv-gateway for active broker positions.
+  // Ensures any live contract running on Deriv for this instrument is instantly adopted and monitored by Fast-Path Software SL.
+  try {
+    const allPortfolio = await getOpenPortfolio();
+    const allLiveIdSet = new Set((Array.isArray(allPortfolio) ? allPortfolio : []).map(c => String(c.contract_id || c.id || c.contractId)));
+    const liveContracts = (Array.isArray(allPortfolio) ? allPortfolio : []).filter(c => getContractSymbol(c).toUpperCase() === TRADING_SYMBOL.toUpperCase());
+    let modified = false;
+
+    // Self-Healing Step: If a contract was falsely reconciled as CLOSED_EXTERNAL but is STILL LIVE on broker, restore t.result = null
+    for (const t of trades.filter(t => t.result === "CLOSED_EXTERNAL" && t.contractId)) {
+      if (allLiveIdSet.has(String(t.contractId))) {
+        console.log(`[SELF-HEALING] Contract ${t.contractId} was falsely marked CLOSED_EXTERNAL, but is STILL LIVE on broker portfolio! Restoring active state.`);
+        t.result = null;
+        t.closeTime = null;
+        t.serverPnl = null;
+        modified = true;
+      }
+    }
+
+    if (liveContracts.length > 0) {
+      for (const live of liveContracts) {
+        const alreadyTracked = trades.find(t => String(t.contractId) === String(live.contract_id) && !t.result);
+        if (!alreadyTracked) {
+          const entryPrice = live.buy_price ? parseFloat(live.buy_price) : await fetchCurrentSpotPrice(); 
+          const dir = (live.contract_type === "MULTUP" || (live.shortcode && live.shortcode.startsWith("MULTUP"))) ? "BUY" : "SELL";
+          trades.push({
+            id: `${SYMBOL}-${Date.now()}`, contractId: live.contract_id, pending: false, repo: REPO_LABEL, symbol: SYMBOL,
+            direction: dir, entry: entryPrice, sl: deriveHardStopPrice(entryPrice, dir), rr: null, entryType: "RECOVERED_LIVE_FAST", brokerSlAmount: STAKE_USD,
+            entryEpoch: live.date_start, fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false, fibTpPrice: null, keyLevel: null,
+            openTime: new Date((live.date_start || Math.floor(Date.now() / 1000)) * 1000).toISOString().replace("T", " ").substring(0, 19), closeTime: null, result: null
+          });
+          modified = true;
+          await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted live contract \`${live.contract_id}\` (${dir}) in Fast Path.`);
+        }
+      }
+    }
+    if (modified) {
+      saveTrades(trades);
+      openTrades = trades.filter(t => !t.result && !t.pending);
+    }
+  } catch (pErr) {
+    dbg("Fast portfolio adoption skipped:", pErr.message);
+  }
+
   if (openTrades.length === 0) return false;
 
   let currentPrice;
@@ -1050,11 +1105,21 @@ async function manageOpenTradesFastPath() {
       
       try {
         const closeRes = await closeContract(openTrade.contractId);
-        if (closeRes && !closeRes.error) {
+        if (closeRes && closeRes.error) {
+          if (closeRes.error.code === "ContractNotFound") {
+            serverPnl = pnl;
+            resultSource = "broker_already_closed";
+          } else {
+            console.error(`[RISK ERROR] Failed to close contract ${openTrade.contractId} on broker: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+            closingContracts.delete(openTrade.contractId);
+            continue; // Do NOT mark as closed if broker sell failed! Retry on next pulse.
+          }
+        } else if (closeRes && !closeRes.error) {
           serverPnl = closeRes.sell?.profit ?? pnl;
           resultSource = "server_close_confirmed";
         }
       } catch (e) {
+        console.error(`[RISK EXCEPTION] closeContract failed for ${openTrade.contractId}:`, e.message);
         closingContracts.delete(openTrade.contractId);
         continue;
       }
@@ -1122,7 +1187,6 @@ async function checkOppositeFractalFakeoutExit(m15Candles, currentPrice) {
     PROFILE.stochParams?.k === 18 && 
     PROFILE.stochParams?.d === 12 && 
     (STRATEGY_PROFILE === "PROFILE_V75_MIDLINE_FRACTAL" || 
-     STRATEGY_PROFILE === "PROFILE_V10_MIDLINE_FRACTAL" || 
      STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" ||
      STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES");
 
@@ -1227,7 +1291,6 @@ async function checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch
     PROFILE.stochParams?.k === 18 && 
     PROFILE.stochParams?.d === 12 && 
     (STRATEGY_PROFILE === "PROFILE_V75_MIDLINE_FRACTAL" || 
-     STRATEGY_PROFILE === "PROFILE_V10_MIDLINE_FRACTAL" || 
      STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" ||
      STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES");
   
@@ -1398,28 +1461,29 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     return;
   }
   
-  // 1. Gateway Portfolio Sync
-  try {
+    // 1. Gateway Portfolio Sync
     const allPortfolio = await getOpenPortfolio();
-    const liveContracts = allPortfolio.filter(c => getContractSymbol(c) === TRADING_SYMBOL);
+    const allLiveIdSet = new Set((Array.isArray(allPortfolio) ? allPortfolio : []).map(c => String(c.contract_id || c.id || c.contractId)));
+    const liveContracts = (Array.isArray(allPortfolio) ? allPortfolio : []).filter(c => getContractSymbol(c).toUpperCase() === TRADING_SYMBOL.toUpperCase());
     
     for (const live of liveContracts) {
       if (!trades.find(t => String(t.contractId) === String(live.contract_id))) {
         const entryPrice = live.buy_price ? parseFloat(live.buy_price) : await fetchCurrentSpotPrice(); 
-        const dir = live.contract_type === "MULTUP" ? "BUY" : "SELL";
+        const dir = (live.contract_type === "MULTUP" || (live.shortcode && live.shortcode.startsWith("MULTUP"))) ? "BUY" : "SELL";
         trades.push({
           id: `${SYMBOL}-${Date.now()}`, contractId: live.contract_id, pending: false, repo: REPO_LABEL, symbol: SYMBOL,
           direction: dir, entry: entryPrice, sl: deriveHardStopPrice(entryPrice, dir), rr: null, entryType: "RECOVERED_LIVE", brokerSlAmount: STAKE_USD,
           entryEpoch: live.date_start, fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false, fibTpPrice: null, keyLevel: null,
-          openTime: new Date(live.date_start * 1000).toISOString().replace("T", " ").substring(0, 19), closeTime: null, result: null
+          openTime: new Date((live.date_start || Math.floor(Date.now() / 1000)) * 1000).toISOString().replace("T", " ").substring(0, 19), closeTime: null, result: null
         });
         await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted unmanaged live contract \`${live.contract_id}\` (${dir}).`);
       }
     }
     
-    const liveIdSet = new Set(liveContracts.map(c => String(c.contract_id)));
     for (const t of trades.filter(t => !t.result && t.contractId)) {
-      if (!liveIdSet.has(String(t.contractId)) && !closingContracts.has(t.contractId)) {
+      // Strict Check: Only reconcile as closed if contract is absent from the ENTIRE broker portfolio (all symbols)
+      const isStillInBrokerPortfolio = allLiveIdSet.has(String(t.contractId));
+      if (!isStillInBrokerPortfolio && !closingContracts.has(t.contractId)) {
         const rec = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
         if (rec && typeof rec.profit === "number") {
           t.result = rec.profit >= 0 ? "WIN" : "LOSS"; t.serverPnl = rec.profit; t.resultSource = "server_history_verified";
@@ -1431,7 +1495,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           }
           await sendTelegram(`${t.result === "WIN" ? "✅" : "❌"} *${REPO_LABEL} — Trade ${t.result} (Broker Native Exit)*\n\n💵 P&L: *${rec.profit >= 0 ? `+$${rec.profit.toFixed(2)}` : `-$${Math.abs(rec.profit).toFixed(2)}`}*`);
         } else {
-          // Fallback: Contract is confirmed closed on Deriv (absent from live portfolio). Reconcile to unblock execution gate.
+          // Fallback: Contract is confirmed closed on Deriv (absent from entire broker portfolio). Reconcile to unblock execution gate.
           t.result = "CLOSED_EXTERNAL";
           t.serverPnl = 0;
           t.resultSource = "server_portfolio_reconciled";
@@ -1487,7 +1551,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const m15Open      = parseFloat(currM15.open);
 
   // 4. Calculate Technical Indicators Based on Active Instrument Architecture
-  const cci = calculateCCI(candles, 100);
+  const cci = calculateCCI(candles, PROFILE.cciPeriod || 100);
   const stochParams = PROFILE.stochParams || { k: 18, d: 12, slowing: 25 };
   const stoch = calculateStoch(candles, stochParams.k, stochParams.d, stochParams.slowing, stochParams.method || "Simple");
   const envParams = PROFILE.envParams || { period: 50, devPct: 0.05 };
@@ -1508,6 +1572,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const macdVal = macd2575.macd[si], prevMacdVal = macd2575.macd[si - 1];
   const sK15 = stoch1558.k[si], prevK15 = stoch1558.k[si - 1];
 
+  // Stoch (15,2,5) for Volatility 100 (R_100 Milk Machine)
+  const stoch1525 = calculateStoch(candles, 15, 2, 5);
+  const sK1525 = stoch1525.k[si], sD1525 = stoch1525.d[si], prevK1525 = stoch1525.k[si - 1], prevD1525 = stoch1525.d[si - 1];
+
   // Secondary Fast Stoch (5,3,3) for backward compatibility
   const stoch533 = calculateStoch(candles, 5, 3, 3);
   const sK533 = stoch533.k[si], sD533 = stoch533.d[si], prevK533 = stoch533.k[si - 1], prevD533 = stoch533.d[si - 1];
@@ -1516,19 +1584,25 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const eUp = env.upper[si], eLo = env.lower[si];
   const sK = stoch.k[si], sD = stoch.d[si], prevK = stoch.k[si - 1], prevD = stoch.d[si - 1];
 
-  if (STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533") {
+  if (STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
     if (sK200 === null || prevK200 === null || macdVal === null || sK533 === null || prevK533 === null || currentEma100 === null) {
       state.lastProcessedEpoch = m5BoundaryEpoch;
       saveState();
       return;
     }
   } else if (STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533") {
-    if (sK200 === null || prevK200 === null || macdVal === null || sK15 === null || prevK15 === null || currentEma100 === null) {
+    if (sK200 === null || prevK200 === null || macdVal === null || sK533 === null || prevK533 === null || currentEma100 === null) {
       state.lastProcessedEpoch = m5BoundaryEpoch;
       saveState();
       return;
     }
-  } else if (STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || STRATEGY_PROFILE === "PROFILE_V25_STOCH45_VALIDATOR") {
+  } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
+    if (sK200 === null || prevK200 === null || sK1525 === null || prevK1525 === null) {
+      state.lastProcessedEpoch = m5BoundaryEpoch;
+      saveState();
+      return;
+    }
+  } else if (STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || STRATEGY_PROFILE === "PROFILE_V25_STOCH45_VALIDATOR" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES") {
     if (sK === null || prevK === null || cVal === null || prevCci === null) {
       state.lastProcessedEpoch = m5BoundaryEpoch;
       saveState();
@@ -1577,6 +1651,90 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
 
+    // Active Trade Exits for PROFILE_V100_STOCH200_STOCH15 (Volatility 100 Milk Machine)
+    if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
+      const isBuy = t.direction === "BUY";
+      const m5Close = parseFloat(candles[si].close);
+
+      // Early Exit 1: Most Recent Opposite M5 Fractal Break
+      const recentM5Low = findRecentFractal(candles, si, "BUY");
+      const recentM5High = findRecentFractal(candles, si, "SELL");
+      const m5FractalBroken = isBuy
+        ? (recentM5Low !== null && m5Close < recentM5Low)
+        : (recentM5High !== null && m5Close > recentM5High);
+
+      if (m5FractalBroken) {
+        closingContracts.add(t.contractId);
+        const fracRef = isBuy ? recentM5Low : recentM5High;
+        console.log(`[M5 FRACTAL BREAK EXIT] Active ${t.direction} trade: M5 candle closed at ${m5Close.toFixed(4)} breaking recent opposite M5 fractal ${fracRef.toFixed(4)}. Liquidating immediately.`);
+        try {
+          await closeContract(t.contractId);
+          const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
+          const pnl = calcUnrealizedPnL(t, currentPrice);
+          t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
+          t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
+          t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
+          t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+          state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+          saveTrades(trades);
+          saveState();
+          const icon = t.result === "WIN" ? "✅" : "❌";
+          const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
+          await sendTelegram(
+            `${icon} *${REPO_LABEL} — Opposite M5 Fractal Break Early Exit*\n\n` +
+            `Active *${t.direction}* closed at *${m5Close.toFixed(4)}* breaking recent M5 ${isBuy ? "Low" : "High"} Fractal (*${fracRef.toFixed(4)}*).\n` +
+            `💵 Final P&L: *${pnlStr}*\n` +
+            `Contract: \`${t.contractId}\``
+          );
+        } catch (e) {
+          console.error(`[M5 FRACTAL BREAK EXIT] Failed to close contract ${t.contractId}:`, e.message);
+        }
+        closingContracts.delete(t.contractId);
+        continue;
+      }
+
+      // Early Exit 2: Entry-Hour H1 Candle Closed Against Position
+      const isTopOfHour = m5BoundaryEpoch % 3600 === 0;
+      if (isTopOfHour && t.entryEpoch) {
+        const entryHourStart = Math.floor(t.entryEpoch / 3600) * 3600;
+        const entryHourEnd = entryHourStart + 3600;
+        if (m5BoundaryEpoch === entryHourEnd) {
+          const entryHourCandle = candles.find(c => c.epoch === entryHourStart);
+          const h1Open = entryHourCandle ? parseFloat(entryHourCandle.open) : parseFloat(t.entry);
+          const h1Close = m5Close;
+          const h1ClosedAgainst = isBuy ? (h1Close < h1Open) : (h1Close > h1Open);
+          if (h1ClosedAgainst) {
+            closingContracts.add(t.contractId);
+            console.log(`[H1 ENTRY-HOUR CLOSE EXIT] Active ${t.direction} trade: Entry hour H1 closed adverse (Open: ${h1Open.toFixed(4)}, Close: ${h1Close.toFixed(4)}). Liquidating immediately.`);
+            try {
+              await closeContract(t.contractId);
+              const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
+              const pnl = calcUnrealizedPnL(t, currentPrice);
+              t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
+              t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
+              t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
+              t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+              state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+              saveTrades(trades);
+              saveState();
+              const icon = t.result === "WIN" ? "✅" : "❌";
+              const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
+              await sendTelegram(
+                `${icon} *${REPO_LABEL} — Entry-Hour H1 Candle Adverse Close Exit*\n\n` +
+                `Active *${t.direction}*: H1 candle of entry hour closed against position (H1 Open: *${h1Open.toFixed(4)}*, H1 Close: *${h1Close.toFixed(4)}*).\n` +
+                `💵 Final P&L: *${pnlStr}*\n` +
+                `Contract: \`${t.contractId}\``
+              );
+            } catch (e) {
+              console.error(`[H1 CLOSE EXIT] Failed to close contract ${t.contractId}:`, e.message);
+            }
+            closingContracts.delete(t.contractId);
+            continue;
+          }
+        }
+      }
+    }
+
     // Active Trade Exits for PROFILE_V100_1S_TREND_MACD_STOCH
     if (STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533") {
       const isBuy = t.direction === "BUY";
@@ -1600,11 +1758,16 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         closingContracts.add(t.contractId);
         console.log(`[EARLY INVALIDATION] 3 consecutive M5 candles closed against ${t.direction} position. Exiting immediately.`);
         try {
-          await closeContract(t.contractId);
+          const closeRes = await closeContract(t.contractId);
+          if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+            console.error(`[EARLY INVALIDATION ERROR] Broker sell failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+            closingContracts.delete(t.contractId);
+            continue;
+          }
           const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
           const pnl = calcUnrealizedPnL(t, currentPrice);
-          t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
-          t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
+          t.serverPnl = (closeRes && closeRes.sell?.profit) ?? (settled !== null ? settled.profit : parseFloat(pnl.toFixed(2)));
+          t.resultSource = (closeRes && closeRes.sell?.profit !== undefined) ? "server_close_confirmed" : (settled !== null ? "deriv_settled_official" : "estimated_fallback");
           t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
           t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
           state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
@@ -1615,6 +1778,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           await sendTelegram(`${icon} *${REPO_LABEL} — 3 Adverse M5 Candles Invalidation*\n\n3 consecutive M5 candles closed against ${t.direction} position.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
         } catch (e) {
           console.error(`[EARLY INVALIDATION] Failed to close contract ${t.contractId}:`, e.message);
+          closingContracts.delete(t.contractId);
+          continue;
         }
         closingContracts.delete(t.contractId);
         continue;
@@ -1627,11 +1792,16 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           closingContracts.add(t.contractId);
           console.log(`[STOCH 200 EXIT] M5 Stoch 200 crossed ${isBuy ? "below" : "above"} 50.0 (${sK200.toFixed(1)}). Invalidation exit triggered.`);
           try {
-            await closeContract(t.contractId);
+            const closeRes = await closeContract(t.contractId);
+            if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+              console.error(`[STOCH 200 EXIT ERROR] Broker sell failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+              closingContracts.delete(t.contractId);
+              continue;
+            }
             const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
             const pnl = calcUnrealizedPnL(t, currentPrice);
-            t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
-            t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
+            t.serverPnl = (closeRes && closeRes.sell?.profit) ?? (settled !== null ? settled.profit : parseFloat(pnl.toFixed(2)));
+            t.resultSource = (closeRes && closeRes.sell?.profit !== undefined) ? "server_close_confirmed" : (settled !== null ? "deriv_settled_official" : "estimated_fallback");
             t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
             t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
             state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
@@ -1642,6 +1812,43 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             await sendTelegram(`${icon} *${REPO_LABEL} — Stoch 200 Adverse Invalidation*\n\nM5 Stoch 200 crossed *${isBuy ? "below" : "above"} 50.0* (${sK200.toFixed(1)}) on M5 close.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
           } catch (e) {
             console.error(`[STOCH 200 EXIT] Failed to close contract ${t.contractId}:`, e.message);
+            closingContracts.delete(t.contractId);
+            continue;
+          }
+          closingContracts.delete(t.contractId);
+          continue;
+        }
+      }
+
+      // Early Invalidation #3: Stoch (5,3,3) crosses Level 50 in opposite direction and trade is in loss
+      const pnl = calcUnrealizedPnL(t, currentPrice);
+      if (sK533 !== null && pnl < 0) {
+        const stoch533Adverse = isBuy ? (sK533 < 50.0) : (sK533 > 50.0);
+        if (stoch533Adverse) {
+          closingContracts.add(t.contractId);
+          console.log(`[STOCH 533 LEVEL 50 LOSS EXIT] Active ${t.direction} in loss ($${pnl.toFixed(2)}): Stoch (5,3,3) %K crossed Level 50 in opposite direction (${sK533.toFixed(1)}). Liquidating immediately.`);
+          try {
+            const closeRes = await closeContract(t.contractId);
+            if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+              console.error(`[STOCH 533 LEVEL 50 LOSS EXIT ERROR] Broker sell failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+              closingContracts.delete(t.contractId);
+              continue;
+            }
+            const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
+            t.serverPnl = (closeRes && closeRes.sell?.profit) ?? (settled !== null ? settled.profit : parseFloat(pnl.toFixed(2)));
+            t.resultSource = (closeRes && closeRes.sell?.profit !== undefined) ? "server_close_confirmed" : (settled !== null ? "deriv_settled_official" : "estimated_fallback");
+            t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
+            t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+            state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+            saveTrades(trades);
+            saveState();
+            const icon = t.result === "WIN" ? "✅" : "❌";
+            const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
+            await sendTelegram(`${icon} *${REPO_LABEL} — Stoch (5,3,3) Midline Loss Exit*\n\nStoch (5,3,3) %K crossed *Level 50 in opposite direction* (${sK533.toFixed(1)}) while in floating loss.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+          } catch (e) {
+            console.error(`[STOCH 533 LEVEL 50 LOSS EXIT] Failed to close contract ${t.contractId}:`, e.message);
+            closingContracts.delete(t.contractId);
+            continue;
           }
           closingContracts.delete(t.contractId);
           continue;
@@ -1667,10 +1874,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           closingContracts.add(t.contractId);
           console.log(`[STOCH OPPOSITE CROSS EXIT] Active ${t.direction} in loss ($${pnl.toFixed(2)}): M5 Stoch (15,18,8, Exp) %K is in opposite direction (%K: ${sK.toFixed(1)} vs %D: ${sD.toFixed(1)}). Liquidating immediately.`);
           try {
-            await closeContract(t.contractId);
+            const closeRes = await closeContract(t.contractId);
+            if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+              console.error(`[STOCH OPPOSITE CROSS EXIT ERROR] Broker sell failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+              closingContracts.delete(t.contractId);
+              continue;
+            }
             const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
-            t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
-            t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
+            t.serverPnl = (closeRes && closeRes.sell?.profit) ?? (settled !== null ? settled.profit : parseFloat(pnl.toFixed(2)));
+            t.resultSource = (closeRes && closeRes.sell?.profit !== undefined) ? "server_close_confirmed" : (settled !== null ? "deriv_settled_official" : "estimated_fallback");
             t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
             t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
             state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
@@ -1681,13 +1893,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             await sendTelegram(
               `⚠️ *${REPO_LABEL} — Stoch %K/%D Opposite Cross Early Exit*\n\n` +
               `Active *${t.direction}* in floating loss: *${pnlStr}*.\n` +
-              `M5 Stoch (15,18,8, Exp) %K is in opposite direction:\n` +
+              `M5 Stoch (15,2,5) %K is in opposite direction:\n` +
               `• %K: *${sK.toFixed(1)}* | %D: *${sD.toFixed(1)}* (${isBuy ? "Bearish %K < %D" : "Bullish %K > %D"})\n` +
               `Position liquidated immediately to protect capital.\n` +
               `Contract: \`${t.contractId}\``
             );
           } catch (e) {
             console.error(`[STOCH OPPOSITE CROSS EXIT] Failed to close contract ${t.contractId}:`, e.message);
+            closingContracts.delete(t.contractId);
+            continue;
           }
           closingContracts.delete(t.contractId);
           continue;
@@ -1695,8 +1909,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
 
-    // Active Trade Exits for PROFILE_V75_1S_TREND_MACD_STOCH533 (and PROFILE_V75_1S_EMA_STOCH15)
-    if (STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15") {
+    // Active Trade Exits for PROFILE_V75_1S_TREND_MACD_STOCH533, PROFILE_V10_TREND_MACD_STOCH533 (and PROFILE_V75_1S_EMA_STOCH15)
+    if (STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
       const isBuy = t.direction === "BUY";
       const pnl = calcUnrealizedPnL(t, currentPrice);
 
@@ -1719,10 +1933,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         closingContracts.add(t.contractId);
         console.log(`[EARLY INVALIDATION] 3 consecutive M5 candles closed against ${t.direction} position. Exiting immediately.`);
         try {
-          await closeContract(t.contractId);
+          const closeRes = await closeContract(t.contractId);
+          if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+            console.error(`[EARLY INVALIDATION ERROR] Broker sell failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+            closingContracts.delete(t.contractId);
+            continue;
+          }
           const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
-          t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
-          t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
+          t.serverPnl = (closeRes && closeRes.sell?.profit) ?? (settled !== null ? settled.profit : parseFloat(pnl.toFixed(2)));
+          t.resultSource = (closeRes && closeRes.sell?.profit !== undefined) ? "server_close_confirmed" : (settled !== null ? "deriv_settled_official" : "estimated_fallback");
           t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
           t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
           state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
@@ -1733,6 +1952,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           await sendTelegram(`${icon} *${REPO_LABEL} — 3 Adverse M5 Candles Invalidation*\n\n3 consecutive M5 candles closed against ${t.direction} position.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
         } catch (e) {
           console.error(`[EARLY INVALIDATION] Failed to close contract ${t.contractId}:`, e.message);
+          closingContracts.delete(t.contractId);
+          continue;
         }
         closingContracts.delete(t.contractId);
         continue;
@@ -1745,10 +1966,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           closingContracts.add(t.contractId);
           console.log(`[STOCH 200 EXIT] M5 Stoch 200 crossed ${isBuy ? "below" : "above"} 50.0 (${sK200.toFixed(1)}). Invalidation exit triggered.`);
           try {
-            await closeContract(t.contractId);
+            const closeRes = await closeContract(t.contractId);
+            if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+              console.error(`[STOCH 200 EXIT ERROR] Broker sell failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+              closingContracts.delete(t.contractId);
+              continue;
+            }
             const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
-            t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
-            t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
+            t.serverPnl = (closeRes && closeRes.sell?.profit) ?? (settled !== null ? settled.profit : parseFloat(pnl.toFixed(2)));
+            t.resultSource = (closeRes && closeRes.sell?.profit !== undefined) ? "server_close_confirmed" : (settled !== null ? "deriv_settled_official" : "estimated_fallback");
             t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
             t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
             state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
@@ -1759,6 +1985,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             await sendTelegram(`${icon} *${REPO_LABEL} — Stoch 200 Adverse Invalidation*\n\nM5 Stoch 200 crossed *${isBuy ? "below" : "above"} 50.0* (${sK200.toFixed(1)}) on M5 close.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
           } catch (e) {
             console.error(`[STOCH 200 EXIT] Failed to close contract ${t.contractId}:`, e.message);
+            closingContracts.delete(t.contractId);
+            continue;
           }
           closingContracts.delete(t.contractId);
           continue;
@@ -1772,10 +2000,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           closingContracts.add(t.contractId);
           console.log(`[STOCH 533 LEVEL 50 LOSS EXIT] Active ${t.direction} in loss ($${pnl.toFixed(2)}): Stoch (5,3,3) %K crossed Level 50 in opposite direction (${sK533.toFixed(1)}). Liquidating immediately.`);
           try {
-            await closeContract(t.contractId);
+            const closeRes = await closeContract(t.contractId);
+            if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+              console.error(`[STOCH 533 LEVEL 50 LOSS EXIT ERROR] Broker sell failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+              closingContracts.delete(t.contractId);
+              continue;
+            }
             const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
-            t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
-            t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
+            t.serverPnl = (closeRes && closeRes.sell?.profit) ?? (settled !== null ? settled.profit : parseFloat(pnl.toFixed(2)));
+            t.resultSource = (closeRes && closeRes.sell?.profit !== undefined) ? "server_close_confirmed" : (settled !== null ? "deriv_settled_official" : "estimated_fallback");
             t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
             t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
             state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
@@ -1786,6 +2019,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             await sendTelegram(`${icon} *${REPO_LABEL} — Stoch (5,3,3) Midline Loss Exit*\n\nStoch (5,3,3) %K crossed *Level 50 in opposite direction* (${sK533.toFixed(1)}) while in floating loss.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
           } catch (e) {
             console.error(`[STOCH 533 LEVEL 50 LOSS EXIT] Failed to close contract ${t.contractId}:`, e.message);
+            closingContracts.delete(t.contractId);
+            continue;
           }
           closingContracts.delete(t.contractId);
           continue;
@@ -1793,8 +2028,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
 
-    // Active Trade Early Exit for PROFILE_V25_STOCH200_CCI100 (Previous M5 Fractal Break)
-    if (STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || STRATEGY_PROFILE === "PROFILE_V25_STOCH45_VALIDATOR") {
+    // Active Trade Early Exit for PROFILE_V25_STOCH200_CCI100 & PROFILE_V50_STOCH200_CCI150 (Previous M5 Fractal Break)
+    if (STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || STRATEGY_PROFILE === "PROFILE_V25_STOCH45_VALIDATOR" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES") {
       const isBuy = t.direction === "BUY";
       const currentPnl = calcUnrealizedPnL(t, currentPrice);
       const inLoss = currentPnl < 0;
@@ -1807,13 +2042,18 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
       if (inLoss && fractalBroken) {
         closingContracts.add(t.contractId);
-        console.log(`[EARLY EXIT] V25 Trade in loss ($${currentPnl.toFixed(2)}) and M5 Candle Close (${m5Close.toFixed(2)}) broke Previous M5 Fractal (${m5FractalSl.toFixed(2)}). Exiting early.`);
+        console.log(`[EARLY EXIT] ${SYMBOL} Trade in loss ($${currentPnl.toFixed(2)}) and M5 Candle Close (${m5Close.toFixed(2)}) broke Previous M5 Fractal (${m5FractalSl.toFixed(2)}). Exiting early.`);
         try {
-          await closeContract(t.contractId);
+          const closeRes = await closeContract(t.contractId);
+          if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+            console.error(`[EARLY EXIT ERROR] Broker sell failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+            closingContracts.delete(t.contractId);
+            continue;
+          }
           const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
           const pnl = calcUnrealizedPnL(t, currentPrice);
-          t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
-          t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
+          t.serverPnl = (closeRes && closeRes.sell?.profit) ?? (settled !== null ? settled.profit : parseFloat(pnl.toFixed(2)));
+          t.resultSource = (closeRes && closeRes.sell?.profit !== undefined) ? "server_close_confirmed" : (settled !== null ? "deriv_settled_official" : "estimated_fallback");
           t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
           t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
           state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
@@ -1824,6 +2064,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           await sendTelegram(`${icon} *${REPO_LABEL} — Previous M5 Fractal Early Exit*\n\nTrade in loss (*${pnlStr}*) and M5 closed beyond Previous M5 Fractal (*${m5FractalSl.toFixed(2)}*).\n💵 Final P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
         } catch (e) {
           console.error(`[EARLY EXIT] Failed to close contract ${t.contractId}:`, e.message);
+          closingContracts.delete(t.contractId);
+          continue;
         }
         closingContracts.delete(t.contractId);
         continue;
@@ -1837,7 +2079,6 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       PROFILE.stochParams?.k === 18 && 
       PROFILE.stochParams?.d === 12 && 
       (STRATEGY_PROFILE === "PROFILE_V75_MIDLINE_FRACTAL" || 
-       STRATEGY_PROFILE === "PROFILE_V10_MIDLINE_FRACTAL" || 
        STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV");
 
     if (isStoch18Asset && m15Candles && m15Candles.length >= 5) {
@@ -1886,11 +2127,16 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           closingContracts.add(t.contractId);
           console.log(`[FAKEOUT MITIGATION] Adverse M15 ${t.direction === "BUY" ? "Top" : "Bottom"} Fractal formed at ${adverseFractalPrice.toFixed(4)} opposite ${t.direction} trade while underwater (Entry: ${t.entry.toFixed(4)}, Spot: ${currentPrice.toFixed(4)}). Closing early.`);
           try {
-            await closeContract(t.contractId);
+            const closeRes = await closeContract(t.contractId);
+            if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+              console.error(`[FAKEOUT MITIGATION ERROR] Broker sell failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+              closingContracts.delete(t.contractId);
+              continue;
+            }
             const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
             const pnl = calcUnrealizedPnL(t, currentPrice);
-            t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
-            t.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
+            t.serverPnl = (closeRes && closeRes.sell?.profit) ?? (settled !== null ? settled.profit : parseFloat(pnl.toFixed(2)));
+            t.resultSource = (closeRes && closeRes.sell?.profit !== undefined) ? "server_close_confirmed" : (settled !== null ? "deriv_settled_official" : "estimated_fallback");
             t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
             t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
             state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
@@ -1906,6 +2152,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             );
           } catch (e) {
             console.error(`[FAKEOUT MITIGATION] Failed to close contract ${t.contractId}:`, e.message);
+            closingContracts.delete(t.contractId);
+            continue;
           }
           closingContracts.delete(t.contractId);
           continue;
@@ -1948,8 +2196,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   state.envUpper = eUp;
   state.envLower = eLo;
   state.ema100Val = currentEma100;
-  state.ema200Val = currentEma200;
   state.stoch533Val = sK533;
+  state.stoch200Val = sK200;
+  state.stoch1525Val = sK1525;
+  state.stoch1525Signal = sD1525;
 
   // Stoch 50 cross & status (Current cross OR 8-Hour Rolling Lookback OR Position Relative to 50)
   const stoch50CrossUpLookback = (prevK <= 50.0 && sK > 50.0) || checkStochastic8HrLookback(candles, stoch, "BUY", "MIDLINE");
@@ -2318,9 +2568,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   let setupLabel = state.armed ? state.armed.lbl : "";
   let calculatedFibTp = null;
 
-  // 1. UNIFIED V75 / V10 MIDLINE FRACTAL ENGINE
-  if (STRATEGY_PROFILE === "PROFILE_V75_MIDLINE_FRACTAL" || 
-      STRATEGY_PROFILE === "PROFILE_V10_MIDLINE_FRACTAL") {
+  // 1. UNIFIED V75 MIDLINE FRACTAL ENGINE (Legacy V75 Profile)
+  if (STRATEGY_PROFILE === "PROFILE_V75_MIDLINE_FRACTAL") {
     
     // Stoch (18,12,25) Level 50 Midline Crossover (Handbook Section 5 Core Mandate #4)
     const stoch50CrossUp = prevK <= 50.0 && sK > 50.0;
@@ -2397,28 +2646,89 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.v75_stochOverboughtArmed = false;
     }
   }
-  // 2. VOLATILITY 100 (R_100) MIDLINE & ENVELOPE 200 ENGINE
-  else if (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV") {
-    const isInitialArmBar = state.armedEpoch === m5BoundaryEpoch;
-    const stoch50CrossUp = (prevK <= 50.0 && sK > 50.0) || (isInitialArmBar && sK !== null && sK >= 50.0);
-    const stoch50CrossDown = (prevK >= 50.0 && sK < 50.0) || (isInitialArmBar && sK !== null && sK <= 50.0);
-    const env200Upper = eUp; // Computed with period 200
-    const env200Lower = eLo;
+  // 2. VOLATILITY 100 (R_100) M5 STOCH 200 (48/52) & M5 STOCH (15,2,5) ENGINE
+  else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
+    // Condition 1: M5 Stoch (200,1,1) Main Trend Identifier (Levels 48 and 52)
+    // Fresh cross above 48 arms BUY; fresh cross below 52 arms SELL. Stays armed till next opposing fresh cross.
+    const stoch200FreshBuyArm = prevK200 !== null && sK200 !== null && prevK200 <= 48.0 && sK200 > 48.0;
+    const stoch200FreshSellArm = prevK200 !== null && sK200 !== null && prevK200 >= 52.0 && sK200 < 52.0;
 
-    const envBuyActive = currentPrice > env200Upper;
-    const envSellActive = currentPrice < env200Lower;
+    if (stoch200FreshBuyArm) {
+      state.v100_trendDir = "BUY";
+      state.v100_stoch200CrossEpoch = m5BoundaryEpoch;
+      dbg(`[V100 TREND] Stoch 200 crossed strictly above 48.0 (%K: ${sK200.toFixed(2)}). BUY ARMED.`);
+    } else if (stoch200FreshSellArm) {
+      state.v100_trendDir = "SELL";
+      state.v100_stoch200CrossEpoch = m5BoundaryEpoch;
+      dbg(`[V100 TREND] Stoch 200 crossed strictly below 52.0 (%K: ${sK200.toFixed(2)}). SELL ARMED.`);
+    } else if (!state.v100_trendDir && sK200 !== null) {
+      // Initialize on restart if already firmly on one side (outside hysteresis band 48-52)
+      if (sK200 >= 52.0) state.v100_trendDir = "BUY";
+      else if (sK200 <= 48.0) state.v100_trendDir = "SELL";
+    }
 
-    if (state.armed) {
-      if (state.armed.dir === "BUY" && stoch50CrossUp && envBuyActive) {
-        indicatorsSatisfied = true;
-        signalDirection = "BUY";
-      } else if (state.armed.dir === "SELL" && stoch50CrossDown && envSellActive) {
-        indicatorsSatisfied = true;
-        signalDirection = "SELL";
+    // Condition 2: M5 Stoch (15,2,5) Levels 20, 50, 80
+    const stoch15CrossUp50 = prevK1525 !== null && sK1525 !== null && prevK1525 <= 50.0 && sK1525 > 50.0;
+    const stoch15CrossDown50 = prevK1525 !== null && sK1525 !== null && prevK1525 >= 50.0 && sK1525 < 50.0;
+
+    if (stoch15CrossUp50) {
+      state.v100_stoch15_50_crossEpoch = m5BoundaryEpoch;
+      state.v100_stoch15_50_crossDir = "BUY";
+    } else if (stoch15CrossDown50) {
+      state.v100_stoch15_50_crossEpoch = m5BoundaryEpoch;
+      state.v100_stoch15_50_crossDir = "SELL";
+    }
+
+    const noActiveTrades = openTrades.length === 0;
+
+    // 1. Initial Entry Trigger:
+    // When Stoch 200 first crosses, enter when Stoch (15,2,5) crosses level 50 in same direction (+/- 2 candles window)
+    const isInitialBuyWindow = 
+      noActiveTrades &&
+      state.v100_trendDir === "BUY" &&
+      state.v100_stoch200CrossEpoch &&
+      state.v100_stoch15_50_crossEpoch &&
+      state.v100_stoch15_50_crossDir === "BUY" &&
+      Math.abs(state.v100_stoch200CrossEpoch - state.v100_stoch15_50_crossEpoch) <= 600 &&
+      (m5BoundaryEpoch === state.v100_stoch200CrossEpoch || m5BoundaryEpoch === state.v100_stoch15_50_crossEpoch);
+
+    const isInitialSellWindow = 
+      noActiveTrades &&
+      state.v100_trendDir === "SELL" &&
+      state.v100_stoch200CrossEpoch &&
+      state.v100_stoch15_50_crossEpoch &&
+      state.v100_stoch15_50_crossDir === "SELL" &&
+      Math.abs(state.v100_stoch200CrossEpoch - state.v100_stoch15_50_crossEpoch) <= 600 &&
+      (m5BoundaryEpoch === state.v100_stoch200CrossEpoch || m5BoundaryEpoch === state.v100_stoch15_50_crossEpoch);
+
+    // 2. Re-Entry Rule:
+    // If Stoch 200 is already armed for Buy or Sell and there is NO existing open trade,
+    // enter immediately when Stoch (15,2,5) freshly crosses level 20 for Buy or level 80 for Sell in trend direction
+    const stoch15FreshCross20Buy = prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0;
+    const stoch15FreshCross80Sell = prevK1525 !== null && sK1525 !== null && prevK1525 >= 80.0 && sK1525 < 80.0;
+
+    const isReentryBuy = noActiveTrades && state.v100_trendDir === "BUY" && stoch15FreshCross20Buy;
+    const isReentrySell = noActiveTrades && state.v100_trendDir === "SELL" && stoch15FreshCross80Sell;
+
+    if (isInitialBuyWindow || isReentryBuy) {
+      indicatorsSatisfied = true;
+      signalDirection = "BUY";
+      setupLabel = isInitialBuyWindow ? "V100_INITIAL_STOCH200_STOCH15 (BUY)" : "V100_REENTRY_STOCH15_20 (BUY)";
+      if (isInitialBuyWindow) {
+        state.v100_stoch200CrossEpoch = null;
+        state.v100_stoch15_50_crossEpoch = null;
+      }
+    } else if (isInitialSellWindow || isReentrySell) {
+      indicatorsSatisfied = true;
+      signalDirection = "SELL";
+      setupLabel = isInitialSellWindow ? "V100_INITIAL_STOCH200_STOCH15 (SELL)" : "V100_REENTRY_STOCH15_80 (SELL)";
+      if (isInitialSellWindow) {
+        state.v100_stoch200CrossEpoch = null;
+        state.v100_stoch15_50_crossEpoch = null;
       }
     }
   }
-  // 3. VOLATILITY 100 (1s) MACRO TREND STOCH 200, MACD (25,75,1), EMA 100 & STOCH (15,5,8) RE-ENTRY ENGINE
+  // 3. VOLATILITY 100 (1s) MACRO TREND STOCH 200, MACD (25,75,1), EMA 100 & FAST STOCH (5,3,3) RE-ENTRY ENGINE
   else if (STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533") {
     // 1. Trend & Baseline Alignments
     const stoch200Bullish = sK200 !== null && sK200 > 50.0;
@@ -2428,45 +2738,55 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const emaBullish = currentEma100 !== null && currentPrice > currentEma100;
     const emaBearish = currentEma100 !== null && currentPrice < currentEma100;
 
-    // Rule 1: Initial Trend Trigger on Fresh Stoch 200 Level 50 Cross
+    // Rule 1: Initial Trend Trigger
+    // Trigger on fresh Stoch 200 Level 50 cross with MACD & EMA aligned, OR
+    // trigger on fresh MACD Zero-Line confirmation cross while Stoch 200 is aligned (>50 for BUY, <50 for SELL) and EMA aligned
     const stoch200FreshBuyCross = prevK200 !== null && sK200 !== null && prevK200 <= 50.0 && sK200 > 50.0;
     const stoch200FreshSellCross = prevK200 !== null && sK200 !== null && prevK200 >= 50.0 && sK200 < 50.0;
+    const macdFreshBuyCross = prevMacdVal !== null && macdVal !== null && prevMacdVal <= 0.0 && macdVal > 0.0;
+    const macdFreshSellCross = prevMacdVal !== null && macdVal !== null && prevMacdVal >= 0.0 && macdVal < 0.0;
 
-    // Rule 4: Re-Entry Trigger on Fresh Stoch (15,5,8) %K Level 50 Cross
-    const stoch15FreshBuyCross = prevK15 !== null && sK15 !== null && prevK15 <= 50.0 && sK15 > 50.0;
-    const stoch15FreshSellCross = prevK15 !== null && sK15 !== null && prevK15 >= 50.0 && sK15 < 50.0;
+    const initialTrendBuy = (stoch200FreshBuyCross && macdBullish && emaBullish) || (macdFreshBuyCross && stoch200Bullish && emaBullish);
+    const initialTrendSell = (stoch200FreshSellCross && macdBearish && emaBearish) || (macdFreshSellCross && stoch200Bearish && emaBearish);
+
+    // Rule 2: Pullback Re-Entry Trigger on Fast Stoch (5,3,3) Level 20/80 Cross
+    // BUY: Fresh cross above 20.0 out of oversold
+    // SELL: Fresh cross below 80.0 out of overbought
+    const stoch533FreshBuyCross = prevK533 !== null && sK533 !== null && prevK533 <= 20.0 && sK533 > 20.0;
+    const stoch533FreshSellCross = prevK533 !== null && sK533 !== null && prevK533 >= 80.0 && sK533 < 80.0;
 
     // State Tracking for Dashboard Telemetry
     state.v100_1s_trend = stoch200Bullish ? "BULLISH" : (stoch200Bearish ? "BEARISH" : "NEUTRAL");
     state.v100_1s_macd = macdVal !== null ? parseFloat(macdVal.toFixed(4)) : null;
     state.v100_1s_ema100 = currentEma100 !== null ? parseFloat(currentEma100.toFixed(4)) : null;
     state.v100_1s_stoch200 = sK200 !== null ? parseFloat(sK200.toFixed(1)) : null;
-    state.v100_1s_stoch15 = sK15 !== null ? parseFloat(sK15.toFixed(1)) : null;
+    state.v100_1s_stoch533 = sK533 !== null ? parseFloat(sK533.toFixed(1)) : null;
+    state.v100_1s_stoch15 = state.v100_1s_stoch533; // Backward-compatibility mapping
 
     // Execution Decision:
-    // Initial BUY Trigger: Fresh Stoch 200 Cross Above 50 + MACD > 0 + Price > EMA 100
-    if (stoch200FreshBuyCross && macdBullish && emaBullish) {
+    // Initial BUY Trigger
+    if (initialTrendBuy) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
       setupLabel = "V100_1S_INITIAL_TREND (BUY)";
     }
-    // Initial SELL Trigger: Fresh Stoch 200 Cross Below 50 + MACD < 0 + Price < EMA 100
-    else if (stoch200FreshSellCross && macdBearish && emaBearish) {
+    // Initial SELL Trigger
+    else if (initialTrendSell) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
       setupLabel = "V100_1S_INITIAL_TREND (SELL)";
     }
-    // Re-Entry BUY Trigger: Fresh Stoch (15,5,8) Cross Above 50 + Stoch 200 > 50 + MACD > 0 + Price > EMA 100
-    else if (stoch15FreshBuyCross && stoch200Bullish && macdBullish && emaBullish) {
+    // Re-Entry BUY Trigger: Fresh Stoch (5,3,3) Cross Above 20 + Stoch 200 > 50 + MACD > 0 + Price > EMA 100
+    else if (stoch533FreshBuyCross && stoch200Bullish && macdBullish && emaBullish) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
-      setupLabel = "V100_1S_REENTRY_STOCH15 (BUY)";
+      setupLabel = "V100_1S_REENTRY_STOCH533 (BUY)";
     }
-    // Re-Entry SELL Trigger: Fresh Stoch (15,5,8) Cross Below 50 + Stoch 200 < 50 + MACD < 0 + Price < EMA 100
-    else if (stoch15FreshSellCross && stoch200Bearish && macdBearish && emaBearish) {
+    // Re-Entry SELL Trigger: Fresh Stoch (5,3,3) Cross Below 80 + Stoch 200 < 50 + MACD < 0 + Price < EMA 100
+    else if (stoch533FreshSellCross && stoch200Bearish && macdBearish && emaBearish) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
-      setupLabel = "V100_1S_REENTRY_STOCH15 (SELL)";
+      setupLabel = "V100_1S_REENTRY_STOCH533 (SELL)";
     }
 
     // Determine Fib TP target from key levels grid
@@ -2481,8 +2801,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
   }
-  // 3.5 VOLATILITY 75 (1s) MACRO TREND STOCH 200, MACD (25,75,1), EMA 100 & STOCH (5,3,3) RE-ENTRY ENGINE
-  else if (STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15") {
+  // 3.5 VOLATILITY 75 (1s) & VOLATILITY 10 MACRO TREND STOCH 200, MACD (25,75,1), EMA 100 & STOCH (5,3,3) RE-ENTRY ENGINE
+  else if (STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
     // 1. Trend & Baseline Alignments
     const stoch200Bullish = sK200 !== null && sK200 > 50.0;
     const stoch200Bearish = sK200 !== null && sK200 < 50.0;
@@ -2502,36 +2822,49 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const stoch533FreshSellCross = prevK533 !== null && sK533 !== null && prevK533 >= 80.0 && sK533 < 80.0;
 
     // State Tracking for Dashboard Telemetry
-    state.v75_1s_trend = stoch200Bullish ? "BULLISH" : (stoch200Bearish ? "BEARISH" : "NEUTRAL");
-    state.v75_1s_macd = macdVal !== null ? parseFloat(macdVal.toFixed(4)) : null;
-    state.v75_1s_ema100 = currentEma100 !== null ? parseFloat(currentEma100.toFixed(4)) : null;
-    state.v75_1s_stoch200 = sK200 !== null ? parseFloat(sK200.toFixed(1)) : null;
-    state.v75_1s_stoch533 = sK533 !== null ? parseFloat(sK533.toFixed(1)) : null;
+    if (SYMBOL === "R_10") {
+      state.v10_trend = stoch200Bullish ? "BULLISH" : (stoch200Bearish ? "BEARISH" : "NEUTRAL");
+      state.v10_macd = macdVal !== null ? parseFloat(macdVal.toFixed(4)) : null;
+      state.v10_ema100 = currentEma100 !== null ? parseFloat(currentEma100.toFixed(4)) : null;
+      state.v10_stoch200 = sK200 !== null ? parseFloat(sK200.toFixed(1)) : null;
+      state.v10_stoch533 = sK533 !== null ? parseFloat(sK533.toFixed(1)) : null;
+    } else {
+      state.v75_1s_trend = stoch200Bullish ? "BULLISH" : (stoch200Bearish ? "BEARISH" : "NEUTRAL");
+      state.v75_1s_macd = macdVal !== null ? parseFloat(macdVal.toFixed(4)) : null;
+      state.v75_1s_ema100 = currentEma100 !== null ? parseFloat(currentEma100.toFixed(4)) : null;
+      state.v75_1s_stoch200 = sK200 !== null ? parseFloat(sK200.toFixed(1)) : null;
+      state.v75_1s_stoch533 = sK533 !== null ? parseFloat(sK533.toFixed(1)) : null;
+    }
+    state.stoch200Val = sK200 !== null ? parseFloat(sK200.toFixed(1)) : null;
+    state.macdVal = macdVal !== null ? parseFloat(macdVal.toFixed(4)) : null;
+    state.ema100Val = currentEma100 !== null ? parseFloat(currentEma100.toFixed(4)) : null;
+    state.stoch533Val = sK533 !== null ? parseFloat(sK533.toFixed(1)) : null;
 
     // Execution Decision:
+    const prefix = SYMBOL === "R_10" ? "V10" : "V75_1S";
     // Initial BUY Trigger: Fresh Stoch 200 Cross Above 50 + MACD > 0 + Price > EMA 100
     if (stoch200FreshBuyCross && macdBullish && emaBullish) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
-      setupLabel = "V75_1S_INITIAL_TREND (BUY)";
+      setupLabel = `${prefix}_INITIAL_TREND (BUY)`;
     }
     // Initial SELL Trigger: Fresh Stoch 200 Cross Below 50 + MACD < 0 + Price < EMA 100
     else if (stoch200FreshSellCross && macdBearish && emaBearish) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
-      setupLabel = "V75_1S_INITIAL_TREND (SELL)";
+      setupLabel = `${prefix}_INITIAL_TREND (SELL)`;
     }
     // Re-Entry BUY Trigger: Fresh Stoch (5,3,3) Cross Above 20 + Stoch 200 > 50 + MACD > 0 + Price > EMA 100
     else if (stoch533FreshBuyCross && stoch200Bullish && macdBullish && emaBullish) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
-      setupLabel = "V75_1S_REENTRY_STOCH533 (BUY)";
+      setupLabel = `${prefix}_REENTRY_STOCH533 (BUY)`;
     }
     // Re-Entry SELL Trigger: Fresh Stoch (5,3,3) Cross Below 80 + Stoch 200 < 50 + MACD < 0 + Price < EMA 100
     else if (stoch533FreshSellCross && stoch200Bearish && macdBearish && emaBearish) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
-      setupLabel = "V75_1S_REENTRY_STOCH533 (SELL)";
+      setupLabel = `${prefix}_REENTRY_STOCH533 (SELL)`;
     }
 
     // Determine Fib TP target from Daily Fibonacci Grid
@@ -2602,19 +2935,111 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
   }
-  // 5. VOLATILITY 50 STOCHASTIC BOUNDARIES (20 / 80) ENGINE
-  else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES") {
-    // Strict Boundary Crossing: BUY requires cross strictly above 20; SELL requires cross strictly below 80
-    const stoch20CrossUp = prevK <= 20.0 && sK > 20.0;
-    const stoch80CrossDown = prevK >= 80.0 && sK < 80.0;
+  // 5. VOLATILITY 50 (R_50) M5 STOCH (200,1,1) MAIN TREND + M5 CCI 150 ENGINE WITH 15M TIMER
+  else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES") {
+    // Condition 1: M5 Stoch (200,1,1) Main Trend Identifier
+    // Cross above 50 arms BUY, cross below 50 arms SELL
+    const stoch200CrossUp50 = prevK !== null && prevK <= 50.0 && sK > 50.0;
+    const stoch200CrossDown50 = prevK !== null && prevK >= 50.0 && sK < 50.0;
 
-    if (state.armed) {
-      if (state.armed.dir === "BUY" && stoch20CrossUp) {
+    if (stoch200CrossUp50) {
+      state.v50_trendDirection = "BUY";
+      console.log(`[V50 TREND ARM] M5 Stoch (200,1,1) crossed ABOVE 50 (%K ${sK.toFixed(1)}, prev ${prevK.toFixed(1)}). ARMED BUY.`);
+    } else if (stoch200CrossDown50) {
+      state.v50_trendDirection = "SELL";
+      console.log(`[V50 TREND ARM] M5 Stoch (200,1,1) crossed BELOW 50 (%K ${sK.toFixed(1)}, prev ${prevK.toFixed(1)}). ARMED SELL.`);
+    }
+
+    // Condition 2: M5 CCI 150 Zero-Line Cross Trigger
+    const cciCrossUpZero = prevCci !== null && prevCci <= 0.0 && cVal > 0.0;
+    const cciCrossDownZero = prevCci !== null && prevCci >= 0.0 && cVal < 0.0;
+
+    // Simultaneous cross exception: cross for both conditions happened on the same M5 candle close
+    const simultaneousBuy = stoch200CrossUp50 && cciCrossUpZero;
+    const simultaneousSell = stoch200CrossDown50 && cciCrossDownZero;
+
+    // Evaluate pending CCI timer (15 minutes = 900 seconds)
+    // In rare cases when CCI crossed first in a previous candle, we wait up to 15m for Stoch cross to occur.
+    if (state.v50_pending_cci) {
+      // If opposing CCI cross occurs, immediately cancel the pending timer
+      if ((state.v50_pending_cci.direction === "BUY" && cciCrossDownZero) ||
+          (state.v50_pending_cci.direction === "SELL" && cciCrossUpZero)) {
+        console.log(`[V50 TIMER CANCELLED] Opposing CCI cross detected (${state.v50_pending_cci.direction} invalidated by opposite cross). Disarming pending signal.`);
+        state.v50_pending_cci = null;
+      } else if (m5BoundaryEpoch > state.v50_pending_cci.expiresEpoch) {
+        // 15 minutes expired without Stoch cross: disarm and wait for next setup
+        console.log(`[V50 TIMER EXPIRED] 15-minute window expired for pending ${state.v50_pending_cci.direction} CCI cross without Stoch cross. Disarming signal.`);
+        state.v50_pending_cci = null;
+      } else {
+        // Timer active: check if Stoch crossed in the pending direction
+        if (state.v50_pending_cci.direction === "BUY" && stoch200CrossUp50) {
+          console.log(`[V50 TIMER TRIGGER] Stoch (200,1,1) crossed >50 within 15m window of previous CCI cross >0. EXECUTING BUY!`);
+          indicatorsSatisfied = true;
+          signalDirection = "BUY";
+          setupLabel = "V50_CCI150_TIMER_TRIGGER (BUY)";
+          state.v50_trendDirection = "BUY";
+          state.v50_pending_cci = null;
+        } else if (state.v50_pending_cci.direction === "SELL" && stoch200CrossDown50) {
+          console.log(`[V50 TIMER TRIGGER] Stoch (200,1,1) crossed <50 within 15m window of previous CCI cross <0. EXECUTING SELL!`);
+          indicatorsSatisfied = true;
+          signalDirection = "SELL";
+          setupLabel = "V50_CCI150_TIMER_TRIGGER (SELL)";
+          state.v50_trendDirection = "SELL";
+          state.v50_pending_cci = null;
+        }
+      }
+    }
+
+    // --- STANDARD PATH: Condition 1 (Stoch trend armed) followed by Condition 2 (CCI cross) or Simultaneous ---
+    if (!indicatorsSatisfied) {
+      if (cciCrossUpZero && (state.v50_trendDirection === "BUY" || simultaneousBuy)) {
+        const isSimultaneous = simultaneousBuy;
+        console.log(`[V50 TRIGGER] ${isSimultaneous ? "SIMULTANEOUS CROSS" : "SEQUENTIAL TRIGGER"}: Stoch (200,1,1) %K ${sK.toFixed(1)} (Trend: BUY) + CCI 150 cross >0 (${cVal.toFixed(1)}). FIRING BUY!`);
         indicatorsSatisfied = true;
         signalDirection = "BUY";
-      } else if (state.armed.dir === "SELL" && stoch80CrossDown) {
+        setupLabel = isSimultaneous ? "V50_STOCH200_CCI150_SIMULTANEOUS (BUY)" : "V50_STOCH200_CCI150 (BUY)";
+        state.v50_pending_cci = null;
+      } else if (cciCrossDownZero && (state.v50_trendDirection === "SELL" || simultaneousSell)) {
+        const isSimultaneous = simultaneousSell;
+        console.log(`[V50 TRIGGER] ${isSimultaneous ? "SIMULTANEOUS CROSS" : "SEQUENTIAL TRIGGER"}: Stoch (200,1,1) %K ${sK.toFixed(1)} (Trend: SELL) + CCI 150 cross <0 (${cVal.toFixed(1)}). FIRING SELL!`);
         indicatorsSatisfied = true;
         signalDirection = "SELL";
+        setupLabel = isSimultaneous ? "V50_STOCH200_CCI150_SIMULTANEOUS (SELL)" : "V50_STOCH200_CCI150 (SELL)";
+        state.v50_pending_cci = null;
+      }
+    }
+
+    // --- SPECIAL TWEAK: CCI CROSSES ZERO BEFORE STOCH CROSSES 50 ---
+    // In rare cases when CCI crosses first, open a 15-minute timer (900 seconds) to wait for Stoch cross.
+    if (!indicatorsSatisfied) {
+      if (cciCrossUpZero && state.v50_trendDirection !== "BUY") {
+        state.v50_pending_cci = {
+          direction: "BUY",
+          epoch: m5BoundaryEpoch,
+          expiresEpoch: m5BoundaryEpoch + 900, // 15 minutes
+          cciVal: cVal
+        };
+        console.log(`[V50 CCI-FIRST TIMER OPENED] CCI 150 crossed >0 (${cVal.toFixed(1)}) before Stoch (200,1,1) crossed 50 (%K ${sK.toFixed(1)}). Opening 15-minute window (until ${new Date((m5BoundaryEpoch + 900) * 1000).toISOString()}) waiting for Stoch cross >50.`);
+      } else if (cciCrossDownZero && state.v50_trendDirection !== "SELL") {
+        state.v50_pending_cci = {
+          direction: "SELL",
+          epoch: m5BoundaryEpoch,
+          expiresEpoch: m5BoundaryEpoch + 900, // 15 minutes
+          cciVal: cVal
+        };
+        console.log(`[V50 CCI-FIRST TIMER OPENED] CCI 150 crossed <0 (${cVal.toFixed(1)}) before Stoch (200,1,1) crossed 50 (%K ${sK.toFixed(1)}). Opening 15-minute window (until ${new Date((m5BoundaryEpoch + 900) * 1000).toISOString()}) waiting for Stoch cross <50.`);
+      }
+    }
+
+    // Determine geometric Fib TP target from key levels grid
+    if (indicatorsSatisfied) {
+      const sortedLevels = Array.from(new Set(keyLevels.map(k => k.lvl).filter(v => typeof v === "number" && !isNaN(v)))).sort((a, b) => a - b);
+      if (signalDirection === "BUY") {
+        const higher = sortedLevels.filter(l => l > currentPrice);
+        calculatedFibTp = higher.length > 0 ? higher[0] : null;
+      } else if (signalDirection === "SELL") {
+        const lower = sortedLevels.filter(l => l < currentPrice);
+        calculatedFibTp = lower.length > 0 ? lower[lower.length - 1] : null;
       }
     }
   }
@@ -2754,17 +3179,17 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       confluenceLines += `• M5 Stoch 200: *${(sK200 !== null ? sK200.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [BULLISH TREND]" : "<50 [BEARISH TREND]"})\n` +
                          `• M5 MACD (25,75,1): *${(macdVal !== null ? macdVal.toFixed(4) : "N/A")}* (${direction === "BUY" ? ">0 [BULLISH MOMENTUM]" : "<0 [BEARISH MOMENTUM]"})\n` +
                          `• M5 EMA 100: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > EMA 100" : "Price < EMA 100"})\n` +
-                         `• M5 Stoch (15,5,8): *%K ${(sK15 !== null ? sK15.toFixed(1) : "N/A")}*\n` +
+                         `• M5 Fast Stoch (5,3,3): *%K ${(sK533 !== null ? sK533.toFixed(1) : "N/A")}* | *%D ${(sD533 !== null ? sD533.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">20 Pullback Exit" : "<80 Pullback Exit"})\n` +
                          `• Trigger Type: *${setupLabel}*\n` +
                          `• Target Fib Level: *${fibTpPrice ? fibTpPrice.toFixed(4) : "N/A"}* (${exactTpName} Target)\n` +
-                         `• Early Invalidation: *3 Consecutive Adverse M5 Closes / Stoch 200 Invalidation*\n`;
+                         `• Early Invalidation: *3 Adverse M5 Closes / Stoch 200 Invalidation / Stoch 533 Midline Exit*\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V75_EMA_STOCH15") {
       confluenceLines += `• M5 EMA 100 vs 200: *EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"}) ${direction === "BUY" ? ">" : "<"} EMA 200 (${currentEma200 ? currentEma200.toFixed(2) : "N/A"})* [${direction === "BUY" ? "UPTREND" : "DOWNTREND"}]\n` +
                          `• M5 EMA Retracement: *EMA 100/200 Touch Verified* [LATCHED]\n` +
                          `• M5 Stoch (15,18,8, Exp): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">%D Oversold Cross (<=25)" : "<%D Overbought Cross (>=75)"} [TRIGGERED])\n` +
                          `• Take Profit Target: *${fibTpPrice ? fibTpPrice.toFixed(2) : "N/A"}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Stop)\n` +
                          `• Early Exit Engine: *Loss Protection — Opposite %K/%D Cross Liquidation*\n`;
-    } else if (STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15") {
+    } else if (STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
       confluenceLines += `• M5 Stoch 200: *${(sK200 !== null ? sK200.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [BULLISH TREND]" : "<50 [BEARISH TREND]"})\n` +
                          `• M5 MACD (25,75,1): *${(macdVal !== null ? macdVal.toFixed(4) : "N/A")}* (${direction === "BUY" ? ">0 [BULLISH MOMENTUM]" : "<0 [BEARISH MOMENTUM]"})\n` +
                          `• M5 EMA 100: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > EMA 100" : "Price < EMA 100"})\n` +
@@ -2772,22 +3197,24 @@ async function runSlowPathScan(m5BoundaryEpoch) {
                          `• Trigger Type: *${setupLabel}*\n` +
                          `• Target Fib Level: *${fibTpPrice ? fibTpPrice.toFixed(4) : "N/A"}* (${exactTpName} Target)\n` +
                          `• Early Invalidation: *3 Consecutive Adverse M5 Closes / Stoch 200 / Stoch (5,3,3) Loss Exit*\n`;
-    } else if (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV") {
-      confluenceLines += `• M15 Key Fib Level: *${entryKeyLevel ? entryKeyLevel.toFixed(4) : "N/A"}* (${exactKeyName} Anchor Level)\n` +
-                         `• M5 Stoch (18,12,25): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 Midline Cross [TRIGGERED]" : "<50 Midline Cross [TRIGGERED]"})\n` +
-                         `• Envelope 200 (0.05%): *${direction === "BUY" ? "Price > Upper (" + eUp.toFixed(4) + ")" : "Price < Lower (" + eLo.toFixed(4) + ")"}* [BREAKOUT]\n` +
-                         `• Target Fib Level: *${fibTpPrice ? fibTpPrice.toFixed(4) : "N/A"}* (${exactTpName} Target)\n`;
+    } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
+      confluenceLines += `• M5 Stoch 200 (48/52): *${(sK200 !== null ? sK200.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">48 [BULLISH TREND]" : "<52 [BEARISH TREND]"})\n` +
+                         `• M5 Stoch (15,2,5): *%K ${(sK1525 !== null ? sK1525.toFixed(1) : "N/A")}* | *%D ${(sD1525 !== null ? sD1525.toFixed(1) : "N/A")}* (${setupLabel})\n` +
+                         `• Early Exits: *Recent Opposite M5 Fractal Break / Entry-Hour H1 Adverse Close*\n` +
+                         `• Take Profit Target: *${fibTpPrice ? fibTpPrice.toFixed(4) : "N/A"}* (${exactTpName} Target — Min $4.00 Net)\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || STRATEGY_PROFILE === "PROFILE_V25_STOCH45_VALIDATOR") {
       confluenceLines += `• M5 Stoch (200,1,1) Trend: *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [BULLISH ARMED]" : "<50 [BEARISH ARMED]"})\n` +
                          `• M5 CCI 100 Trigger: *${(cVal !== null ? cVal.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">0 Cross [TRIGGERED]" : "<0 Cross [TRIGGERED]"})\n` +
                          `• Target Fib Level: *${fibTpPrice ? fibTpPrice.toFixed(4) : "N/A"}* (${exactTpName} Target)\n` +
                          `• Early Exit Engine: *Loss Protection — Previous M5 Fractal (${initialM5Fractal ? initialM5Fractal.toFixed(2) : "N/A"}) Break*\n`;
-    } else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES") {
-      confluenceLines += `• M15 Key Fib Level: *${entryKeyLevel ? entryKeyLevel.toFixed(4) : "N/A"}* (${exactKeyName} Anchor Level - Excludes 50%)\n` +
-                         `• M5 Stoch (18,12,25): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">20 Oversold Boundary Cross [TRIGGERED]" : "<80 Overbought Boundary Cross [TRIGGERED]"})\n` +
-                         `• Target Fib Level: *${fibTpPrice ? fibTpPrice.toFixed(4) : "N/A"}* (${exactTpName} Target)\n`;
+    } else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES") {
+      confluenceLines += `• M5 Stoch (200,1,1) Trend: *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [BULLISH ARMED]" : "<50 [BEARISH ARMED]"})\n` +
+                         `• M5 CCI 150 Trigger: *${(cVal !== null ? cVal.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">0 Cross [TRIGGERED]" : "<0 Cross [TRIGGERED]"})\n` +
+                         `• Trigger Mode: *${setupLabel || "STANDARD"}*\n` +
+                         `• Target Fib Level: *${fibTpPrice ? fibTpPrice.toFixed(4) : "N/A"}* (${exactTpName} Target)\n` +
+                         `• Early Exit Engine: *Loss Protection — Previous M5 Fractal (${initialM5Fractal ? initialM5Fractal.toFixed(2) : "N/A"}) Break*\n`;
     } else {
-      // V75 (PROFILE_V75_MIDLINE_FRACTAL) and V10 (PROFILE_V10_MIDLINE_FRACTAL)
+      // Legacy V75 (PROFILE_V75_MIDLINE_FRACTAL)
       confluenceLines += `• M15 Key Fib Level: *${entryKeyLevel ? entryKeyLevel.toFixed(4) : "N/A"}* (${exactKeyName} Anchor Level)\n` +
                          `• M5 Stoch (18,12,25): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 Midline Cross [TRIGGERED]" : "<50 Midline Cross [TRIGGERED]"})\n` +
                          `• Target Fib Level: *${fibTpPrice ? fibTpPrice.toFixed(4) : "N/A"}* (${exactTpName} Target)\n`;
