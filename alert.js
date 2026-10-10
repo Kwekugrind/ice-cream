@@ -1,4 +1,4 @@
-// Fleet Engine Signature: v6.2-master | Sync Trigger Build: 2026-10-10 21:53:00 UTC
+// Fleet Engine Signature: v6.2-master | Sync Trigger Build: 2026-10-10 22:07:00 UTC
 import WebSocket from "ws";
 import fetch from "node-fetch";
 import fs from "fs";
@@ -978,10 +978,16 @@ async function manageOpenTradesFastPath() {
     for (const t of trades.filter(t => t.result && t.contractId)) {
       if (allLiveIdSet.has(String(t.contractId))) {
         console.log(`[SELF-HEALING] Contract ${t.contractId} was marked '${t.result}', but is STILL LIVE on broker portfolio! Restoring active state.`);
+        const prevResult = t.result;
         t.result = null;
         t.closeTime = null;
         t.serverPnl = null;
         modified = true;
+        await sendTelegram(
+          `🩹 *${REPO_LABEL} — AUTOMATED SELF-HEALING RECOVERY* 🩹\n\n` +
+          `Contract \`${t.contractId}\` (*${t.direction}*) was falsely marked as \`${prevResult}\`, but is STILL LIVE on Deriv!\n\n` +
+          `Restored active state in V8 RAM. Fast-Path Software SL ($-\\ $2.50) and Trailing Stop are now actively monitoring this position.`
+        );
       }
     }
 
