@@ -1,4 +1,4 @@
-// Fleet Engine Signature: v6.2-master | Sync Trigger Build: 2026-10-10 21:24:00 UTC
+// Fleet Engine Signature: v6.2-master | Sync Trigger Build: 2026-10-10 21:44:00 UTC
 import WebSocket from "ws";
 import fetch from "node-fetch";
 import fs from "fs";
@@ -1630,7 +1630,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         closingContracts.add(t.contractId);
         console.log(`[STRUCTURE] M15 candle closed at ${m15Close.toFixed(4)} breaking ${t.fractalTimeframe || "M15"} fractal SL ${t.sl.toFixed(4)}. Exiting.`);
         try {
-          await closeContract(t.contractId);
+          const closeRes = await closeContract(t.contractId);
+          if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+            console.error(`[STRUCTURE ERROR] Failed to close contract ${t.contractId} on broker: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+            closingContracts.delete(t.contractId);
+            continue;
+          }
           const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
           const pnl = calcUnrealizedPnL(t, m15Close);
           t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
@@ -1668,7 +1673,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         const fracRef = isBuy ? recentM5Low : recentM5High;
         console.log(`[M5 FRACTAL BREAK EXIT] Active ${t.direction} trade: M5 candle closed at ${m5Close.toFixed(4)} breaking recent opposite M5 fractal ${fracRef.toFixed(4)}. Liquidating immediately.`);
         try {
-          await closeContract(t.contractId);
+          const closeRes = await closeContract(t.contractId);
+          if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+            console.error(`[M5 FRACTAL ERROR] Failed to close contract ${t.contractId} on broker: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+            closingContracts.delete(t.contractId);
+            continue;
+          }
           const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
           const pnl = calcUnrealizedPnL(t, currentPrice);
           t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
@@ -1707,7 +1717,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             closingContracts.add(t.contractId);
             console.log(`[H1 ENTRY-HOUR CLOSE EXIT] Active ${t.direction} trade: Entry hour H1 closed adverse (Open: ${h1Open.toFixed(4)}, Close: ${h1Close.toFixed(4)}). Liquidating immediately.`);
             try {
-              await closeContract(t.contractId);
+              const closeRes = await closeContract(t.contractId);
+              if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+                console.error(`[H1 CLOSE ERROR] Failed to close contract ${t.contractId} on broker: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+                closingContracts.delete(t.contractId);
+                continue;
+              }
               const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
               const pnl = calcUnrealizedPnL(t, currentPrice);
               t.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
@@ -3098,7 +3113,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         console.log(`[POSITION FLIP] Reversal signal ${entryType} (${direction}) confirmed while opposing contract ${activeTrade.contractId} (${activeTrade.direction}) is active. Liquidating opposing trade immediately.`);
         closingContracts.add(activeTrade.contractId);
         try {
-          await closeContract(activeTrade.contractId);
+          const closeRes = await closeContract(activeTrade.contractId);
+          if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+            console.error(`[POSITION FLIP ERROR] Failed to close opposing contract ${activeTrade.contractId} on broker: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+            closingContracts.delete(activeTrade.contractId);
+            return;
+          }
           const settled = await getContractProfitFromHistory(activeTrade.contractId, activeTrade.entryEpoch);
           const pnl = calcUnrealizedPnL(activeTrade, currentPrice);
           activeTrade.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
