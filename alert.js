@@ -1,4 +1,4 @@
-// Fleet Engine Signature: v6.2-master | Sync Trigger Build: 2026-10-10 21:44:00 UTC
+// Fleet Engine Signature: v6.2-master | Sync Trigger Build: 2026-10-10 21:53:00 UTC
 import WebSocket from "ws";
 import fetch from "node-fetch";
 import fs from "fs";
@@ -314,7 +314,7 @@ async function gatewayFetch(endpoint, method = "GET", body = null, timeoutMs = 6
 async function getOpenPortfolio() {
   if (EXECUTION_MODE === "ctrader") {
     const res = await gatewayFetch("/ctrader/positions");
-    if (!res.ok) throw new Error("Gateway cTrader positions query failed");
+    if (!res || !res.ok) throw new Error("Gateway cTrader positions query failed");
     return (res.positions || []).map(p => ({
       contract_id: String(p.positionId),
       symbol: SYMBOL,
@@ -325,9 +325,13 @@ async function getOpenPortfolio() {
     }));
   }
   const res = await gatewayFetch("/portfolio");
-  if (!res.ok || !res.authorized) throw new Error("Gateway is currently disconnected");
-  const rawList = res.portfolio?.contracts || res.portfolio || [];
-  return Array.isArray(rawList) ? rawList : (Array.isArray(rawList.contracts) ? rawList.contracts : []);
+  if (!res || res.ok === false) throw new Error("Gateway is currently disconnected");
+  const rawList = Array.isArray(res.portfolio)
+    ? res.portfolio
+    : (Array.isArray(res.portfolio?.contracts)
+        ? res.portfolio.contracts
+        : (Array.isArray(res.contracts) ? res.contracts : []));
+  return Array.isArray(rawList) ? rawList : [];
 }
 
 async function executeTrade(direction, orderContext = {}) {
@@ -970,10 +974,10 @@ async function manageOpenTradesFastPath() {
     const liveContracts = (Array.isArray(allPortfolio) ? allPortfolio : []).filter(c => getContractSymbol(c).toUpperCase() === TRADING_SYMBOL.toUpperCase());
     let modified = false;
 
-    // Self-Healing Step: If a contract was falsely reconciled as CLOSED_EXTERNAL but is STILL LIVE on broker, restore t.result = null
-    for (const t of trades.filter(t => t.result === "CLOSED_EXTERNAL" && t.contractId)) {
+    // Self-Healing Step: If a contract was falsely marked closed in trades.json but is STILL LIVE on broker, restore t.result = null
+    for (const t of trades.filter(t => t.result && t.contractId)) {
       if (allLiveIdSet.has(String(t.contractId))) {
-        console.log(`[SELF-HEALING] Contract ${t.contractId} was falsely marked CLOSED_EXTERNAL, but is STILL LIVE on broker portfolio! Restoring active state.`);
+        console.log(`[SELF-HEALING] Contract ${t.contractId} was marked '${t.result}', but is STILL LIVE on broker portfolio! Restoring active state.`);
         t.result = null;
         t.closeTime = null;
         t.serverPnl = null;
@@ -983,18 +987,19 @@ async function manageOpenTradesFastPath() {
 
     if (liveContracts.length > 0) {
       for (const live of liveContracts) {
-        const alreadyTracked = trades.find(t => String(t.contractId) === String(live.contract_id) && !t.result);
+        const liveCid = String(live.contract_id || live.contractId || live.id);
+        const alreadyTracked = trades.find(t => String(t.contractId) === liveCid && !t.result);
         if (!alreadyTracked) {
-          const entryPrice = live.buy_price ? parseFloat(live.buy_price) : await fetchCurrentSpotPrice(); 
+          const entryPrice = live.buy_price ? parseFloat(live.buy_price) : (live.entry_price ? parseFloat(live.entry_price) : await fetchCurrentSpotPrice()); 
           const dir = (live.contract_type === "MULTUP" || (live.shortcode && live.shortcode.startsWith("MULTUP"))) ? "BUY" : "SELL";
           trades.push({
-            id: `${SYMBOL}-${Date.now()}`, contractId: live.contract_id, pending: false, repo: REPO_LABEL, symbol: SYMBOL,
+            id: `${SYMBOL}-${Date.now()}`, contractId: Number(liveCid) || liveCid, pending: false, repo: REPO_LABEL, symbol: SYMBOL,
             direction: dir, entry: entryPrice, sl: deriveHardStopPrice(entryPrice, dir), rr: null, entryType: "RECOVERED_LIVE_FAST", brokerSlAmount: STAKE_USD,
-            entryEpoch: live.date_start, fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false, fibTpPrice: null, keyLevel: null,
+            entryEpoch: live.date_start || Math.floor(Date.now() / 1000), fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false, fibTpPrice: null, keyLevel: null,
             openTime: new Date((live.date_start || Math.floor(Date.now() / 1000)) * 1000).toISOString().replace("T", " ").substring(0, 19), closeTime: null, result: null
           });
           modified = true;
-          await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted live contract \`${live.contract_id}\` (${dir}) in Fast Path.`);
+          await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted live contract \`${liveCid}\` (${dir}) in Fast Path.`);
         }
       }
     }
