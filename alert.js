@@ -1,10 +1,44 @@
-// Fleet Engine Signature: v6.2-master | Sync Trigger Build: 2026-10-10 22:07:00 UTC
+// Fleet Engine Signature: v6.2-master | Sync Trigger Build: 2026-10-11 14:15:00 UTC
 import WebSocket from "ws";
 import fetch from "node-fetch";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import "dotenv/config";
+
+// ==================== UNIVERSAL TIMESTAMP LOGGING INTERCEPTOR ====================
+// Injects precision ISO UTC timestamps into all console output for audit tracking in PM2 and the dashboard
+const _rawLog = console.log;
+const _rawErr = console.error;
+const _rawWarn = console.warn;
+
+function formatLogTimestamp() {
+  return `[${new Date().toISOString().replace("T", " ").substring(0, 19)} UTC]`;
+}
+
+console.log = (...args) => {
+  if (args.length > 0 && typeof args[0] === "string" && !args[0].startsWith("[202") && !args[0].startsWith("202")) {
+    _rawLog(formatLogTimestamp(), ...args);
+  } else {
+    _rawLog(...args);
+  }
+};
+
+console.error = (...args) => {
+  if (args.length > 0 && typeof args[0] === "string" && !args[0].startsWith("[202") && !args[0].startsWith("202")) {
+    _rawErr(formatLogTimestamp(), ...args);
+  } else {
+    _rawErr(...args);
+  }
+};
+
+console.warn = (...args) => {
+  if (args.length > 0 && typeof args[0] === "string" && !args[0].startsWith("[202") && !args[0].startsWith("202")) {
+    _rawWarn(formatLogTimestamp(), ...args);
+  } else {
+    _rawWarn(...args);
+  }
+};
 
 // ==================== AUTO-RELOAD ON CODE UPDATE ====================
 // Automatically monitors alert.js on disk. When git pull or a sync script updates the file,
@@ -194,7 +228,23 @@ const TRADING_SYMBOL = SYMBOL;
 const EXECUTION_MODE = (process.env.EXECUTION_MODE || "multiplier").toLowerCase();
 const CTRADER_LOT_SIZE = parseFloat(process.env.LOT_SIZE || (SYMBOL === "1HZ75V" || SYMBOL === "R_75" ? "0.05" : "0.50"));
 
-const SOFTWARE_SL_USD = -2.50;
+// ── Configurable Software Stop Loss per Instrument Profile ──
+const INSTRUMENT_SOFTWARE_SL_MAP = {
+  "R_25": -3.50,     // Tea Machine (V25, 400x) — Calibrated breathing room ($3.50 custom SL)
+  "1HZ75V": -2.50,   // Coffee (V75-1s, 100x)
+  "R_75": -2.50,     // Lery's Alerts (V75, 50x)
+  "R_100": -2.50,    // Milk (V100, 40x)
+  "1HZ100V": -2.50,  // Ice Cream (V100-1s, 40x)
+  "R_50": -2.50,     // OmniSight (V50, 80x)
+  "R_10": -2.50      // Test Bot (V10, 400x)
+};
+
+const DEFAULT_SOFTWARE_SL_USD = -2.50;
+const rawEnvSl = process.env.SOFTWARE_SL_USD ? parseFloat(process.env.SOFTWARE_SL_USD) : null;
+const SOFTWARE_SL_USD = rawEnvSl !== null
+  ? (rawEnvSl > 0 ? -rawEnvSl : rawEnvSl)
+  : (INSTRUMENT_SOFTWARE_SL_MAP[SYMBOL] ?? DEFAULT_SOFTWARE_SL_USD);
+
 const SERVER_TP_USD = 10.00;
 const CATASTROPHIC_PNL_FLOOR = -5.50;
 const DAILY_PROFIT_TARGET_USD = 7.00;
@@ -1472,6 +1522,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     return;
   }
   
+  try {
     // 1. Gateway Portfolio Sync
     const allPortfolio = await getOpenPortfolio();
     const allLiveIdSet = new Set((Array.isArray(allPortfolio) ? allPortfolio : []).map(c => String(c.contract_id || c.id || c.contractId)));
@@ -3172,26 +3223,26 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     let initialM5Fractal = findRecentFractal(candles, si, direction);
     const hardStopPrice = deriveHardStopPrice(entry, direction); // -$5.00 broker hard stop
     
-    // Calculate -$2.50 maximum initial Stop Loss price
-    const reqPnl250 = -2.50 + COMMISSION_USD;
-    const moveFrac250 = reqPnl250 / (STAKE_USD * MULTIPLIER);
-    const sl250Price = direction === "BUY" ? entry * (1 + moveFrac250) : entry * (1 - moveFrac250);
+    // Calculate maximum initial Stop Loss price capped by configured Software SL (-$3.50 for V25, -$2.50 standard)
+    const reqPnlSoft = SOFTWARE_SL_USD + COMMISSION_USD;
+    const moveFracSoft = reqPnlSoft / (STAKE_USD * MULTIPLIER);
+    const slCapPrice = direction === "BUY" ? entry * (1 + moveFracSoft) : entry * (1 - moveFracSoft);
 
     let sl;
     if (PROFILE.slType === "HARD_POINTS") {
       sl = hardStopPrice;
     } else if (PROFILE.slType === "M5_FRACTAL") {
       if (direction === "BUY") {
-        sl = (initialM5Fractal && initialM5Fractal > sl250Price && initialM5Fractal < entry) ? initialM5Fractal : sl250Price;
+        sl = (initialM5Fractal && initialM5Fractal > slCapPrice && initialM5Fractal < entry) ? initialM5Fractal : slCapPrice;
       } else {
-        sl = (initialM5Fractal && initialM5Fractal < sl250Price && initialM5Fractal > entry) ? initialM5Fractal : sl250Price;
+        sl = (initialM5Fractal && initialM5Fractal < slCapPrice && initialM5Fractal > entry) ? initialM5Fractal : slCapPrice;
       }
     } else {
       if (direction === "BUY") {
-        // Use M15 Fractal ONLY IF it is tighter than $2.50 SL price
-        sl = (initialM15Fractal && initialM15Fractal > sl250Price && initialM15Fractal < entry) ? initialM15Fractal : sl250Price;
+        // Use M15 Fractal ONLY IF it is tighter than Software SL price cap
+        sl = (initialM15Fractal && initialM15Fractal > slCapPrice && initialM15Fractal < entry) ? initialM15Fractal : slCapPrice;
       } else {
-        sl = (initialM15Fractal && initialM15Fractal < sl250Price && initialM15Fractal > entry) ? initialM15Fractal : sl250Price;
+        sl = (initialM15Fractal && initialM15Fractal < slCapPrice && initialM15Fractal > entry) ? initialM15Fractal : slCapPrice;
       }
     }
 
@@ -3330,6 +3381,7 @@ async function checkTelegramCommands() {
 export async function startContinuousEngine() {
   console.log(`[${REPO_LABEL}] 🚀 24/7 Continuous Master Trading Engine Initialized.`);
   console.log(`[${REPO_LABEL}] ⚙️ Profile: ${STRATEGY_PROFILE} | Multiplier: ${MULTIPLIER}x`);
+  console.log(`[${REPO_LABEL}] 🛡️ Risk Settings: Software SL: $${SOFTWARE_SL_USD.toFixed(2)} | Hard SL: -$5.00 | TP Floor: $${TARGET_MIN_PROFIT.toFixed(2)}`);
   
   setInterval(checkTelegramCommands, 15000);
 
