@@ -79,6 +79,7 @@ export const INSTRUMENT_PROFILES = {
     emaPeriod: 100,
     minTakeProfitPoints: 1330.0,
     minTakeProfitUsd: 4.00,
+    softwareSlUsd: 2.50,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 180.0,
     slType: "M15_FRACTAL",
@@ -100,6 +101,7 @@ export const INSTRUMENT_PROFILES = {
     stoch533Params: { k: 5, d: 3, slowing: 3 },
     minTakeProfitPoints: 5.10,
     minTakeProfitUsd: 4.00,
+    softwareSlUsd: 2.50,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 18.0,
     slType: "M15_FRACTAL",
@@ -119,6 +121,7 @@ export const INSTRUMENT_PROFILES = {
     stoch15Params: { k: 15, d: 2, slowing: 5 },
     minTakeProfitPoints: 10.70,
     minTakeProfitUsd: 4.00,
+    softwareSlUsd: 2.50,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 3.00,
     slType: "M15_FRACTAL",
@@ -140,6 +143,7 @@ export const INSTRUMENT_PROFILES = {
     emaPeriod: 100, // M5 EMA 100
     minTakeProfitPoints: 30.80,
     minTakeProfitUsd: 4.00,
+    softwareSlUsd: 2.50,
     trailActivationUsd: 2.20,
     maxHardStopPoints: 5.50,
     slType: "M15_FRACTAL",
@@ -158,6 +162,7 @@ export const INSTRUMENT_PROFILES = {
     stochParams: { k: 200, d: 1, slowing: 1 },
     minTakeProfitPoints: 5.52,
     minTakeProfitUsd: 4.00,
+    softwareSlUsd: 3.50,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 18.00,
     slType: "M5_FRACTAL",
@@ -177,6 +182,7 @@ export const INSTRUMENT_PROFILES = {
     cciPeriod: 150,
     minTakeProfitPoints: 1.63,
     minTakeProfitUsd: 4.00,
+    softwareSlUsd: 2.50,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 0.20,
     slType: "M5_FRACTAL",
@@ -198,6 +204,7 @@ export const INSTRUMENT_PROFILES = {
     stoch533Params: { k: 5, d: 3, slowing: 3 },
     minTakeProfitPoints: 9.60,
     minTakeProfitUsd: 4.00,
+    softwareSlUsd: 2.50,
     trailActivationUsd: 3.00,
     maxHardStopPoints: 8.00,
     slType: "M15_FRACTAL",
@@ -243,7 +250,7 @@ const DEFAULT_SOFTWARE_SL_USD = -2.50;
 const rawEnvSl = process.env.SOFTWARE_SL_USD ? parseFloat(process.env.SOFTWARE_SL_USD) : null;
 const SOFTWARE_SL_USD = rawEnvSl !== null
   ? (rawEnvSl > 0 ? -rawEnvSl : rawEnvSl)
-  : (INSTRUMENT_SOFTWARE_SL_MAP[SYMBOL] ?? DEFAULT_SOFTWARE_SL_USD);
+  : (typeof PROFILE.softwareSlUsd === "number" ? -Math.abs(PROFILE.softwareSlUsd) : (INSTRUMENT_SOFTWARE_SL_MAP[SYMBOL] ?? DEFAULT_SOFTWARE_SL_USD));
 
 const SERVER_TP_USD = 10.00;
 const CATASTROPHIC_PNL_FLOOR = -5.50;
@@ -1512,6 +1519,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.dailyTargetReached = false;
     state.dailyNetPnl = 0;
     state.dailyKeyLevelTouchedToday = false;
+    // Disarm previous calendar day setups to eliminate outdated or irrelevant signals
+    state.armed = null;
+    state.armedEpoch = null;
+    state.armedTime = null;
+    state.confirm = null;
+    state.nextPhase = null;
+    state.keyLevelTouched = false;
+    state.levelTouched = null;
     saveState();
   }
 
@@ -2273,6 +2288,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   state.envUpper = eUp;
   state.envLower = eLo;
   state.ema100Val = currentEma100;
+  state.ema200Val = currentEma200;
+  state.macdVal = macdVal;
   state.stoch533Val = sK533;
   state.stoch200Val = sK200;
   state.stoch1525Val = sK1525;
