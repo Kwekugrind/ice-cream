@@ -444,9 +444,13 @@ async function closeContract(contractId) {
   if (EXECUTION_MODE === "ctrader") {
     try {
       const res = await gatewayFetch("/ctrader/close", "POST", { positionId: Number(contractId) });
+      if (res && (res.alreadyClosed || res.positionNotFound)) {
+        return { ok: true, positionNotFound: true, error: { code: "ContractNotFound", message: "Position already closed" } };
+      }
       return res;
     } catch (err) {
-      if (err.message && err.message.toLowerCase().includes("not found")) {
+      const errMsg = String(err.message || "").toLowerCase();
+      if (errMsg.includes("not found") || errMsg.includes("already closed") || errMsg.includes("500") || errMsg.includes("404")) {
         return { ok: true, positionNotFound: true, error: { code: "ContractNotFound", message: err.message } };
       }
       throw err;
@@ -1201,17 +1205,18 @@ async function manageOpenTradesFastPath() {
       
       try {
         const closeRes = await closeContract(openTrade.contractId);
-        if (closeRes && closeRes.error) {
-          if (closeRes.error.code === "ContractNotFound") {
-            serverPnl = pnl;
-            resultSource = "broker_already_closed";
-          } else {
-            console.error(`[RISK ERROR] Failed to close contract ${openTrade.contractId} on broker: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
-            closingContracts.delete(openTrade.contractId);
-            continue; // Do NOT mark as closed if broker sell failed! Retry on next pulse.
-          }
-        } else if (closeRes && !closeRes.error) {
-          serverPnl = closeRes.sell?.profit ?? pnl;
+        const errStr = typeof closeRes?.error === "string" ? closeRes.error.toLowerCase() : (closeRes?.error?.message || "").toLowerCase();
+        const isNotFound = closeRes?.positionNotFound || closeRes?.alreadyClosed || closeRes?.error?.code === "ContractNotFound" || errStr.includes("not found") || errStr.includes("already closed") || errStr.includes("not exist");
+
+        if (closeRes && (closeRes.error || !closeRes.ok) && !isNotFound) {
+          console.error(`[RISK ERROR] Failed to close contract ${openTrade.contractId} on broker: ${closeRes.error?.message || closeRes.error || JSON.stringify(closeRes)}`);
+          closingContracts.delete(openTrade.contractId);
+          continue; // Do NOT mark as closed if broker sell failed! Retry on next pulse.
+        } else if (isNotFound) {
+          serverPnl = pnl;
+          resultSource = "broker_already_closed";
+        } else if (closeRes && (closeRes.ok || closeRes.sell || closeRes.result)) {
+          serverPnl = closeRes.sell?.profit ?? closeRes.result?.profit ?? pnl;
           resultSource = "server_close_confirmed";
         }
       } catch (e) {
