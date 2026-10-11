@@ -71,6 +71,7 @@ export const INSTRUMENT_PROFILES = {
     repoLabel: "Lery's Alerts (V75 Demo)",
     server: "S1",
     multiplier: 50,
+    lotSize: 0.005,
     stakeUsd: 5.0,
     commissionUsd: 0.15,
     strategyProfile: "PROFILE_V75_EMA_STOCH15",
@@ -91,6 +92,7 @@ export const INSTRUMENT_PROFILES = {
     repoLabel: "Coffee (V75-1s Demo)",
     server: "S1",
     multiplier: 100,
+    lotSize: 0.005,
     stakeUsd: 5.0,
     commissionUsd: 0.15,
     strategyProfile: "PROFILE_V75_1S_TREND_MACD_STOCH533",
@@ -113,6 +115,7 @@ export const INSTRUMENT_PROFILES = {
     repoLabel: "Milk (V100 Demo)",
     server: "S1",
     multiplier: 40,
+    lotSize: 0.20,
     stakeUsd: 5.0,
     commissionUsd: 0.15,
     strategyProfile: "PROFILE_V100_STOCH200_STOCH15",
@@ -133,6 +136,7 @@ export const INSTRUMENT_PROFILES = {
     repoLabel: "Ice Cream Machine",
     server: "S2",
     multiplier: 40,
+    lotSize: 0.20,
     stakeUsd: 5.0,
     commissionUsd: 0.15,
     strategyProfile: "PROFILE_V100_1S_TREND_MACD_STOCH",
@@ -155,6 +159,7 @@ export const INSTRUMENT_PROFILES = {
     repoLabel: "Tea (V25 Demo)",
     server: "S1",
     multiplier: 400,
+    lotSize: 0.50,
     stakeUsd: 5.0,
     commissionUsd: 0.32,
     strategyProfile: "PROFILE_V25_STOCH200_CCI100",
@@ -174,6 +179,7 @@ export const INSTRUMENT_PROFILES = {
     repoLabel: "OmniSight (V50)",
     server: "S2",
     multiplier: 80,
+    lotSize: 4.00,
     stakeUsd: 5.0,
     commissionUsd: 0.16,
     strategyProfile: "PROFILE_V50_STOCH200_CCI150",
@@ -194,6 +200,7 @@ export const INSTRUMENT_PROFILES = {
     repoLabel: "Test Bot (V10 Live)",
     server: "S2",
     multiplier: 400,
+    lotSize: 0.50,
     stakeUsd: 5.0,
     commissionUsd: 0.80,
     strategyProfile: "PROFILE_V10_TREND_MACD_STOCH533",
@@ -221,6 +228,7 @@ const SYMBOL = PROFILE.symbol;
 const SYMBOL_NAME = PROFILE.symbolName;
 const REPO_LABEL = PROFILE.repoLabel;
 const MULTIPLIER = PROFILE.multiplier;
+const LOT_SIZE = PROFILE.lotSize || 0.50;
 const COMMISSION_USD = PROFILE.commissionUsd;
 const STAKE_USD = PROFILE.stakeUsd || 5.0;
 const STOCH_SEPARATION_MIN = 0; // Pure directional crossover (zero separation barrier)
@@ -231,9 +239,9 @@ const STRATEGY_PROFILE = PROFILE.strategyProfile;
 
 const TRADING_SYMBOL = SYMBOL;
 
-// ── Execution Mode & Lot Size Configuration (Dual-Mode Architecture) ──
-const EXECUTION_MODE = (process.env.EXECUTION_MODE || "multiplier").toLowerCase();
-const CTRADER_LOT_SIZE = parseFloat(process.env.LOT_SIZE || (SYMBOL === "1HZ75V" || SYMBOL === "R_75" ? "0.05" : "0.50"));
+// ── Execution Mode & Lot Size Configuration (cTrader CFD Primary Architecture) ──
+const EXECUTION_MODE = (process.env.EXECUTION_MODE || "ctrader").toLowerCase();
+const CTRADER_LOT_SIZE = parseFloat(process.env.LOT_SIZE || (PROFILE.lotSize !== undefined ? String(PROFILE.lotSize) : (SYMBOL === "1HZ75V" || SYMBOL === "R_75" ? "0.005" : "0.50")));
 
 // ── Configurable Software Stop Loss per Instrument Profile ──
 const INSTRUMENT_SOFTWARE_SL_MAP = {
@@ -378,6 +386,7 @@ async function getOpenPortfolio() {
       underlying_symbol: TRADING_SYMBOL,
       contract_type: p.tradeData?.tradeSide === 1 ? "MULTUP" : "MULTDOWN",
       buy_price: p.price,
+      lots: (p.tradeData?.volume ? p.tradeData.volume / 100 : CTRADER_LOT_SIZE),
       date_start: Math.floor((p.tradeData?.openTimestamp || Date.now()) / 1000)
     }));
   }
@@ -433,8 +442,15 @@ async function executeTrade(direction, orderContext = {}) {
 
 async function closeContract(contractId) {
   if (EXECUTION_MODE === "ctrader") {
-    const res = await gatewayFetch("/ctrader/close", "POST", { positionId: Number(contractId) });
-    return res;
+    try {
+      const res = await gatewayFetch("/ctrader/close", "POST", { positionId: Number(contractId) });
+      return res;
+    } catch (err) {
+      if (err.message && err.message.toLowerCase().includes("not found")) {
+        return { ok: true, positionNotFound: true, error: { code: "ContractNotFound", message: err.message } };
+      }
+      throw err;
+    }
   }
   const numericId = Number(contractId);
   const payloadSell = (!isNaN(numericId) && numericId > 0) ? numericId : contractId;
@@ -444,6 +460,9 @@ async function closeContract(contractId) {
 }
 
 async function getContractProfitFromHistory(contractId, approxOpenEpoch) {
+  if (EXECUTION_MODE === "ctrader") {
+    return null;
+  }
   const data = await gatewayFetch("/profit_table", "POST", { 
     profit_table: 1, 
     description: 1, 
@@ -899,19 +918,27 @@ function findStochasticCrossCandleEpoch(candles, stoch, dir, type = "MIDLINE") {
 
 const checkStochasticStateArmed = checkStochastic8HrLookback;
 
-function deriveHardStopPrice(entry, direction) {
+function deriveHardStopPrice(entry, direction, lots = CTRADER_LOT_SIZE) {
   const targetLoss = -5.00;
   const requiredRawPnl = targetLoss + COMMISSION_USD;
+  if (EXECUTION_MODE === "ctrader") {
+    const activeLots = (lots && lots > 0) ? lots : CTRADER_LOT_SIZE;
+    const priceMove = requiredRawPnl / activeLots;
+    return direction === "BUY" ? entry + priceMove : entry - priceMove;
+  }
   const priceMoveFraction = requiredRawPnl / (STAKE_USD * MULTIPLIER);
-  const dollarSlPrice = direction === "BUY" ? entry * (1 + priceMoveFraction) : entry * (1 - priceMoveFraction);
-
-  return dollarSlPrice;
+  return direction === "BUY" ? entry * (1 + priceMoveFraction) : entry * (1 - priceMoveFraction);
 }
 
 function calcUnrealizedPnL(trade, currentPrice) {
-  const rawPnl = trade.direction === "BUY"
-    ? (currentPrice - trade.entry) / trade.entry * STAKE_USD * MULTIPLIER
-    : (trade.entry - currentPrice) / trade.entry * STAKE_USD * MULTIPLIER;
+  const pointsDiff = trade.direction === "BUY"
+    ? (currentPrice - trade.entry)
+    : (trade.entry - currentPrice);
+
+  const rawPnl = EXECUTION_MODE === "ctrader"
+    ? pointsDiff * (trade.lots || CTRADER_LOT_SIZE)
+    : (pointsDiff / trade.entry) * STAKE_USD * MULTIPLIER;
+
   return rawPnl - COMMISSION_USD;
 }
 
@@ -1057,7 +1084,8 @@ async function manageOpenTradesFastPath() {
           const dir = (live.contract_type === "MULTUP" || (live.shortcode && live.shortcode.startsWith("MULTUP"))) ? "BUY" : "SELL";
           trades.push({
             id: `${SYMBOL}-${Date.now()}`, contractId: Number(liveCid) || liveCid, pending: false, repo: REPO_LABEL, symbol: SYMBOL,
-            direction: dir, entry: entryPrice, sl: deriveHardStopPrice(entryPrice, dir), rr: null, entryType: "RECOVERED_LIVE_FAST", brokerSlAmount: STAKE_USD,
+            direction: dir, entry: entryPrice, sl: deriveHardStopPrice(entryPrice, dir, live.lots || CTRADER_LOT_SIZE), rr: null, entryType: "RECOVERED_LIVE_FAST", brokerSlAmount: STAKE_USD,
+            lots: live.lots || CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE,
             entryEpoch: live.date_start || Math.floor(Date.now() / 1000), fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false, fibTpPrice: null, keyLevel: null,
             openTime: new Date((live.date_start || Math.floor(Date.now() / 1000)) * 1000).toISOString().replace("T", " ").substring(0, 19), closeTime: null, result: null
           });
@@ -1445,6 +1473,8 @@ async function checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch
     rr: null,
     entryType: "RESCUE_ENTRY_STOCH533",
     brokerSlAmount: STAKE_USD,
+    lots: CTRADER_LOT_SIZE,
+    executionMode: EXECUTION_MODE,
     entryEpoch: m5BoundaryEpoch,
     fractalSl: parentTrade.fractalSl || parentTrade.sl,
     fractalEpoch: null,
@@ -1470,7 +1500,7 @@ async function checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch
     `📍 Rescue Entry: *${entry.toFixed(4)}*\n` +
     `🛑 Stop Loss: *${Number(sl).toFixed(4)}* (Inherited from Parent Trade)\n` +
     `🎯 Take Profit: *${fibTpPrice ? Number(fibTpPrice).toFixed(4) : "Parent TP Target"}*\n` +
-    `💰 Stake: $${STAKE_USD} | Multiplier: ${MULTIPLIER}x\n\n` +
+    `💰 Stake: $${STAKE_USD} | Mode: ${EXECUTION_MODE === "ctrader" ? `cTrader CFD (${CTRADER_LOT_SIZE} lots)` : `Multiplier ${MULTIPLIER}x`}\n\n` +
     `🔗 *Parent Trade Reference:*\n` +
     `• Parent Contract: \`${parentTrade.contractId}\` (${parentTrade.direction} @ ${Number(parentTrade.entry).toFixed(4)})\n` +
     `• Floating Loss at Rescue: *$${parentPnl.toFixed(2)}*\n` +
@@ -1549,7 +1579,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         const dir = (live.contract_type === "MULTUP" || (live.shortcode && live.shortcode.startsWith("MULTUP"))) ? "BUY" : "SELL";
         trades.push({
           id: `${SYMBOL}-${Date.now()}`, contractId: live.contract_id, pending: false, repo: REPO_LABEL, symbol: SYMBOL,
-          direction: dir, entry: entryPrice, sl: deriveHardStopPrice(entryPrice, dir), rr: null, entryType: "RECOVERED_LIVE", brokerSlAmount: STAKE_USD,
+          direction: dir, entry: entryPrice, sl: deriveHardStopPrice(entryPrice, dir, live.lots || CTRADER_LOT_SIZE), rr: null, entryType: "RECOVERED_LIVE", brokerSlAmount: STAKE_USD,
+          lots: live.lots || CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE,
           entryEpoch: live.date_start, fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false, fibTpPrice: null, keyLevel: null,
           openTime: new Date((live.date_start || Math.floor(Date.now() / 1000)) * 1000).toISOString().replace("T", " ").substring(0, 19), closeTime: null, result: null
         });
@@ -3223,8 +3254,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     // Calibrated Minimum Take Profit Engine ($4.00 TP Floor Across Fleet)
     let calibratedMinPts = MIN_TP_POINTS_FLOOR;
     const requiredRawPnl = TARGET_MIN_PROFIT + COMMISSION_USD;
-    const priceMoveFraction = requiredRawPnl / (STAKE_USD * MULTIPLIER);
-    const dollarTpPrice = direction === "BUY" ? entry * (1 + priceMoveFraction) : entry * (1 - priceMoveFraction);
+    const dollarTpPrice = EXECUTION_MODE === "ctrader"
+      ? (direction === "BUY" ? entry + (requiredRawPnl / CTRADER_LOT_SIZE) : entry - (requiredRawPnl / CTRADER_LOT_SIZE))
+      : (direction === "BUY" ? entry * (1 + requiredRawPnl / (STAKE_USD * MULTIPLIER)) : entry * (1 - requiredRawPnl / (STAKE_USD * MULTIPLIER)));
     const pointsTpPrice = direction === "BUY" ? entry + calibratedMinPts : entry - calibratedMinPts;
 
     const minRequiredTp = direction === "BUY" ? Math.max(pointsTpPrice, dollarTpPrice) : Math.min(pointsTpPrice, dollarTpPrice);
@@ -3238,12 +3270,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     // Initial Stop Loss Anchor: Previous M15 / M5 Institutional Fractal Capped at $2.50 SL
     let initialM15Fractal = findRecentFractalM15(m15Candles, direction);
     let initialM5Fractal = findRecentFractal(candles, si, direction);
-    const hardStopPrice = deriveHardStopPrice(entry, direction); // -$5.00 broker hard stop
+    const hardStopPrice = deriveHardStopPrice(entry, direction, CTRADER_LOT_SIZE); // -$5.00 broker hard stop
     
     // Calculate maximum initial Stop Loss price capped by configured Software SL (-$3.50 for V25, -$2.50 standard)
     const reqPnlSoft = SOFTWARE_SL_USD + COMMISSION_USD;
-    const moveFracSoft = reqPnlSoft / (STAKE_USD * MULTIPLIER);
-    const slCapPrice = direction === "BUY" ? entry * (1 + moveFracSoft) : entry * (1 - moveFracSoft);
+    const slCapPrice = EXECUTION_MODE === "ctrader"
+      ? (direction === "BUY" ? entry + (reqPnlSoft / CTRADER_LOT_SIZE) : entry - (reqPnlSoft / CTRADER_LOT_SIZE))
+      : (direction === "BUY" ? entry * (1 + reqPnlSoft / (STAKE_USD * MULTIPLIER)) : entry * (1 - reqPnlSoft / (STAKE_USD * MULTIPLIER)));
 
     let sl;
     if (PROFILE.slType === "HARD_POINTS") {
@@ -3328,7 +3361,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       `📍 Entry: *${entry.toFixed(4)}*\n` +
       `🛑 Initial SL: *${sl.toFixed(4)}* (${initialM5Fractal ? "M5 Fractal Anchor" : (initialM15Fractal ? "M15 Fractal Anchor" : "Hard Stop Barrier")})\n` +
       `🎯 Take Profit: *${fibTpPrice.toFixed(4)}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n\n` +
-      `💰 Stake: $${STAKE_USD} | Multiplier: ${MULTIPLIER}x\n\n` +
+      `💰 Stake: $${STAKE_USD} | Mode: ${EXECUTION_MODE === "ctrader" ? `cTrader CFD (${CTRADER_LOT_SIZE} lots)` : `Multiplier ${MULTIPLIER}x`}\n\n` +
       `📐 *Technical Confluence Verification:*\n` +
       confluenceLines + `\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
@@ -3337,6 +3370,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     const pendingTradeRecord = {
       id: `${SYMBOL}-${Date.now()}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, rr: null, entryType, brokerSlAmount: STAKE_USD,
+      lots: CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE,
       entryEpoch: m5BoundaryEpoch, purchaseTimeEpoch: m5BoundaryEpoch, purchase_time: m5BoundaryEpoch,
       fractalSl: initialM5Fractal || initialM15Fractal,
       fractalEpoch: null,
@@ -3397,7 +3431,7 @@ async function checkTelegramCommands() {
 
 export async function startContinuousEngine() {
   console.log(`[${REPO_LABEL}] 🚀 24/7 Continuous Master Trading Engine Initialized.`);
-  console.log(`[${REPO_LABEL}] ⚙️ Profile: ${STRATEGY_PROFILE} | Multiplier: ${MULTIPLIER}x`);
+  console.log(`[${REPO_LABEL}] ⚙️ Profile: ${STRATEGY_PROFILE} | Mode: ${EXECUTION_MODE.toUpperCase()} (${EXECUTION_MODE === "ctrader" ? `${CTRADER_LOT_SIZE} lots (equiv ${MULTIPLIER}x)` : `${MULTIPLIER}x`})`);
   console.log(`[${REPO_LABEL}] 🛡️ Risk Settings: Software SL: $${SOFTWARE_SL_USD.toFixed(2)} | Hard SL: -$5.00 | TP Floor: $${TARGET_MIN_PROFIT.toFixed(2)}`);
   
   setInterval(checkTelegramCommands, 15000);
