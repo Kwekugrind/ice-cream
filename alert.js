@@ -380,15 +380,29 @@ async function getOpenPortfolio() {
   if (EXECUTION_MODE === "ctrader") {
     const res = await gatewayFetch("/ctrader/positions");
     if (!res || !res.ok) throw new Error("Gateway cTrader positions query failed");
-    return (res.positions || []).map(p => ({
-      contract_id: String(p.positionId),
-      symbol: SYMBOL,
-      underlying_symbol: TRADING_SYMBOL,
-      contract_type: p.tradeData?.tradeSide === 1 ? "MULTUP" : "MULTDOWN",
-      buy_price: p.price,
-      lots: (p.tradeData?.volume ? p.tradeData.volume / 100 : CTRADER_LOT_SIZE),
-      date_start: Math.floor((p.tradeData?.openTimestamp || Date.now()) / 1000)
-    }));
+    const CTRADER_ID_TO_SYMBOL = {
+      2435: "1HZ75V",
+      2434: "R_75",
+      2431: "R_50",
+      2430: "R_25",
+      2428: "R_10",
+      2436: "R_100",
+      2437: "1HZ100V"
+    };
+    return (res.positions || []).map(p => {
+      const symId = p.tradeData?.symbolId || p.symbolId;
+      const mappedSym = CTRADER_ID_TO_SYMBOL[symId] || SYMBOL;
+      return {
+        contract_id: String(p.positionId),
+        symbol: mappedSym,
+        underlying_symbol: mappedSym,
+        contract_type: p.tradeData?.tradeSide === 1 ? "MULTUP" : "MULTDOWN",
+        buy_price: p.price,
+        lots: (p.tradeData?.volume ? p.tradeData.volume / 100 : CTRADER_LOT_SIZE),
+        unrealizedPnl: p.unrealizedPnl,
+        date_start: Math.floor((p.tradeData?.openTimestamp || Date.now()) / 1000)
+      };
+    });
   }
   const res = await gatewayFetch("/portfolio");
   if (!res || res.ok === false) throw new Error("Gateway is currently disconnected");
