@@ -1089,7 +1089,7 @@ async function manageOpenTradesFastPath() {
           trades.push({
             id: `${SYMBOL}-${Date.now()}`, contractId: Number(liveCid) || liveCid, pending: false, repo: REPO_LABEL, symbol: SYMBOL,
             direction: dir, entry: entryPrice, sl: deriveHardStopPrice(entryPrice, dir, live.lots || CTRADER_LOT_SIZE), rr: null, entryType: "RECOVERED_LIVE_FAST", brokerSlAmount: STAKE_USD,
-            lots: live.lots || CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE,
+            lots: live.lots || CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE, is_ctrader: true,
             entryEpoch: live.date_start || Math.floor(Date.now() / 1000), fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false, fibTpPrice: null, keyLevel: null,
             openTime: new Date((live.date_start || Math.floor(Date.now() / 1000)) * 1000).toISOString().replace("T", " ").substring(0, 19), closeTime: null, result: null
           });
@@ -1585,7 +1585,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         trades.push({
           id: `${SYMBOL}-${Date.now()}`, contractId: live.contract_id, pending: false, repo: REPO_LABEL, symbol: SYMBOL,
           direction: dir, entry: entryPrice, sl: deriveHardStopPrice(entryPrice, dir, live.lots || CTRADER_LOT_SIZE), rr: null, entryType: "RECOVERED_LIVE", brokerSlAmount: STAKE_USD,
-          lots: live.lots || CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE,
+          lots: live.lots || CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE, is_ctrader: true,
           entryEpoch: live.date_start, fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false, fibTpPrice: null, keyLevel: null,
           openTime: new Date((live.date_start || Math.floor(Date.now() / 1000)) * 1000).toISOString().replace("T", " ").substring(0, 19), closeTime: null, result: null
         });
@@ -3375,7 +3375,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     const pendingTradeRecord = {
       id: `${SYMBOL}-${Date.now()}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, rr: null, entryType, brokerSlAmount: STAKE_USD,
-      lots: CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE,
+      lots: CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE, is_ctrader: true,
       entryEpoch: m5BoundaryEpoch, purchaseTimeEpoch: m5BoundaryEpoch, purchase_time: m5BoundaryEpoch,
       fractalSl: initialM5Fractal || initialM15Fractal,
       fractalEpoch: null,
