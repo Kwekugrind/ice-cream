@@ -1,6 +1,6 @@
 // Fleet Engine Signature: v6.2-master | Sync Trigger Build: 2026-10-11 14:15:00 UTC
 import WebSocket from "ws";
-import fetch from "node-fetch";
+const fetch = globalThis.fetch;
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
