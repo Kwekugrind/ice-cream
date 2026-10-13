@@ -3541,15 +3541,14 @@ export async function startContinuousEngine() {
       if (!state.currentPrice || !state.lastPriceUpdate || (Date.now() - new Date(state.lastPriceUpdate).getTime() > 30000)) {
         try {
           const freshPrice = await fetchCurrentSpotPrice();
-          state.symbol = SYMBOL;
-          state.currentPrice = freshPrice;
-          state.lastPriceUpdate = new Date().toISOString();
-          saveState();
-        } catch (e) {
-          // Log only if price has never been fetched yet
-          if (!state.currentPrice) {
-            console.warn(`[${REPO_LABEL}] Periodic spot fetch warning: ${e.message}`);
+          if (freshPrice > 0) {
+            state.symbol = SYMBOL;
+            state.currentPrice = freshPrice;
+            state.lastPriceUpdate = new Date().toISOString();
+            saveState();
           }
+        } catch (e) {
+          dbg(`Periodic spot fetch skipped: ${e.message}`);
         }
       }
 
