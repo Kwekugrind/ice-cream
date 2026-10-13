@@ -249,7 +249,18 @@ export const INSTRUMENT_PROFILES = {
 
 // ==================== ACTIVE INSTANCE SELECTOR ====================
 // Select via environment variable SYMBOL (e.g. SYMBOL=R_75) or fallback to default
-const ACTIVE_SYMBOL = process.env.SYMBOL || "R_75";
+// Auto-detect symbol from working directory path if process.env.SYMBOL is omitted
+const _cwd = process.cwd();
+let _autoSymbol = null;
+if (_cwd.includes("OmniSight") || _cwd.includes("omnisight")) _autoSymbol = "R_50";
+else if (_cwd.includes("ice-cream") || _cwd.includes("icecream")) _autoSymbol = "1HZ100V";
+else if (_cwd.includes("Test-Bot") || _cwd.includes("test")) _autoSymbol = "R_10";
+else if (_cwd.includes("tea")) _autoSymbol = "R_25";
+else if (_cwd.includes("milk")) _autoSymbol = "R_100";
+else if (_cwd.includes("coffee")) _autoSymbol = "1HZ75V";
+else if (_cwd.includes("Lery")) _autoSymbol = "R_75";
+
+const ACTIVE_SYMBOL = process.env.SYMBOL || _autoSymbol || "R_75";
 const PROFILE = INSTRUMENT_PROFILES[ACTIVE_SYMBOL] || INSTRUMENT_PROFILES["R_75"];
 
 const SYMBOL = PROFILE.symbol;
