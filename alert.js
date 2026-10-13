@@ -1,10 +1,38 @@
-// Fleet Engine Signature: v6.2-master | Sync Trigger Build: 2026-10-11 14:15:00 UTC
-import WebSocket from "ws";
 const fetch = globalThis.fetch;
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import "dotenv/config";
+
+let _wsClass = globalThis.WebSocket || null;
+async function getWebSocketClass() {
+  if (_wsClass) return _wsClass;
+  try {
+    const mod = await import("ws");
+    _wsClass = mod.default || mod;
+    return _wsClass;
+  } catch (e) {
+    return globalThis.WebSocket || null;
+  }
+}
+// Native .env environment loader (zero third-party package dependency)
+try {
+  for (const ep of [".env", ".env.local", "../.env", "/home/ubuntu/trading-bots/.env"]) {
+    if (fs.existsSync(ep)) {
+      const raw = fs.readFileSync(ep, "utf8");
+      for (const line of raw.split("\n")) {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith("#")) {
+          const idx = trimmed.indexOf("=");
+          if (idx > 0) {
+            const key = trimmed.slice(0, idx).trim();
+            const val = trimmed.slice(idx + 1).trim().replace(/^['"]|['"]$/g, "");
+            if (!process.env[key]) process.env[key] = val;
+          }
+        }
+      }
+    }
+  }
+} catch (e) {}
 
 // ==================== UNIVERSAL TIMESTAMP LOGGING INTERCEPTOR ====================
 // Injects precision ISO UTC timestamps into all console output for audit tracking in PM2 and the dashboard
@@ -239,8 +267,8 @@ const STRATEGY_PROFILE = PROFILE.strategyProfile;
 
 const TRADING_SYMBOL = SYMBOL;
 
-// ── Execution Mode & Lot Size Configuration (cTrader CFD Primary Architecture) ──
-const EXECUTION_MODE = (process.env.EXECUTION_MODE || "ctrader").toLowerCase();
+// ── Execution Mode & Lot Size Configuration (Deriv Standard Architecture, matching S1) ──
+const EXECUTION_MODE = (process.env.EXECUTION_MODE || "deriv").toLowerCase();
 const CTRADER_LOT_SIZE = parseFloat(process.env.LOT_SIZE || (PROFILE.lotSize !== undefined ? String(PROFILE.lotSize) : (SYMBOL === "1HZ75V" || SYMBOL === "R_75" ? "0.005" : "0.50")));
 
 // ── Configurable Software Stop Loss per Instrument Profile ──
@@ -378,63 +406,76 @@ async function gatewayFetch(endpoint, method = "GET", body = null, timeoutMs = 6
 
 async function getOpenPortfolio() {
   if (EXECUTION_MODE === "ctrader") {
-    const res = await gatewayFetch("/ctrader/positions");
-    if (!res || !res.ok) throw new Error("Gateway cTrader positions query failed");
-    const CTRADER_ID_TO_SYMBOL = {
-      2435: "1HZ75V",
-      2434: "R_75",
-      2431: "R_50",
-      2430: "R_25",
-      2428: "R_10",
-      2436: "R_100",
-      2437: "1HZ100V"
-    };
-    return (res.positions || []).map(p => {
-      const symId = p.tradeData?.symbolId || p.symbolId;
-      const mappedSym = CTRADER_ID_TO_SYMBOL[symId] || SYMBOL;
-      return {
-        contract_id: String(p.positionId),
-        symbol: mappedSym,
-        underlying_symbol: mappedSym,
-        contract_type: p.tradeData?.tradeSide === 1 ? "MULTUP" : "MULTDOWN",
-        buy_price: p.price,
-        lots: (p.tradeData?.volume ? p.tradeData.volume / 100 : CTRADER_LOT_SIZE),
-        unrealizedPnl: p.unrealizedPnl,
-        date_start: Math.floor((p.tradeData?.openTimestamp || Date.now()) / 1000)
-      };
-    });
+    try {
+      const res = await gatewayFetch("/ctrader/positions");
+      if (res && res.ok && Array.isArray(res.positions)) {
+        const CTRADER_ID_TO_SYMBOL = {
+          2435: "1HZ75V",
+          2434: "R_75",
+          2431: "R_50",
+          2430: "R_25",
+          2428: "R_10",
+          2436: "R_100",
+          2437: "1HZ100V"
+        };
+        return res.positions.map(p => {
+          const symId = p.tradeData?.symbolId || p.symbolId;
+          const mappedSym = CTRADER_ID_TO_SYMBOL[symId] || SYMBOL;
+          return {
+            contract_id: String(p.positionId),
+            symbol: mappedSym,
+            underlying_symbol: mappedSym,
+            contract_type: p.tradeData?.tradeSide === 1 ? "MULTUP" : "MULTDOWN",
+            buy_price: p.price,
+            lots: (p.tradeData?.volume ? p.tradeData.volume / 100 : CTRADER_LOT_SIZE),
+            unrealizedPnl: p.unrealizedPnl,
+            date_start: Math.floor((p.tradeData?.openTimestamp || Date.now()) / 1000)
+          };
+        });
+      }
+    } catch (e) {
+      dbg(`[PORTFOLIO] cTrader query failed (${e.message}), falling back to Deriv gateway...`);
+    }
   }
-  const res = await gatewayFetch("/portfolio");
-  if (!res || res.ok === false) throw new Error("Gateway is currently disconnected");
-  const rawList = Array.isArray(res.portfolio)
-    ? res.portfolio
-    : (Array.isArray(res.portfolio?.contracts)
-        ? res.portfolio.contracts
-        : (Array.isArray(res.contracts) ? res.contracts : []));
-  return Array.isArray(rawList) ? rawList : [];
+
+  try {
+    const res = await gatewayFetch("/portfolio");
+    if (res && res.ok !== false) {
+      const rawList = Array.isArray(res.portfolio)
+        ? res.portfolio
+        : (Array.isArray(res.portfolio?.contracts)
+            ? res.portfolio.contracts
+            : (Array.isArray(res.contracts) ? res.contracts : []));
+      return Array.isArray(rawList) ? rawList : [];
+    }
+  } catch (e) {
+    dbg(`[PORTFOLIO] Deriv gateway query failed (${e.message}). Returning empty array.`);
+  }
+  return [];
 }
 
 async function executeTrade(direction, orderContext = {}) {
-  // Mode 1: Deriv cTrader (CFD Lot Sizes)
   if (EXECUTION_MODE === "ctrader") {
-    const payload = {
-      symbol: SYMBOL_NAME || SYMBOL,
-      side: direction,
-      lots: CTRADER_LOT_SIZE,
-      slPrice: orderContext.slPrice || null,
-      tpPrice: orderContext.fibTpPrice || null,
-      slUsd: 3.60, // Fallback dollar SL target
-      tpUsd: 4.00, // Fallback dollar TP target
-      comment: `${REPO_LABEL} cTrader`
-    };
-    const res = await gatewayFetch("/ctrader/order", "POST", payload);
-    if (!res.ok || !res.order?.positionId) {
-      throw new Error(res.error || "cTrader order placement failed");
+    try {
+      const payload = {
+        symbol: SYMBOL_NAME || SYMBOL,
+        side: direction,
+        lots: CTRADER_LOT_SIZE,
+        slPrice: orderContext.slPrice || null,
+        tpPrice: orderContext.fibTpPrice || null,
+        slUsd: 3.60,
+        tpUsd: 4.00,
+        comment: `${REPO_LABEL} cTrader`
+      };
+      const res = await gatewayFetch("/ctrader/order", "POST", payload);
+      if (res && res.ok && res.order?.positionId) {
+        return String(res.order.positionId);
+      }
+    } catch (e) {
+      console.warn(`[TRADE EXECUTION] cTrader order failed (${e.message}). Falling back to Deriv options...`);
     }
-    return String(res.order.positionId);
   }
 
-  // Mode 2: Deriv Options (Multipliers - Existing Strategy Logic)
   const expectedContractType = direction === "BUY" ? "MULTUP" : "MULTDOWN";
   const slDollars = parseFloat(STAKE_USD.toFixed(2));
   const payload = {
@@ -458,16 +499,15 @@ async function closeContract(contractId) {
   if (EXECUTION_MODE === "ctrader") {
     try {
       const res = await gatewayFetch("/ctrader/close", "POST", { positionId: Number(contractId) });
-      if (res && (res.alreadyClosed || res.positionNotFound)) {
-        return { ok: true, positionNotFound: true, error: { code: "ContractNotFound", message: "Position already closed" } };
+      if (res && (res.alreadyClosed || res.positionNotFound || res.ok)) {
+        return res;
       }
-      return res;
     } catch (err) {
       const errMsg = String(err.message || "").toLowerCase();
       if (errMsg.includes("not found") || errMsg.includes("already closed") || errMsg.includes("500") || errMsg.includes("404")) {
         return { ok: true, positionNotFound: true, error: { code: "ContractNotFound", message: err.message } };
       }
-      throw err;
+      dbg(`[CLOSE CONTRACT] cTrader close failed (${err.message}), trying Deriv sell fallback...`);
     }
   }
   const numericId = Number(contractId);
@@ -515,6 +555,11 @@ async function fetchAllData() {
   }
 
   // 2. Fallback Path: Direct standard WebSocket query
+  const WS = await getWebSocketClass();
+  if (!WS) {
+    throw lastError || new Error("WebSocket client unavailable and Gateway failed");
+  }
+
   const endpoints = [
     `wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`,
     `wss://ws.derivws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`
@@ -524,7 +569,7 @@ async function fetchAllData() {
   for (const endpointUrl of endpoints) {
     try {
       return await new Promise((resolve, reject) => {
-        const ws = new WebSocket(endpointUrl);
+        const ws = new WS(endpointUrl);
         const results = {};
         let timer = null;
         let isSettled = false;
@@ -532,7 +577,7 @@ async function fetchAllData() {
         const cleanup = () => {
           if (timer) clearTimeout(timer);
           try {
-            if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+            if (ws.readyState === WS.OPEN || ws.readyState === WS.CONNECTING) {
               if (typeof ws.terminate === "function") ws.terminate();
               else ws.close();
             }
@@ -620,6 +665,9 @@ async function fetchCurrentSpotPrice() {
   } catch (e) {}
 
   // 2. Fallback Path: Direct standard WebSocket query
+  const WS = await getWebSocketClass();
+  if (!WS) return 0;
+
   const endpoints = [
     `wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`,
     `wss://ws.derivws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`
@@ -629,14 +677,14 @@ async function fetchCurrentSpotPrice() {
   for (const endpointUrl of endpoints) {
     try {
       return await new Promise((resolve, reject) => {
-        const ws = new WebSocket(endpointUrl);
+        const ws = new WS(endpointUrl);
         let timer = null;
         let isSettled = false;
 
         const cleanup = () => {
           if (timer) clearTimeout(timer);
           try {
-            if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+            if (ws.readyState === WS.OPEN || ws.readyState === WS.CONNECTING) {
               if (typeof ws.terminate === "function") ws.terminate();
               else ws.close();
             }
