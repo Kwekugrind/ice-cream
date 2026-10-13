@@ -396,7 +396,7 @@ function writeToLedger(epoch, closePrice, cci, stochK, stochD, envUp, envLo, pha
 }
 
 // ==================== GATEWAY CLIENT CALLS ====================
-async function gatewayFetch(endpoint, method = "GET", body = null, timeoutMs = 6000) {
+async function gatewayFetch(endpoint, method = "GET", body = null, timeoutMs = 15000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -550,25 +550,28 @@ async function getContractProfitFromHistory(contractId, approxOpenEpoch) {
 // ==================== MARKET DATA FETCHERS (GATEWAY MULTIPLEXED + WS FALLBACK) ====================
 async function fetchAllData() {
   // 1. Primary Path: Query authenticated deriv-gateway (0ms connection overhead, zero Cloudflare blocks)
-  try {
-    const [resM5, resM15, resM30, resD1] = await Promise.all([
-      gatewayFetch("/ticks_history", "POST", { ticks_history: SYMBOL, granularity: M5,  count: 500, end: "latest", style: "candles" }),
-      gatewayFetch("/ticks_history", "POST", { ticks_history: SYMBOL, granularity: M15, count: 250, end: "latest", style: "candles" }),
-      gatewayFetch("/ticks_history", "POST", { ticks_history: SYMBOL, granularity: M30, count: 120, end: "latest", style: "candles" }),
-      gatewayFetch("/ticks_history", "POST", { ticks_history: SYMBOL, granularity: D1,  count: 5,   end: "latest", style: "candles" })
-    ]);
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const [resM5, resM15, resM30, resD1] = await Promise.all([
+        gatewayFetch("/ticks_history", "POST", { ticks_history: SYMBOL, granularity: M5,  count: 500, end: "latest", style: "candles" }, 15000),
+        gatewayFetch("/ticks_history", "POST", { ticks_history: SYMBOL, granularity: M15, count: 250, end: "latest", style: "candles" }, 15000),
+        gatewayFetch("/ticks_history", "POST", { ticks_history: SYMBOL, granularity: M30, count: 120, end: "latest", style: "candles" }, 15000),
+        gatewayFetch("/ticks_history", "POST", { ticks_history: SYMBOL, granularity: D1,  count: 5,   end: "latest", style: "candles" }, 15000)
+      ]);
 
-    if (resM5?.candles && resM15?.candles && resM30?.candles && resD1?.candles) {
-      return { m5: resM5.candles, m15: resM15.candles, m30: resM30.candles, d1: resD1.candles };
+      if (resM5?.candles && resM15?.candles && resM30?.candles && resD1?.candles) {
+        return { m5: resM5.candles, m15: resM15.candles, m30: resM30.candles, d1: resD1.candles };
+      }
+    } catch (gwErr) {
+      dbg(`[GATEWAY CANDLES] Gateway query attempt ${attempt} failed (${gwErr.message}).`);
+      if (attempt === 1) await sleep(1500);
     }
-  } catch (gwErr) {
-    dbg(`[GATEWAY CANDLES] Gateway query failed (${gwErr.message}). Trying direct WS fallback...`);
   }
 
   // 2. Fallback Path: Direct standard WebSocket query
   const WS = await getWebSocketClass();
   if (!WS) {
-    throw lastError || new Error("WebSocket client unavailable and Gateway failed");
+    throw new Error("Market data gateway query failed.");
   }
 
   const endpoints = [
