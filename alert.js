@@ -45,7 +45,7 @@ function formatLogTimestamp() {
 }
 
 console.log = (...args) => {
-  if (args.length > 0 && typeof args[0] === "string" && !args[0].startsWith("[202") && !args[0].startsWith("202")) {
+  if (args.length > 0 && typeof args[0] === "string" && !args[0].startsWith("[202") && !args[0].startsWith("202") && !args[0].startsWith("[" + REPO_LABEL)) {
     _rawLog(formatLogTimestamp(), ...args);
   } else {
     _rawLog(...args);
@@ -53,7 +53,7 @@ console.log = (...args) => {
 };
 
 console.error = (...args) => {
-  if (args.length > 0 && typeof args[0] === "string" && !args[0].startsWith("[202") && !args[0].startsWith("202")) {
+  if (args.length > 0 && typeof args[0] === "string" && !args[0].startsWith("[202") && !args[0].startsWith("202") && !args[0].startsWith("[" + REPO_LABEL)) {
     _rawErr(formatLogTimestamp(), ...args);
   } else {
     _rawErr(...args);
@@ -61,7 +61,7 @@ console.error = (...args) => {
 };
 
 console.warn = (...args) => {
-  if (args.length > 0 && typeof args[0] === "string" && !args[0].startsWith("[202") && !args[0].startsWith("202")) {
+  if (args.length > 0 && typeof args[0] === "string" && !args[0].startsWith("[202") && !args[0].startsWith("202") && !args[0].startsWith("[" + REPO_LABEL)) {
     _rawWarn(formatLogTimestamp(), ...args);
   } else {
     _rawWarn(...args);
