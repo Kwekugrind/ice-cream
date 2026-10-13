@@ -313,7 +313,7 @@ const TRAIL_INITIAL_FLOOR_USD = 1.50; // Initial guaranteed lock at activation (
 
 const STOCH_MIDLINE_FALLBACK_SYMBOLS = ["R_50"];
 
-const GATEWAY_URL = process.env.GATEWAY_URL || process.env.PROXY_URL || "http://127.0.0.1:3000";
+const GATEWAY_URL = process.env.GATEWAY_URL || process.env.PROXY_URL || "http://138.2.169.72:3000";
 const GATEWAY_SECRET = process.env.GATEWAY_SECRET || process.env.PROXY_SECRET;
 
 const TG_TOKEN = process.env.TG_BOT_TOKEN || process.env.TG_TOKEN;
