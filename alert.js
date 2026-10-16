@@ -1164,14 +1164,48 @@ const TRADES_FILE_PATH = path.resolve(__dirname, "trades.json");
 const ENGINE_VERSION = "v6.2-master";
 const CODE_TIMESTAMP = "2026-10-03T10:35:00Z";
 
-try { state = { ...state, ...JSON.parse(fs.readFileSync(STATE_FILE_PATH, "utf8")) }; } catch {}
+const OBSOLETE_STATE_KEYS = [
+  "setupEpoch",
+  "h1TrendEpoch",
+  "phaseATriggeredEpoch",
+  "phaseCTriggeredEpoch",
+  "phaseDTriggeredEpoch",
+  "activeEntryType",
+  "anticipatedTrend",
+  "pendingPullback",
+  "pullbackEpoch",
+  "pullbackTrigger",
+  "rsiLowerBreakSeen",
+  "rsiUpperBreakSeen",
+  "h1m15WasAligned",
+  "stochState",
+  "stochSeparation",
+  "cciState",
+  "nextPhase"
+];
+
+function sanitizeState(s) {
+  if (s && typeof s === "object") {
+    OBSOLETE_STATE_KEYS.forEach(k => { delete s[k]; });
+  }
+  return s;
+}
+
+try { 
+  state = { ...state, ...JSON.parse(fs.readFileSync(STATE_FILE_PATH, "utf8")) }; 
+} catch {}
+
+sanitizeState(state);
 state.engineVersion = ENGINE_VERSION;
 state.codeTimestamp = CODE_TIMESTAMP;
+
 function saveState() {
   state.engineVersion = ENGINE_VERSION;
   state.codeTimestamp = CODE_TIMESTAMP;
+  sanitizeState(state);
   fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2));
 }
+
 function loadTrades() { try { return JSON.parse(fs.readFileSync(TRADES_FILE_PATH, "utf8")); } catch { return []; } }
 function saveTrades(t) { fs.writeFileSync(TRADES_FILE_PATH, JSON.stringify(t, null, 2)); }
 
