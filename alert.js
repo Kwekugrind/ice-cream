@@ -1164,29 +1164,48 @@ const TRADES_FILE_PATH = path.resolve(__dirname, "trades.json");
 const ENGINE_VERSION = "v6.2-master";
 const CODE_TIMESTAMP = "2026-10-03T10:35:00Z";
 
-const OBSOLETE_STATE_KEYS = [
-  "setupEpoch",
-  "h1TrendEpoch",
-  "phaseATriggeredEpoch",
-  "phaseCTriggeredEpoch",
-  "phaseDTriggeredEpoch",
-  "activeEntryType",
-  "anticipatedTrend",
-  "pendingPullback",
-  "pullbackEpoch",
-  "pullbackTrigger",
-  "rsiLowerBreakSeen",
-  "rsiUpperBreakSeen",
-  "h1m15WasAligned",
-  "stochState",
-  "stochSeparation",
-  "cciState",
-  "nextPhase"
-];
+const ALLOWED_STATE_KEYS = new Set([
+  "engineVersion", "codeTimestamp", "symbol", "strategyProfile", "currentPrice",
+  "lastPriceUpdate", "lastProcessedEpoch", "lastTgUpdateId", "armed", "armedEpoch",
+  "armedTime", "confirm", "dailyBiasPrice", "last50Origin", "lastTriggeredSetup",
+  "lastTriggeredEpoch", "dailyNetPnl", "dailyTargetReached", "dailyTargetDate",
+  "currentDayDate", "dailyKeyLevelTouchedToday", "keyLevelTouched", "levelTouched",
+  "cciAligned", "stochAligned", "envAligned", "emaAligned", "emaAlignedDir",
+  "h1TdiDir", "stochVal", "stochSignal", "stoch200Val", "stoch1525Val", "stoch533Val",
+  "cciVal", "envUpper", "envLower", "ema100Val", "ema200Val", "macdVal",
+  "stoch50CrossUp", "stoch50CrossDown", "stoch50Above", "stoch50Below", "stoch50Cross",
+  "stoch50CrossDir", "stoch50CrossEpoch", "ema100BuyArmed", "ema100SellArmed",
+  "ema100AlignEpoch", "stoch533BuyCross", "stoch533SellCross", "stoch533CrossDir",
+  "stoch533CrossEpoch", "stoch1525Signal", "envBuyActive", "envSellActive",
+  "envBreakoutDir", "envBreakoutEpoch", "cciCrossBuy", "cciCrossSell", "cciCrossDir",
+  "cciCrossEpoch", "stoch20CrossUp", "stoch80CrossDown", "stoch20Above", "stoch80Below",
+  "stochBoundaryDir", "stochBoundaryEpoch", "latchStoch_BUY", "latchStoch_SELL",
+  "latchStoch533_BUY", "latchStoch533_SELL", "latchCci_BUY", "latchCci_SELL",
+  "latchFib_BUY", "latchFib_SELL", "fib0", "fib100", "fib50", "fib618", "fib79",
+  "fibBullish", "rescueStochArmed", "v75_emaTouched_BUY", "v75_emaTouched_SELL",
+  "v75_stochOverboughtArmed", "v75_stochOversoldArmed", "v75_1s_emaTouched_BUY",
+  "v75_1s_emaTouched_SELL", "v75_1s_trend", "v75_1s_ema100", "v75_1s_macd",
+  "v75_1s_stoch200", "v75_1s_stoch533", "v100_initialEntryDone", "v100_trendDir",
+  "v100_stoch200Armed", "v100_stoch200CrossEpoch", "v100_stoch15_50_crossDir",
+  "v100_stoch15_50_crossEpoch", "v100_1s_armed", "v100_1s_armDir", "v100_1s_initialBuyDone",
+  "v100_1s_initialSellDone", "v100_1s_stochArmedBuy", "v100_1s_stochArmedSell",
+  "v100_1s_macdArmedBuy", "v100_1s_macdArmedSell", "v100_1s_trend", "v100_1s_ema100",
+  "v100_1s_macd", "v100_1s_stoch200", "v100_1s_stoch533", "v100_1s_stoch15",
+  "v50_trendDirection", "v50_pending_cci", "v50_initialBuyDone", "v50_initialSellDone",
+  "v50_stochArmedBuy", "v50_stochArmedSell", "v50_cciArmedBuy", "v50_cciArmedSell",
+  "v25_trendDirection", "v25_initialBuyDone", "v25_initialSellDone", "v25_stochArmedBuy",
+  "v25_stochArmedSell", "v25_cciArmedBuy", "v25_cciArmedSell", "v10_trend",
+  "v10_ema100", "v10_macd", "v10_stoch200", "v10_stoch533", "stochState", "stochSeparation",
+  "cciState", "nextPhase"
+]);
 
 function sanitizeState(s) {
   if (s && typeof s === "object") {
-    OBSOLETE_STATE_KEYS.forEach(k => { delete s[k]; });
+    Object.keys(s).forEach(k => {
+      if (!ALLOWED_STATE_KEYS.has(k)) {
+        delete s[k];
+      }
+    });
   }
   return s;
 }
