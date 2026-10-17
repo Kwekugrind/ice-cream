@@ -2398,7 +2398,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
 
-    if (currentTouchBuy || recentTouchBuy) {
+    if (recentTouchBuy) {
       state.v75_emaTouched_BUY = true;
       state.ema100BuyArmed = true;
       if (!state.armed || state.armed.dir !== "BUY") {
@@ -2410,7 +2410,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
 
-    if (currentTouchSell || recentTouchSell) {
+    if (recentTouchSell) {
       state.v75_emaTouched_SELL = true;
       state.ema100SellArmed = true;
       if (!state.armed || state.armed.dir !== "SELL") {
