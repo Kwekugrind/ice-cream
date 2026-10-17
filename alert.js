@@ -2483,10 +2483,21 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const isAboveBothEma = currentEma100 !== null && currentEma200 !== null && currentPrice > currentEma100 && currentPrice > currentEma200 && cClose > currentEma100 && cClose > currentEma200;
     const isBelowBothEma = currentEma100 !== null && currentEma200 !== null && currentPrice < currentEma100 && currentPrice < currentEma200 && cClose < currentEma100 && cClose < currentEma200;
 
-    const stochCrossUp80 = prevK !== null && sK !== null && prevK <= 80.0 && sK > 80.0;
-    const stochCrossDown20 = prevK !== null && sK !== null && prevK >= 20.0 && sK < 20.0;
-    const stochCrossUp20 = prevK !== null && sK !== null && prevK <= 20.0 && sK > 20.0;
-    const stochCrossDown80 = prevK !== null && sK !== null && prevK >= 80.0 && sK < 80.0;
+    // 1. Level Boundary Crosses (Level 20 and Level 80)
+    const stochLevelCrossUp80 = prevK !== null && sK !== null && prevK <= 80.0 && sK > 80.0;
+    const stochLevelCrossDown20 = prevK !== null && sK !== null && prevK >= 20.0 && sK < 20.0;
+    const stochLevelCrossUp20 = prevK !== null && sK !== null && prevK <= 20.0 && sK > 20.0;
+    const stochLevelCrossDown80 = prevK !== null && sK !== null && prevK >= 80.0 && sK < 80.0;
+
+    // 2. Signal Line (%K / %D) Bullish / Bearish Crosses in Extreme Zones (<=25 Oversold / >=75 Overbought)
+    const stochKdCrossUpOversold = prevK !== null && sK !== null && prevD !== null && sD !== null && prevK <= prevD && sK > sD && sK <= 30.0;
+    const stochKdCrossDownOverbought = prevK !== null && sK !== null && prevD !== null && sD !== null && prevK >= prevD && sK < sD && sK >= 70.0;
+
+    // Combined Fresh Stochastic Trigger Conditions (Level Cross OR %K/%D Signal Line Cross)
+    const stochCrossUp80 = stochLevelCrossUp80;
+    const stochCrossDown20 = stochLevelCrossDown20;
+    const stochCrossUp20 = stochLevelCrossUp20 || stochKdCrossUpOversold;
+    const stochCrossDown80 = stochLevelCrossDown80 || stochKdCrossDownOverbought;
 
     const noActiveTrades = !trades.some(t => !t.result && !t.closeTime);
 
