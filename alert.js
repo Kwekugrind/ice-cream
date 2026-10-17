@@ -901,7 +901,10 @@ export function calculateMACD(candles, fastPeriod = 25, slowPeriod = 75, signalP
     }
   }
   
-  const signalLine = emaArray(macdLine, signalPeriod);
+  // MT5 Standard Specification: Signal Line uses Simple Moving Average (MACD SMA)
+  const validMacd = macdLine.map(v => (v !== null ? v : 0));
+  const rawSignal = sma(validMacd, signalPeriod);
+  const signalLine = rawSignal.map((v, i) => (macdLine[i] === null ? null : v));
   const histogram = new Array(closes.length).fill(null);
   for (let i = 0; i < closes.length; i++) {
     if (macdLine[i] !== null && signalLine[i] !== null) {
