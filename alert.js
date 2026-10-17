@@ -2767,114 +2767,64 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
   }
-  // 3.5 VOLATILITY 75 (1s) & VOLATILITY 10 MACRO TREND STOCH 200, MACD (25,75,1), EMA 100 & STOCH (5,3,3) RE-ENTRY ENGINE
+  // 3.5 VOLATILITY 75 (1s) & VOLATILITY 10 ENGINE (EXACTLY 2 ENTRY RULES: INITIAL EMA 100 BREAKOUT & SUBSEQUENT STOCH 15,2,5)
   else if (STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
     const isV10 = SYMBOL === "R_10";
     const prefix = isV10 ? "V10" : "V75_1S";
 
-    // 1. Trend & Baseline Alignments
-    const stoch200AlignedBuy = sK200 !== null && sK200 >= 50.0;
-    const stoch200AlignedSell = sK200 !== null && sK200 <= 50.0;
-    const macdAlignedBuy = macdVal !== null && macdVal >= 0.0;
-    const macdAlignedSell = macdVal !== null && macdVal <= 0.0;
-    const emaBaselineBuy = currentEma100 !== null && currentPrice > currentEma100;
-    const emaBaselineSell = currentEma100 !== null && currentPrice < currentEma100;
-
-    // Cross events
-    const stoch200CrossUp50 = prevK200 !== null && sK200 !== null && prevK200 <= 50.0 && sK200 > 50.0;
-    const stoch200CrossDown50 = prevK200 !== null && sK200 !== null && prevK200 >= 50.0 && sK200 < 50.0;
-    const macdCrossUpZero = prevMacdVal !== null && macdVal !== null && prevMacdVal <= 0.0 && macdVal > 0.0;
-    const macdCrossDownZero = prevMacdVal !== null && macdVal !== null && prevMacdVal >= 0.0 && macdVal < 0.0;
-
-    // State Tracking & Arming (No timer window; stays armed until dealignment)
-    const stochArmedKeyBuy = isV10 ? "v10_stochArmedBuy" : "v75_1s_stochArmedBuy";
-    const stochArmedKeySell = isV10 ? "v10_stochArmedSell" : "v75_1s_stochArmedSell";
-    const macdArmedKeyBuy = isV10 ? "v10_macdArmedBuy" : "v75_1s_macdArmedBuy";
-    const macdArmedKeySell = isV10 ? "v10_macdArmedSell" : "v75_1s_macdArmedSell";
-    const initialBuyDoneKey = isV10 ? "v10_initialBuyDone" : "v75_1s_initialBuyDone";
-    const initialSellDoneKey = isV10 ? "v10_initialSellDone" : "v75_1s_initialSellDone";
-
-    if (stoch200CrossUp50) state[stochArmedKeyBuy] = true;
-    if (stoch200CrossDown50) state[stochArmedKeySell] = true;
-    if (macdCrossUpZero) state[macdArmedKeyBuy] = true;
-    if (macdCrossDownZero) state[macdArmedKeySell] = true;
-
-    // Dealignment checks: if an indicator breaks its threshold, immediately disarm
-    if (!stoch200AlignedBuy) { state[stochArmedKeyBuy] = false; state[initialBuyDoneKey] = false; }
-    if (!stoch200AlignedSell) { state[stochArmedKeySell] = false; state[initialSellDoneKey] = false; }
-    if (!macdAlignedBuy) { state[macdArmedKeyBuy] = false; }
-    if (!macdAlignedSell) { state[macdArmedKeySell] = false; }
-
-    const bothBuyArmed = stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && (state[stochArmedKeyBuy] || stoch200CrossUp50) && (state[macdArmedKeyBuy] || macdCrossUpZero);
-    const bothSellArmed = stoch200AlignedSell && macdAlignedSell && emaBaselineSell && (state[stochArmedKeySell] || stoch200CrossDown50) && (state[macdArmedKeySell] || macdCrossDownZero);
-    const hasFreshBuyEvent = stoch200CrossUp50 || macdCrossUpZero;
-    const hasFreshSellEvent = stoch200CrossDown50 || macdCrossDownZero;
-
-    const noActiveTrades = !trades.some(t => !t.result && !t.closeTime);
-
-    // Initial BUY Trigger
-    if (bothBuyArmed && hasFreshBuyEvent && !state[initialBuyDoneKey] && noActiveTrades) {
-      indicatorsSatisfied = true;
-      signalDirection = "BUY";
-      setupLabel = (stoch200CrossUp50 && macdCrossUpZero) ? `${prefix}_INITIAL_TREND_SIMULTANEOUS (BUY)` : `${prefix}_INITIAL_TREND (BUY)`;
-      state[initialBuyDoneKey] = true;
-      state[stochArmedKeyBuy] = false;
-      state[macdArmedKeyBuy] = false;
-    }
-    // Initial SELL Trigger
-    else if (bothSellArmed && hasFreshSellEvent && !state[initialSellDoneKey] && noActiveTrades) {
-      indicatorsSatisfied = true;
-      signalDirection = "SELL";
-      setupLabel = (stoch200CrossDown50 && macdCrossDownZero) ? `${prefix}_INITIAL_TREND_SIMULTANEOUS (SELL)` : `${prefix}_INITIAL_TREND (SELL)`;
-      state[initialSellDoneKey] = true;
-      state[stochArmedKeySell] = false;
-      state[macdArmedKeySell] = false;
-    }
     const currCandle = candles[si];
     const prevCandle = candles[si - 1];
     const cClose = parseFloat(currCandle.close);
     const prevClose = parseFloat(prevCandle.close);
     const prevEma100 = ema100[si - 1];
 
-    // Fresh Stoch (15,2,5 Simple) Crossover (Replaces Stoch 5,3,3 per Trader Rule Oct 17 2026)
-    const stoch15CrossUp20 = (prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0) || (prevK1525 !== null && sK1525 !== null && prevD1525 !== null && sD1525 !== null && prevK1525 <= prevD1525 && sK1525 > sD1525 && sK1525 <= 30.0);
-    const stoch15CrossDown80 = (prevK1525 !== null && sK1525 !== null && prevK1525 >= 80.0 && sK1525 < 80.0) || (prevK1525 !== null && sK1525 !== null && prevD1525 !== null && sD1525 !== null && prevK1525 >= prevD1525 && sK1525 < sD1525 && sK1525 >= 70.0);
+    // Mandatory Hard Baseline Filters
+    const emaBaselineBuy = currentEma100 !== null && cClose > currentEma100;
+    const emaBaselineSell = currentEma100 !== null && cClose < currentEma100;
 
-    // Fresh EMA 100 Breakout Cross Event ("If price freshly crosses and closes above EMA 100, buy and below is sell")
+    const macdAlignedBuy = macdVal !== null && macdVal >= 0.0;
+    const macdAlignedSell = macdVal !== null && macdVal <= 0.0;
+
+    // RULE 1: Initial Entry — Fresh EMA 100 Breakout Cross
     const freshEmaCrossUp = prevEma100 !== null && currentEma100 !== null && prevClose <= prevEma100 && cClose > currentEma100;
     const freshEmaCrossDown = prevEma100 !== null && currentEma100 !== null && prevClose >= prevEma100 && cClose < currentEma100;
 
-    // BUY Execution: Fresh Stoch (15,2,5) cross > 20 OR Fresh EMA 100 Breakout Close UP (Filtered by close > EMA 100 & MACD >= 0)
-    else if (noActiveTrades && emaBaselineBuy && macdAlignedBuy && (stoch15CrossUp20 || freshEmaCrossUp)) {
-      indicatorsSatisfied = true;
-      signalDirection = "BUY";
-      setupLabel = freshEmaCrossUp ? `${prefix}_EMA100_BREAKOUT (BUY)` : `${prefix}_STOCH15_REENTRY (BUY)`;
+    // RULE 2: Subsequent Entry — Fresh Stochastic (15,2,5 Simple) Crossover
+    const stoch15CrossUp20 = (prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0) || (prevK1525 !== null && sK1525 !== null && prevD1525 !== null && sD1525 !== null && prevK1525 <= prevD1525 && sK1525 > sD1525 && sK1525 <= 30.0);
+    const stoch15CrossDown80 = (prevK1525 !== null && sK1525 !== null && prevK1525 >= 80.0 && sK1525 < 80.0) || (prevK1525 !== null && sK1525 !== null && prevD1525 !== null && sD1525 !== null && prevK1525 >= prevD1525 && sK1525 < sD1525 && sK1525 >= 70.0);
+
+    const noActiveTrades = !trades.some(t => !t.result && !t.closeTime);
+
+    // BUY EXECUTION: Initial EMA 100 Breakout OR Subsequent Stoch (15,2,5) Re-entry (Filtered by close > EMA 100 & MACD >= 0)
+    if (noActiveTrades && emaBaselineBuy && macdAlignedBuy) {
+      if (freshEmaCrossUp) {
+        indicatorsSatisfied = true;
+        signalDirection = "BUY";
+        setupLabel = `${prefix}_INITIAL_EMA100_BREAKOUT (BUY)`;
+      } else if (stoch15CrossUp20) {
+        indicatorsSatisfied = true;
+        signalDirection = "BUY";
+        setupLabel = `${prefix}_SUBSEQUENT_STOCH15 (BUY)`;
+      }
     }
-    // SELL Execution: Fresh Stoch (15,2,5) cross < 80 OR Fresh EMA 100 Breakout Close DOWN (Filtered by close < EMA 100 & MACD <= 0)
-    else if (noActiveTrades && emaBaselineSell && macdAlignedSell && (stoch15CrossDown80 || freshEmaCrossDown)) {
-      indicatorsSatisfied = true;
-      signalDirection = "SELL";
-      setupLabel = freshEmaCrossDown ? `${prefix}_EMA100_BREAKOUT (SELL)` : `${prefix}_STOCH15_REENTRY (SELL)`;
+    // SELL EXECUTION: Initial EMA 100 Breakout OR Subsequent Stoch (15,2,5) Re-entry (Filtered by close < EMA 100 & MACD <= 0)
+    else if (noActiveTrades && emaBaselineSell && macdAlignedSell) {
+      if (freshEmaCrossDown) {
+        indicatorsSatisfied = true;
+        signalDirection = "SELL";
+        setupLabel = `${prefix}_INITIAL_EMA100_BREAKOUT (SELL)`;
+      } else if (stoch15CrossDown80) {
+        indicatorsSatisfied = true;
+        signalDirection = "SELL";
+        setupLabel = `${prefix}_SUBSEQUENT_STOCH15 (SELL)`;
+      }
     }
 
     // State Tracking for Dashboard Telemetry
-    if (isV10) {
-      state.v10_trend = stoch200AlignedBuy ? "BULLISH" : (stoch200AlignedSell ? "BEARISH" : "NEUTRAL");
-      state.v10_macd = macdVal !== null ? parseFloat(macdVal.toFixed(4)) : null;
-      state.v10_ema100 = currentEma100 !== null ? parseFloat(currentEma100.toFixed(4)) : null;
-      state.v10_stoch200 = sK200 !== null ? parseFloat(sK200.toFixed(1)) : null;
-      state.v10_stoch533 = sK533 !== null ? parseFloat(sK533.toFixed(1)) : null;
-    } else {
-      state.v75_1s_trend = stoch200AlignedBuy ? "BULLISH" : (stoch200AlignedSell ? "BEARISH" : "NEUTRAL");
-      state.v75_1s_macd = macdVal !== null ? parseFloat(macdVal.toFixed(4)) : null;
-      state.v75_1s_ema100 = currentEma100 !== null ? parseFloat(currentEma100.toFixed(4)) : null;
-      state.v75_1s_stoch200 = sK200 !== null ? parseFloat(sK200.toFixed(1)) : null;
-      state.v75_1s_stoch533 = sK533 !== null ? parseFloat(sK533.toFixed(1)) : null;
-    }
-    state.stoch200Val = sK200 !== null ? parseFloat(sK200.toFixed(1)) : null;
-    state.macdVal = macdVal !== null ? parseFloat(macdVal.toFixed(4)) : null;
-    state.ema100Val = currentEma100 !== null ? parseFloat(currentEma100.toFixed(4)) : null;
-    state.stoch533Val = sK533 !== null ? parseFloat(sK533.toFixed(1)) : null;
+    state.v75_1s_trend = (currentEma100 !== null && cClose > currentEma100) ? "BULLISH" : "BEARISH";
+    state.v75_1s_macd = macdVal !== null ? parseFloat(macdVal.toFixed(4)) : null;
+    state.v75_1s_ema100 = currentEma100 !== null ? parseFloat(currentEma100.toFixed(4)) : null;
+    state.v75_1s_stoch15 = sK1525 !== null ? parseFloat(sK1525.toFixed(1)) : null;
 
     // Determine Fib TP target from Daily Fibonacci Grid
     if (indicatorsSatisfied) {
@@ -2888,6 +2838,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
   }
+
   // 4. VOLATILITY 25 (R_25) M5 STOCH (200,1,1) MAIN TREND + M5 CCI 100 EXECUTION ENGINE
   else if (STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || STRATEGY_PROFILE === "PROFILE_V25_STOCH45_VALIDATOR" || STRATEGY_PROFILE === "PROFILE_V25_EMA_STOCH15") {
     // Condition 1: M5 Stoch (200,1,1) Level 50 Gate
