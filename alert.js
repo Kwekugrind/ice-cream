@@ -2379,10 +2379,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const ema100Below200 = currentEma100 !== null && currentEma200 !== null && currentEma100 < currentEma200;
     const currCandle = candles[si];
     const low = parseFloat(currCandle.low), high = parseFloat(currCandle.high);
-    const currentTouchBuy = (currentEma100 !== null && low <= currentEma100);
-    const currentTouchSell = (currentEma100 !== null && high >= currentEma100);
-
-    // Lookback across recent candles to check if price retraced and touched EMA 100 in this wave
+    // True Retracement Touch Verification:
+    // A candle MUST physically intersect the EMA 100 line (Low <= EMA 100 AND High >= EMA 100) to arm a retracement setup.
     let recentTouchBuy = false;
     let recentTouchSell = false;
     const lookbackLimit = Math.max(0, si - 30);
@@ -2391,8 +2389,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const cLow = parseFloat(candles[k].low), cHigh = parseFloat(candles[k].high);
       const e100 = ema100[k];
       if (e100 !== null) {
-        if (cHigh >= e100) recentTouchSell = true;
-        if (cLow <= e100) recentTouchBuy = true;
+        // Physical EMA 100 Intersection: Candle low <= EMA 100 AND Candle high >= EMA 100
+        const candleTouchesEma = cLow <= e100 && cHigh >= e100;
+        if (candleTouchesEma) {
+          recentTouchBuy = true;
+          recentTouchSell = true;
+        }
       }
     }
 
