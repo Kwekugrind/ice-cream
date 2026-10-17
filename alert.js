@@ -1065,6 +1065,54 @@ function calcUnrealizedPnL(trade, currentPrice) {
   return rawPnl - COMMISSION_USD;
 }
 
+export function aggregateCandles(candles, timeframeSeconds) {
+  if (!Array.isArray(candles) || candles.length === 0) return [];
+  const map = new Map();
+  for (const c of candles) {
+    const bucket = c.epoch - (c.epoch % timeframeSeconds);
+    if (!map.has(bucket)) {
+      map.set(bucket, {
+        epoch: bucket,
+        open: parseFloat(c.open),
+        high: parseFloat(c.high),
+        low: parseFloat(c.low),
+        close: parseFloat(c.close),
+        volume: c.volume || 0
+      });
+    } else {
+      const b = map.get(bucket);
+      b.high = Math.max(b.high, parseFloat(c.high));
+      b.low = Math.min(b.low, parseFloat(c.low));
+      b.close = parseFloat(c.close);
+      b.volume += (c.volume || 0);
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => a.epoch - b.epoch);
+}
+
+function evaluateH1AdverseClose(trade, candles, si) {
+  if (!trade.entryEpoch || trade.h1Checked) return { triggered: false };
+  const entryHourStart = Math.floor(trade.entryEpoch / 3600) * 3600;
+  const entryHourEnd = entryHourStart + 3600;
+  const currentCandleCloseEpoch = candles[si].epoch + 300;
+
+  // Evaluate when current closed candle reaches or crosses the entry hour close boundary
+  if (currentCandleCloseEpoch >= entryHourEnd) {
+    trade.h1Checked = true;
+    const entryHourCandle = candles.find(c => c.epoch === entryHourStart);
+    const h1OpenPrice = entryHourCandle ? parseFloat(entryHourCandle.open) : parseFloat(trade.entry);
+    const h1ClosePrice = parseFloat(candles[si].close);
+    const isBuy = trade.direction === "BUY";
+    const adverseClose = isBuy ? (h1ClosePrice < h1OpenPrice) : (h1ClosePrice > h1OpenPrice);
+    return {
+      triggered: adverseClose,
+      h1OpenPrice,
+      h1ClosePrice
+    };
+  }
+  return { triggered: false };
+}
+
 function findRecentFractal(candles, currentIndex, direction) {
   for (let k = currentIndex - 2; k >= 2; k--) {
     if (direction === "BUY") {
@@ -2106,18 +2154,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         : (fracAnchor !== null && m5Close > fracAnchor);
 
       // Early Exit 3: Entry-Hour H1 Candle Closed Against Position
-      const isTopOfHour = m5BoundaryEpoch % 3600 === 0;
-      let h1ClosedAgainst = false;
-      let h1OpenPrice = null;
-      if (isTopOfHour && t.entryEpoch) {
-        const entryHourStart = Math.floor(t.entryEpoch / 3600) * 3600;
-        const entryHourEnd = entryHourStart + 3600;
-        if (m5BoundaryEpoch === entryHourEnd) {
-          const entryHourCandle = candles.find(c => c.epoch === entryHourStart);
-          h1OpenPrice = entryHourCandle ? parseFloat(entryHourCandle.open) : parseFloat(t.entry);
-          h1ClosedAgainst = isBuy ? (m5Close < h1OpenPrice) : (m5Close > h1OpenPrice);
-        }
-      }
+      const h1Eval = evaluateH1AdverseClose(t, candles, si);
+      const h1ClosedAgainst = h1Eval.triggered;
+      const h1OpenPrice = h1Eval.h1OpenPrice || t.entry;
 
       // Whichever early exit triggers first closes the trade immediately
       let earlyExitTriggered = false;
@@ -2296,12 +2335,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
       // Early Invalidation #4: Entry-Hour H1 Adverse Close Exit
       const m5Close = parseFloat(candles[si].close);
-      const entryHourBoundary = t.entryEpoch - (t.entryEpoch % 3600);
-      const isEntryHourClose = (candles[si].epoch + 300) === (entryHourBoundary + 3600);
-      const h1Candles = aggregateCandles(candles, 3600);
-      const entryH1 = h1Candles.find(c => c.epoch === entryHourBoundary);
-      const h1OpenPrice = entryH1 ? parseFloat(entryH1.open) : null;
-      const h1ClosedAgainst = isEntryHourClose && h1OpenPrice !== null && (isBuy ? (m5Close < h1OpenPrice) : (m5Close > h1OpenPrice));
+      const h1Eval = evaluateH1AdverseClose(t, candles, si);
+      const h1ClosedAgainst = h1Eval.triggered;
+      const h1OpenPrice = h1Eval.h1OpenPrice || t.entry;
 
       if (h1ClosedAgainst) {
         closingContracts.add(t.contractId);
@@ -2353,12 +2389,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
 
       // Early Exit 2: Entry-Hour H1 Adverse Close Exit
-      const entryHourBoundary = t.entryEpoch - (t.entryEpoch % 3600);
-      const isEntryHourClose = (candles[si].epoch + 300) === (entryHourBoundary + 3600);
-      const h1Candles = aggregateCandles(candles, 3600);
-      const entryH1 = h1Candles.find(c => c.epoch === entryHourBoundary);
-      const h1OpenPrice = entryH1 ? parseFloat(entryH1.open) : null;
-      const h1ClosedAgainst = isEntryHourClose && h1OpenPrice !== null && (isBuy ? (m5Close < h1OpenPrice) : (m5Close > h1OpenPrice));
+      const h1Eval = evaluateH1AdverseClose(t, candles, si);
+      const h1ClosedAgainst = h1Eval.triggered;
+      const h1OpenPrice = h1Eval.h1OpenPrice || t.entry;
 
       let earlyExitTriggered = false;
       let exitReason = "";
@@ -2531,12 +2564,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
       // Invalidation 4: Entry-Hour H1 Adverse Close Exit
       const m5Close = parseFloat(candles[si].close);
-      const entryHourBoundary = t.entryEpoch - (t.entryEpoch % 3600);
-      const isEntryHourClose = (candles[si].epoch + 300) === (entryHourBoundary + 3600);
-      const h1Candles = aggregateCandles(candles, 3600);
-      const entryH1 = h1Candles.find(c => c.epoch === entryHourBoundary);
-      const h1OpenPrice = entryH1 ? parseFloat(entryH1.open) : null;
-      const h1ClosedAgainst = isEntryHourClose && h1OpenPrice !== null && (isBuy ? (m5Close < h1OpenPrice) : (m5Close > h1OpenPrice));
+      const h1Eval = evaluateH1AdverseClose(t, candles, si);
+      const h1ClosedAgainst = h1Eval.triggered;
+      const h1OpenPrice = h1Eval.h1OpenPrice || t.entry;
 
       if (h1ClosedAgainst) {
         closingContracts.add(t.contractId);
@@ -2587,12 +2617,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const stoch200Adverse = sK !== null && (isBuy ? sK < 50.0 : sK > 50.0);
 
       // 3. Entry-Hour H1 Adverse Close Exit
-      const entryHourBoundary = t.entryEpoch - (t.entryEpoch % 3600);
-      const isEntryHourClose = (candles[si].epoch + 300) === (entryHourBoundary + 3600);
-      const h1Candles = aggregateCandles(candles, 3600);
-      const entryH1 = h1Candles.find(c => c.epoch === entryHourBoundary);
-      const h1OpenPrice = entryH1 ? parseFloat(entryH1.open) : null;
-      const h1ClosedAgainst = isEntryHourClose && h1OpenPrice !== null && (isBuy ? (m5Close < h1OpenPrice) : (m5Close > h1OpenPrice));
+      const h1Eval = evaluateH1AdverseClose(t, candles, si);
+      const h1ClosedAgainst = h1Eval.triggered;
+      const h1OpenPrice = h1Eval.h1OpenPrice || t.entry;
 
       let earlyExitTriggered = false;
       let exitReason = "";
