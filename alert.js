@@ -1390,19 +1390,15 @@ async function manageOpenTradesFastPath() {
     // =========================================================================
     // 🛡️ DYNAMIC PROFIT RATCHET & TREND-RIDER ACTIVATION (STRICTLY IN PROFIT)
     // =========================================================================
-    openTrade.maxUnrealizedPnL = Math.max(openTrade.maxUnrealizedPnL || 0, pnl);
-
-    if (pnl >= 4.00 || (openTrade.maxUnrealizedPnL && openTrade.maxUnrealizedPnL >= 4.00)) {
+if (pnl >= 4.00) {
       if (!openTrade.trendRidingActive) {
         openTrade.trendRidingActive = true;
-        console.log(`[${REPO_LABEL}] 🚀 Trend-Rider ACTIVATED for #${openTrade.contractId} (${openTrade.direction}): Current PnL +${pnl.toFixed(2)} (>= +$4.00). Dynamic trailing floor activated ($1.50 trail behind peak).`);
+        console.log(`[${REPO_LABEL}] 🚀 Trend-Rider ACTIVATED for #${openTrade.contractId} (${openTrade.direction}): Current PnL +${pnl.toFixed(2)} (>= +$4.00). Guaranteed floor locked at +$2.50. Upside wide open.`);
       }
-      // Dynamic trailing floor: anchored at min +$2.50, and trails $1.50 behind peak profit (e.g., peak $8.00 locks in $6.50)
-      const trailingFloor = Math.max(2.50, parseFloat((openTrade.maxUnrealizedPnL - 1.50).toFixed(2)));
-      if (!openTrade.lockedPnlFloor || trailingFloor > openTrade.lockedPnlFloor) {
-        openTrade.lockedPnlFloor = trailingFloor;
+      // Guaranteed floor anchored at +$2.50. Upside is left wide open (no tight trailing buffer behind peak).
+      if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 2.50) {
+        openTrade.lockedPnlFloor = 2.50;
         saveTrades(trades);
-        console.log(`[TRAILING RATCHET] #${openTrade.contractId} Peak PnL +${openTrade.maxUnrealizedPnL.toFixed(2)} -> Dynamic trailing floor updated to +${openTrade.lockedPnlFloor.toFixed(2)} ($1.50 trail).`);
       }
     } else if (pnl >= 2.20 && !openTrade.trendRidingActive) {
       // Early Capital Shield before reaching +$4.00: locks +$0.50 net (covers commission)
@@ -1413,9 +1409,8 @@ async function manageOpenTradesFastPath() {
         console.log(`[CAPITAL-SHIELD] ${openTrade.contractId} PnL +${pnl.toFixed(2)} -> Breakeven floor set to +${openTrade.lockedPnlFloor.toFixed(2)}.`);
       }
     }
-    // =========================================================================
 
-    const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction);
+        const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction);
 
     const hardStopBreached = isBuy ? currentPrice <= hardStopPrice : currentPrice >= hardStopPrice;
     const activeTpTarget = openTrade.tpPrice || openTrade.fibTpPrice || null;
