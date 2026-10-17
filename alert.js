@@ -2830,17 +2830,31 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state[stochArmedKeySell] = false;
       state[macdArmedKeySell] = false;
     }
-    // Re-Entry BUY Trigger on Fast Stoch (5,3,3) Level 20 Cross
-    else if (prevK533 !== null && sK533 !== null && prevK533 <= 20.0 && sK533 > 20.0 && stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && noActiveTrades) {
+    const currCandle = candles[si];
+    const prevCandle = candles[si - 1];
+    const cClose = parseFloat(currCandle.close);
+    const prevClose = parseFloat(prevCandle.close);
+    const prevEma100 = ema100[si - 1];
+
+    // Fresh Stoch (15,2,5 Simple) Crossover (Replaces Stoch 5,3,3 per Trader Rule Oct 17 2026)
+    const stoch15CrossUp20 = (prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0) || (prevK1525 !== null && sK1525 !== null && prevD1525 !== null && sD1525 !== null && prevK1525 <= prevD1525 && sK1525 > sD1525 && sK1525 <= 30.0);
+    const stoch15CrossDown80 = (prevK1525 !== null && sK1525 !== null && prevK1525 >= 80.0 && sK1525 < 80.0) || (prevK1525 !== null && sK1525 !== null && prevD1525 !== null && sD1525 !== null && prevK1525 >= prevD1525 && sK1525 < sD1525 && sK1525 >= 70.0);
+
+    // Fresh EMA 100 Breakout Cross Event ("If price freshly crosses and closes above EMA 100, buy and below is sell")
+    const freshEmaCrossUp = prevEma100 !== null && currentEma100 !== null && prevClose <= prevEma100 && cClose > currentEma100;
+    const freshEmaCrossDown = prevEma100 !== null && currentEma100 !== null && prevClose >= prevEma100 && cClose < currentEma100;
+
+    // BUY Execution: Fresh Stoch (15,2,5) cross > 20 OR Fresh EMA 100 Breakout Close UP (Filtered by close > EMA 100 & MACD >= 0)
+    else if (noActiveTrades && emaBaselineBuy && macdAlignedBuy && (stoch15CrossUp20 || freshEmaCrossUp)) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
-      setupLabel = `${prefix}_REENTRY_STOCH533 (BUY)`;
+      setupLabel = freshEmaCrossUp ? `${prefix}_EMA100_BREAKOUT (BUY)` : `${prefix}_STOCH15_REENTRY (BUY)`;
     }
-    // Re-Entry SELL Trigger on Fast Stoch (5,3,3) Level 80 Cross
-    else if (prevK533 !== null && sK533 !== null && prevK533 >= 80.0 && sK533 < 80.0 && stoch200AlignedSell && macdAlignedSell && emaBaselineSell && noActiveTrades) {
+    // SELL Execution: Fresh Stoch (15,2,5) cross < 80 OR Fresh EMA 100 Breakout Close DOWN (Filtered by close < EMA 100 & MACD <= 0)
+    else if (noActiveTrades && emaBaselineSell && macdAlignedSell && (stoch15CrossDown80 || freshEmaCrossDown)) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
-      setupLabel = `${prefix}_REENTRY_STOCH533 (SELL)`;
+      setupLabel = freshEmaCrossDown ? `${prefix}_EMA100_BREAKOUT (SELL)` : `${prefix}_STOCH15_REENTRY (SELL)`;
     }
 
     // State Tracking for Dashboard Telemetry
