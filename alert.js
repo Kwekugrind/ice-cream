@@ -1044,12 +1044,22 @@ function deriveHardStopPrice(entry, direction, lots = CTRADER_LOT_SIZE) {
 }
 
 function calcUnrealizedPnL(trade, currentPrice) {
+  // 1. Direct Live Broker PnL (Highest Fidelity from cTrader / Deriv)
+  if (typeof trade.liveBrokerPnl === "number" && !isNaN(trade.liveBrokerPnl)) {
+    return trade.liveBrokerPnl;
+  }
+  if (typeof trade.unrealizedPnl === "number" && !isNaN(trade.unrealizedPnl)) {
+    return trade.unrealizedPnl;
+  }
+
+  // 2. High-Precision Price Point Calculation Fallback
   const pointsDiff = trade.direction === "BUY"
     ? (currentPrice - trade.entry)
     : (trade.entry - currentPrice);
 
+  const activeLots = (trade.lots && trade.lots > 0) ? trade.lots : CTRADER_LOT_SIZE;
   const rawPnl = EXECUTION_MODE === "ctrader"
-    ? pointsDiff * (trade.lots || CTRADER_LOT_SIZE)
+    ? pointsDiff * activeLots
     : (pointsDiff / trade.entry) * STAKE_USD * MULTIPLIER;
 
   return rawPnl - COMMISSION_USD;
@@ -1243,6 +1253,22 @@ async function manageOpenTradesFastPath() {
     const liveContracts = (Array.isArray(allPortfolio) ? allPortfolio : []).filter(c => getContractSymbol(c).toUpperCase() === TRADING_SYMBOL.toUpperCase());
     let modified = false;
 
+    // Live Broker PnL & Volume Synchronization:
+    for (const live of liveContracts) {
+      const liveCid = String(live.contract_id || live.contractId || live.id);
+      const tracked = trades.find(t => String(t.contractId) === liveCid && !t.result);
+      if (tracked) {
+        if (typeof live.unrealizedPnl === "number" && !isNaN(live.unrealizedPnl)) {
+          tracked.liveBrokerPnl = live.unrealizedPnl;
+          tracked.unrealizedPnl = live.unrealizedPnl;
+        }
+        if (live.lots && live.lots > 0 && tracked.lots !== live.lots) {
+          tracked.lots = live.lots;
+          modified = true;
+        }
+      }
+    }
+
     // Self-Healing Step: If a contract was falsely marked closed in trades.json but is STILL LIVE on broker, restore t.result = null
     for (const t of trades.filter(t => t.result && t.contractId)) {
       if (allLiveIdSet.has(String(t.contractId))) {
@@ -1251,6 +1277,8 @@ async function manageOpenTradesFastPath() {
         t.result = null;
         t.closeTime = null;
         t.serverPnl = null;
+        closingContracts.delete(t.contractId);
+        closingContracts.delete(Number(t.contractId));
         modified = true;
         await sendTelegram(
           `🩹 *${REPO_LABEL} — AUTOMATED SELF-HEALING RECOVERY* 🩹\n\n` +
@@ -1292,6 +1320,10 @@ async function manageOpenTradesFastPath() {
   let currentPrice;
   try {
     currentPrice = await fetchCurrentSpotPrice();
+    if (!currentPrice || currentPrice <= 0 || isNaN(currentPrice)) {
+      dbg(`[FAST PATH] Transient invalid spot price (${currentPrice}). Maintaining in-trade state.`);
+      return true;
+    }
     state.symbol = SYMBOL;
     state.currentPrice = currentPrice;
     state.lastPriceUpdate = new Date().toISOString();
@@ -1366,9 +1398,37 @@ async function manageOpenTradesFastPath() {
       }
     }
 
+    // 🏆 Stoch 50 / CCI 0 Midline Momentum Profit Exit (Real-Time Fast-Path Check)
+    let stoch50ProfitExit = false;
+    let stochExitDetail = "";
+    const isCciInst = (
+      STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || 
+      STRATEGY_PROFILE === "PROFILE_V25_STOCH45_VALIDATOR" || 
+      STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || 
+      STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES" || 
+      SYMBOL === "R_25" || 
+      SYMBOL === "R_50"
+    );
+    if (pnl > 0.00) {
+      if (isCciInst && typeof state.cciVal === "number") {
+        if ((isBuy && state.cciVal <= 0.0) || (!isBuy && state.cciVal >= 0.0)) {
+          stoch50ProfitExit = true;
+          stochExitDetail = `M5 CCI (${state.cciVal.toFixed(1)}) crossed 0.0 baseline against profit (+${pnl.toFixed(2)})`;
+        }
+      } else if (typeof state.stoch1525Val === "number") {
+        if ((isBuy && state.stoch1525Val <= 50.0) || (!isBuy && state.stoch1525Val >= 50.0)) {
+          stoch50ProfitExit = true;
+          stochExitDetail = `M5 Aux Stoch (15,2,5) %K (${state.stoch1525Val.toFixed(1)}) crossed 50.0 midline against profit (+${pnl.toFixed(2)})`;
+        }
+      }
+    }
+
     let reason = null;
     if (tpHit) { 
-      reason = `Take Profit Target reached at ${currentPrice.toFixed(4)} (+ $${pnl.toFixed(2)})`; 
+      reason = `Take Profit Target reached at ${currentPrice.toFixed(4)} (+ ${pnl.toFixed(2)})`; 
+    } 
+    else if (stoch50ProfitExit) {
+      reason = stochExitDetail;
     } 
     else if (rescueBreakevenHit) {
       reason = `Rescue Retracement Target hit — Old position closed at +$${pnl.toFixed(2)} (>= +$0.20 profit) while rescue contract ${activeRescueTrade.contractId} runs to TP`;
@@ -1751,12 +1811,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     saveState();
   }
 
-  // If daily target reached, protect profits and remain idle
-  if (state.dailyTargetReached) {
-    state.lastProcessedEpoch = m5BoundaryEpoch;
-    saveState();
-    return;
-  }
+  // Note: Daily target check safely positioned before new signal evaluation to ensure open positions are managed
   
   try {
     // 1. Gateway Portfolio Sync
@@ -1921,11 +1976,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     if (closingContracts.has(t.contractId)) continue;
 
     // =========================================================================
-    // 🏆 DYNAMIC TREND-RIDER MOMENTUM EXHAUSTION EXIT (STRICTLY IN PROFIT)
+    // 🏆 DYNAMIC TREND-RIDER & STOCH 50 MOMENTUM EXHAUSTION EXIT (STRICTLY IN PROFIT)
     // =========================================================================
-    if (t.trendRidingActive) {
-      const isBuy = t.direction === "BUY";
-      const currentPnl = calcUnrealizedPnL(t, currentPrice);
+    const isBuy = t.direction === "BUY";
+    const currentPnl = calcUnrealizedPnL(t, currentPrice);
+    const inProfitExhaustion = (currentPnl > 0.00 || t.trendRidingActive);
+    if (inProfitExhaustion) {
       const isCciInstrument = (
         STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || 
         STRATEGY_PROFILE === "PROFILE_V25_STOCH45_VALIDATOR" || 
@@ -2883,6 +2939,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   // Evaluate Loss Recovery / Rescue Entry if parent trade is active and floating in loss
   await checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch);
+
+  // Protect profits: If daily target reached, do NOT evaluate new trade entries!
+  if (state.dailyTargetReached) {
+    console.log(`[${REPO_LABEL}] 🎯 Daily target (+$7.00) already secured today. Idling until 00:00 UTC rollover.`);
+    state.lastProcessedEpoch = m5BoundaryEpoch;
+    saveState();
+    return;
+  }
 
   // ── A. QUANTITATIVE STATE MACHINE & SIGNAL RESOLUTION ──
   if (STRATEGY_PROFILE === "PROFILE_V75_EMA_STOCH15") {
