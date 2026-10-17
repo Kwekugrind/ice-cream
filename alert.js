@@ -125,11 +125,11 @@ export const INSTRUMENT_PROFILES = {
     stakeUsd: 5.0,
     commissionUsd: 0.15,
     strategyProfile: "PROFILE_V75_1S_TREND_MACD_STOCH533",
-    gateType: "STOCH200_MACD_EMA100_STOCH533",
+    gateType: "STOCH200_MACD_EMA100_STOCH1525",
     stoch200Params: { k: 200, d: 1, slowing: 1 },
     macdParams: { fast: 25, slow: 75, signal: 1 },
     emaPeriod: 100,
-    stoch533Params: { k: 5, d: 3, slowing: 3 },
+    stoch1525Params: { k: 15, d: 2, slowing: 5, method: "Simple" },
     minTakeProfitPoints: 5.10,
     minTakeProfitUsd: 4.00,
     softwareSlUsd: 2.50,
@@ -3292,6 +3292,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const emaBaselineSell = currentEma100 !== null && currentPrice < currentEma100;
 
     // Cross events
+    const prevEma100 = si > 0 ? ema100[si - 1] : null;
+    const prevClose = si > 0 ? parseFloat(candles[si - 1].close) : null;
+    const emaCrossUp100 = prevClose !== null && prevEma100 !== null && prevClose <= prevEma100 && currentPrice > currentEma100;
+    const emaCrossDown100 = prevClose !== null && prevEma100 !== null && prevClose >= prevEma100 && currentPrice < currentEma100;
+
     const stoch200CrossUp50 = prevK200 !== null && sK200 !== null && prevK200 <= 50.0 && sK200 > 50.0;
     const stoch200CrossDown50 = prevK200 !== null && sK200 !== null && prevK200 >= 50.0 && sK200 < 50.0;
     const macdCrossUpZero = prevMacdVal !== null && macdVal !== null && prevMacdVal <= 0.0 && macdVal > 0.0;
@@ -3429,17 +3434,29 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state[stochArmedKeySell] = false;
       state[macdArmedKeySell] = false;
     }
-    // Re-Entry BUY Trigger on Fast Stoch (5,3,3) Level 20 Cross
-    else if (prevK533 !== null && sK533 !== null && prevK533 <= 20.0 && sK533 > 20.0 && stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && noActiveTrades) {
+    // Fresh EMA 100 Crossover BUY Trigger (EMA 100 Filter Entry)
+    else if (emaCrossUp100 && stoch200AlignedBuy && macdAlignedBuy && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
-      setupLabel = `${prefix}_REENTRY_STOCH533 (BUY)`;
+      setupLabel = `${prefix}_EMA100_FRESH_CROSS (BUY)`;
     }
-    // Re-Entry SELL Trigger on Fast Stoch (5,3,3) Level 80 Cross
-    else if (prevK533 !== null && sK533 !== null && prevK533 >= 80.0 && sK533 < 80.0 && stoch200AlignedSell && macdAlignedSell && emaBaselineSell && noActiveTrades) {
+    // Fresh EMA 100 Crossover SELL Trigger (EMA 100 Filter Entry)
+    else if (emaCrossDown100 && stoch200AlignedSell && macdAlignedSell && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
-      setupLabel = `${prefix}_REENTRY_STOCH533 (SELL)`;
+      setupLabel = `${prefix}_EMA100_FRESH_CROSS (SELL)`;
+    }
+    // Re-Entry BUY Trigger on Stoch (15,2,5 Simple) Level 20 Cross
+    else if (((prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0) || (prevK533 !== null && sK533 !== null && prevK533 <= 20.0 && sK533 > 20.0)) && stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && noActiveTrades) {
+      indicatorsSatisfied = true;
+      signalDirection = "BUY";
+      setupLabel = `${prefix}_REENTRY_STOCH1525 (BUY)`;
+    }
+    // Re-Entry SELL Trigger on Stoch (15,2,5 Simple) Level 80 Cross
+    else if (((prevK1525 !== null && sK1525 !== null && prevK1525 >= 80.0 && sK1525 < 80.0) || (prevK533 !== null && sK533 !== null && prevK533 >= 80.0 && sK533 < 80.0)) && stoch200AlignedSell && macdAlignedSell && emaBaselineSell && noActiveTrades) {
+      indicatorsSatisfied = true;
+      signalDirection = "SELL";
+      setupLabel = `${prefix}_REENTRY_STOCH1525 (SELL)`;
     }
 
     // State Tracking for Dashboard Telemetry
