@@ -1390,15 +1390,19 @@ async function manageOpenTradesFastPath() {
     // =========================================================================
     // 🛡️ DYNAMIC PROFIT RATCHET & TREND-RIDER ACTIVATION (STRICTLY IN PROFIT)
     // =========================================================================
-if (pnl >= 4.00) {
+openTrade.maxUnrealizedPnL = Math.max(openTrade.maxUnrealizedPnL || 0, pnl);
+
+    if (pnl >= 4.00 || (openTrade.maxUnrealizedPnL && openTrade.maxUnrealizedPnL >= 4.00)) {
       if (!openTrade.trendRidingActive) {
         openTrade.trendRidingActive = true;
-        console.log(`[${REPO_LABEL}] 🚀 Trend-Rider ACTIVATED for #${openTrade.contractId} (${openTrade.direction}): Current PnL +${pnl.toFixed(2)} (>= +$4.00). Guaranteed floor locked at +$2.50. Upside wide open.`);
+        console.log(`[${REPO_LABEL}] 🚀 Trend-Rider ACTIVATED for #${openTrade.contractId} (${openTrade.direction}): Current PnL +${pnl.toFixed(2)} (>= +$4.00). Base floor $2.50 + $4.00 trailing interval activated.`);
       }
-      // Guaranteed floor anchored at +$2.50. Upside is left wide open (no tight trailing buffer behind peak).
-      if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 2.50) {
-        openTrade.lockedPnlFloor = 2.50;
+      // Initial floor locked at $2.50, trailing with $4.00 interval behind peak profit (every increase in peak expands floor)
+      const trailingFloor = Math.max(2.50, parseFloat((openTrade.maxUnrealizedPnL - 4.00).toFixed(2)));
+      if (!openTrade.lockedPnlFloor || trailingFloor > openTrade.lockedPnlFloor) {
+        openTrade.lockedPnlFloor = trailingFloor;
         saveTrades(trades);
+        console.log(`[TRAILING RATCHET] #${openTrade.contractId} Peak PnL +$${openTrade.maxUnrealizedPnL.toFixed(2)} -> Base floor expanded to +$${openTrade.lockedPnlFloor.toFixed(2)} ($4.00 trailing interval).`);
       }
     } else if (pnl >= 2.20 && !openTrade.trendRidingActive) {
       // Early Capital Shield before reaching +$4.00: locks +$0.50 net (covers commission)
@@ -1410,7 +1414,7 @@ if (pnl >= 4.00) {
       }
     }
 
-        const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction);
+    const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction);
 
     const hardStopBreached = isBuy ? currentPrice <= hardStopPrice : currentPrice >= hardStopPrice;
     const activeTpTarget = openTrade.tpPrice || openTrade.fibTpPrice || null;
