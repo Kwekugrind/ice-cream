@@ -1539,8 +1539,7 @@ async function manageOpenTradesFastPath() {
       state.armedTime = null;
       state.keyLevelTouched = false;
       state.levelTouched = null;
-      state.v75_emaTouched_BUY = false;
-      state.v75_emaTouched_SELL = false;
+      // v75_emaTouched preserved across trade exits per user specification
       state.v75_1s_emaTouched_BUY = false;
       state.v75_1s_emaTouched_SELL = false;
       state.v100_1s_armed = false;
@@ -1640,8 +1639,7 @@ async function checkOppositeFractalFakeoutExit(m15Candles, currentPrice) {
     state.armedTime = null;
     state.keyLevelTouched = false;
     state.levelTouched = null;
-    state.v75_emaTouched_BUY = false;
-    state.v75_emaTouched_SELL = false;
+    // v75_emaTouched preserved across trade exits per user specification
     state.v75_1s_emaTouched_BUY = false;
     state.v75_1s_emaTouched_SELL = false;
     state.v100_1s_armed = false;
@@ -2982,20 +2980,83 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const ema100Below200 = currentEma100 !== null && currentEma200 !== null && currentEma100 < currentEma200;
     const currCandle = candles[si];
     const low = parseFloat(currCandle.low), high = parseFloat(currCandle.high);
-    const touchedBuyEma = (currentEma100 !== null && low <= currentEma100) || (currentEma200 !== null && low <= currentEma200);
-    const touchedSellEma = (currentEma100 !== null && high >= currentEma100) || (currentEma200 !== null && high >= currentEma200);
+    const currentTouchBuy = (currentEma100 !== null && low <= currentEma100) || (currentEma200 !== null && low <= currentEma200);
+    const currentTouchSell = (currentEma100 !== null && high >= currentEma100) || (currentEma200 !== null && high >= currentEma200);
 
-    if (ema100Above200 && touchedBuyEma) state.v75_emaTouched_BUY = true;
-    if (ema100Below200 && touchedSellEma) state.v75_emaTouched_SELL = true;
-    if (!ema100Above200) { state.v75_emaTouched_BUY = false; state.v75_stochOversoldArmed = false; }
-    if (!ema100Below200) { state.v75_emaTouched_SELL = false; state.v75_stochOverboughtArmed = false; }
+    // Lookback across recent candles to check if price retraced and touched EMA 100 in this wave
+    let recentTouchBuy = false;
+    let recentTouchSell = false;
+    const lookbackLimit = Math.max(0, si - 30);
+    for (let k = si; k >= lookbackLimit; k--) {
+      if (state.lastTriggeredEpoch && candles[k].epoch <= state.lastTriggeredEpoch) break;
+      const cLow = parseFloat(candles[k].low), cHigh = parseFloat(candles[k].high);
+      const e100 = ema100[k];
+      const e200 = ema200[k];
+      if (e100 !== null) {
+        if (ema100Below200 && (cHigh >= e100 || (e200 !== null && cHigh >= e200))) {
+          recentTouchSell = true;
+        }
+        if (ema100Above200 && (cLow <= e100 || (e200 !== null && cLow <= e200))) {
+          recentTouchBuy = true;
+        }
+      }
+    }
 
-    const emaTouched = state.v75_emaTouched_BUY || state.v75_emaTouched_SELL;
+    if (ema100Above200) {
+      if (currentTouchBuy) {
+        // Price touches EMA 100 again: disarm previous and re-arm fresh setup!
+        state.v75_emaTouched_BUY = true;
+        state.ema100BuyArmed = true;
+        state.v75_emaTouched_SELL = false;
+        state.ema100SellArmed = false;
+        state.v75_stochOversoldArmed = (sK !== null && (sK <= 30.0 || sD <= 30.0));
+        state.armed = { dir: "BUY", lbl: `V75 EMA 100 Retrace Touch (BUY Armed @ ${currentEma100.toFixed(2)})`, lvl: currentEma100 };
+        state.armedEpoch = m5BoundaryEpoch;
+        state.armedTime = new Date(m5BoundaryEpoch * 1000).toISOString().substring(11, 16) + " UTC";
+        dbg(`[V75 RETRACE] Price touched EMA 100 on BUY trend. Fresh BUY setup ARMED.`);
+      } else if (state.v75_emaTouched_BUY || recentTouchBuy) {
+        // Stay armed till next conditions met and trade is triggered
+        state.v75_emaTouched_BUY = true;
+        state.ema100BuyArmed = true;
+        if (!state.armed || state.armed.dir !== "BUY") {
+          state.armed = { dir: "BUY", lbl: `V75 EMA 100 Retrace Touch (BUY Armed)`, lvl: currentEma100 };
+          if (!state.armedEpoch) {
+            state.armedEpoch = m5BoundaryEpoch;
+            state.armedTime = new Date(m5BoundaryEpoch * 1000).toISOString().substring(11, 16) + " UTC";
+          }
+        }
+      }
+    } else if (ema100Below200) {
+      if (currentTouchSell) {
+        // Price touches EMA 100 again: disarm previous and re-arm fresh setup!
+        state.v75_emaTouched_SELL = true;
+        state.ema100SellArmed = true;
+        state.v75_emaTouched_BUY = false;
+        state.ema100BuyArmed = false;
+        state.v75_stochOverboughtArmed = (sK !== null && (sK >= 70.0 || sD >= 70.0));
+        state.armed = { dir: "SELL", lbl: `V75 EMA 100 Retrace Touch (SELL Armed @ ${currentEma100.toFixed(2)})`, lvl: currentEma100 };
+        state.armedEpoch = m5BoundaryEpoch;
+        state.armedTime = new Date(m5BoundaryEpoch * 1000).toISOString().substring(11, 16) + " UTC";
+        dbg(`[V75 RETRACE] Price touched EMA 100 on SELL trend. Fresh SELL setup ARMED.`);
+      } else if (state.v75_emaTouched_SELL || recentTouchSell) {
+        // Stay armed till next conditions met and trade is triggered
+        state.v75_emaTouched_SELL = true;
+        state.ema100SellArmed = true;
+        if (!state.armed || state.armed.dir !== "SELL") {
+          state.armed = { dir: "SELL", lbl: `V75 EMA 100 Retrace Touch (SELL Armed)`, lvl: currentEma100 };
+          if (!state.armedEpoch) {
+            state.armedEpoch = m5BoundaryEpoch;
+            state.armedTime = new Date(m5BoundaryEpoch * 1000).toISOString().substring(11, 16) + " UTC";
+          }
+        }
+      }
+    }
+
+    const emaTouched = (ema100Above200 && state.v75_emaTouched_BUY) || (ema100Below200 && state.v75_emaTouched_SELL);
     const trendDir = ema100Above200 ? "BUY" : ema100Below200 ? "SELL" : "FLAT";
-    state.armed = null;
     state.keyLevelTouched = emaTouched;
     state.levelTouched = emaTouched ? `EMA 100/200 Touch (${trendDir})` : null;
-    state.nextPhase = `${trendDir} Trend (EMA 100 ${ema100Above200 ? '>' : '<'} 200)` + (emaTouched ? " [EMA Retrace Touched]" : " [Awaiting Retrace Touch]");
+    state.nextPhase = `${trendDir} Trend (EMA 100 ${ema100Above200 ? '>' : '<'} 200)` + (emaTouched ? " [EMA Retrace Touched - ARMED]" : " [Awaiting Retrace Touch]");
   } else if (STRATEGY_PROFILE !== "PROFILE_V50_STOCH200_CCI150" && STRATEGY_PROFILE !== "PROFILE_V25_STOCH200_CCI100" && STRATEGY_PROFILE !== "PROFILE_V100_STOCH200_STOCH15" && STRATEGY_PROFILE !== "PROFILE_V100_1S_TREND_MACD_STOCH" && STRATEGY_PROFILE !== "PROFILE_V75_1S_TREND_MACD_STOCH533" && STRATEGY_PROFILE !== "PROFILE_V10_TREND_MACD_STOCH533") {
     state.armed = null;
     state.keyLevelTouched = false;
@@ -3041,61 +3102,44 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const ema100Above200 = currentEma100 !== null && currentEma200 !== null && currentEma100 > currentEma200;
     const ema100Below200 = currentEma100 !== null && currentEma200 !== null && currentEma100 < currentEma200;
 
-    // Condition 2: Pullback Retracement Touch
-    // Candle low touches/dips to EMA 100 or EMA 200 (for BUY) or high reaches/exceeds EMA 100 or EMA 200 (for SELL)
-    const currCandle = candles[si];
-    const low = parseFloat(currCandle.low), high = parseFloat(currCandle.high);
-    const touchedBuyEma = (currentEma100 !== null && low <= currentEma100) || (currentEma200 !== null && low <= currentEma200);
-    const touchedSellEma = (currentEma100 !== null && high >= currentEma100) || (currentEma200 !== null && high >= currentEma200);
-
-    if (ema100Above200 && touchedBuyEma) {
-      state.v75_emaTouched_BUY = true;
-    }
-    if (ema100Below200 && touchedSellEma) {
-      state.v75_emaTouched_SELL = true;
-    }
-
-    // Reset touch and extreme zone latches if trend filter breaks
-    if (!ema100Above200) {
-      state.v75_emaTouched_BUY = false;
-      state.v75_stochOversoldArmed = false;
-    }
-    if (!ema100Below200) {
-      state.v75_emaTouched_SELL = false;
-      state.v75_stochOverboughtArmed = false;
-    }
-
     // Condition 3: Extreme Zone Stoch (15,2,5 Simple) Crossover Trigger
-    // Arm extreme zone whenever Stoch enters oversold (<= 25) or overbought (>= 75)
     if (sK !== null && sD !== null) {
-      if (sK <= 25.0 || sD <= 25.0) {
+      if (sK <= 30.0 || sD <= 30.0) {
         state.v75_stochOversoldArmed = true;
       }
-      if (sK >= 75.0 || sD >= 75.0) {
+      if (sK >= 70.0 || sD >= 70.0) {
         state.v75_stochOverboughtArmed = true;
       }
     }
 
     const prevK2 = si >= 2 ? stoch.k[si - 2] : null;
     const prevK3 = si >= 3 ? stoch.k[si - 3] : null;
-    const recentOversold = (sK <= 25.0 || prevK <= 25.0 || (prevK2 !== null && prevK2 <= 25.0) || (prevK3 !== null && prevK3 <= 25.0) || sD <= 25.0 || prevD <= 25.0 || state.v75_stochOversoldArmed);
-    const recentOverbought = (sK >= 75.0 || prevK >= 75.0 || (prevK2 !== null && prevK2 >= 75.0) || (prevK3 !== null && prevK3 >= 75.0) || sD >= 75.0 || prevD >= 75.0 || state.v75_stochOverboughtArmed);
+    const recentOversold = (sK <= 30.0 || prevK <= 30.0 || (prevK2 !== null && prevK2 <= 30.0) || (prevK3 !== null && prevK3 <= 30.0) || sD <= 30.0 || prevD <= 30.0 || state.v75_stochOversoldArmed);
+    const recentOverbought = (sK >= 70.0 || prevK >= 70.0 || (prevK2 !== null && prevK2 >= 70.0) || (prevK3 !== null && prevK3 >= 70.0) || sD >= 70.0 || prevD >= 70.0 || state.v75_stochOverboughtArmed);
 
-    const stochCrossBuy = (prevK <= prevD && sK > sD) && recentOversold;
-    const stochCrossSell = (prevK >= prevD && sK < sD) && recentOverbought;
+    const stochCrossBuy = (prevK <= prevD && sK > sD) && (recentOversold || state.v75_emaTouched_BUY);
+    const stochCrossSell = (prevK >= prevD && sK < sD) && (recentOverbought || state.v75_emaTouched_SELL);
 
     if (ema100Above200 && state.v75_emaTouched_BUY && stochCrossBuy) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
       setupLabel = "V75_EMA_STOCH15 (BUY)";
       state.v75_stochOversoldArmed = false;
-      state.v75_emaTouched_BUY = false; // Reset touch so a fresh pullback is mandatory for next trade
+      state.v75_emaTouched_BUY = false;
+      state.ema100BuyArmed = false;
+      state.armed = null;
+      state.armedEpoch = null;
+      state.armedTime = null;
     } else if (ema100Below200 && state.v75_emaTouched_SELL && stochCrossSell) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
       setupLabel = "V75_EMA_STOCH15 (SELL)";
       state.v75_stochOverboughtArmed = false;
-      state.v75_emaTouched_SELL = false; // Reset touch so a fresh pullback is mandatory for next trade
+      state.v75_emaTouched_SELL = false;
+      state.ema100SellArmed = false;
+      state.armed = null;
+      state.armedEpoch = null;
+      state.armedTime = null;
     }
   }
   // 2. VOLATILITY 100 (R_100) M5 STOCH 200 (48/52) & M5 STOCH (15,2,5) ENGINE
