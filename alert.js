@@ -309,9 +309,9 @@ const MARKET_DATA_APP_ID = /^\d+$/.test(rawAppId) ? rawAppId : "1089";
 const TARGET_MIN_PROFIT = PROFILE.minTakeProfitUsd || 4.00;
 
 // Continuous Dollar Trailing Stop Settings (High Activation + Wide Buffer Calibration)
-const TRAIL_ACTIVATION_USD = PROFILE.trailActivationUsd || 4.00; // Activated once profit reaches +$4.00 net
-const TRAIL_BUFFER_USD = 4.00;     // Trail $4.00 behind peak unrealized profit
-const TRAIL_INITIAL_FLOOR_USD = 2.50; // Initial guaranteed lock at activation (+$4.00 peak - $4.00 buffer, floored at $2.50 base floor)
+const TRAIL_ACTIVATION_USD = PROFILE.trailActivationUsd || 3.00; // Activated once profit reaches +$3.00 net
+const TRAIL_BUFFER_USD = 1.50;     // Trail $1.50 behind peak unrealized profit
+const TRAIL_INITIAL_FLOOR_USD = 1.50; // Initial guaranteed lock at activation (+$3.00 peak - $1.50 buffer = +$1.50 base floor)
 
 const STOCH_MIDLINE_FALLBACK_SYMBOLS = ["R_50"];
 
@@ -1392,17 +1392,17 @@ async function manageOpenTradesFastPath() {
     // =========================================================================
 openTrade.maxUnrealizedPnL = Math.max(openTrade.maxUnrealizedPnL || 0, pnl);
 
-    if (pnl >= 4.00 || (openTrade.maxUnrealizedPnL && openTrade.maxUnrealizedPnL >= 4.00)) {
+    if (pnl >= TRAIL_ACTIVATION_USD || (openTrade.maxUnrealizedPnL && openTrade.maxUnrealizedPnL >= TRAIL_ACTIVATION_USD)) {
       if (!openTrade.trendRidingActive) {
         openTrade.trendRidingActive = true;
-        console.log(`[${REPO_LABEL}] 🚀 Trend-Rider ACTIVATED for #${openTrade.contractId} (${openTrade.direction}): Current PnL +${pnl.toFixed(2)} (>= +$4.00). Base floor $2.50 + $4.00 trailing interval activated.`);
+        console.log(`[${REPO_LABEL}] 🚀 Trend-Rider ACTIVATED for #${openTrade.contractId} (${openTrade.direction}): Current PnL +${pnl.toFixed(2)} (>= +$${TRAIL_ACTIVATION_USD.toFixed(2)}). Base floor $${TRAIL_INITIAL_FLOOR_USD.toFixed(2)} + $${TRAIL_BUFFER_USD.toFixed(2)} trailing interval activated.`);
       }
       // Initial floor locked at $2.50, trailing with $4.00 interval behind peak profit (every increase in peak expands floor)
-      const trailingFloor = Math.max(2.50, parseFloat((openTrade.maxUnrealizedPnL - 4.00).toFixed(2)));
+      const trailingFloor = Math.max(TRAIL_INITIAL_FLOOR_USD, parseFloat((openTrade.maxUnrealizedPnL - TRAIL_BUFFER_USD).toFixed(2)));
       if (!openTrade.lockedPnlFloor || trailingFloor > openTrade.lockedPnlFloor) {
         openTrade.lockedPnlFloor = trailingFloor;
         saveTrades(trades);
-        console.log(`[TRAILING RATCHET] #${openTrade.contractId} Peak PnL +$${openTrade.maxUnrealizedPnL.toFixed(2)} -> Base floor expanded to +$${openTrade.lockedPnlFloor.toFixed(2)} ($4.00 trailing interval).`);
+        console.log(`[TRAILING RATCHET] #${openTrade.contractId} Peak PnL +${openTrade.maxUnrealizedPnL.toFixed(2)} -> Base floor expanded to +${openTrade.lockedPnlFloor.toFixed(2)} ($${TRAIL_BUFFER_USD.toFixed(2)} trailing interval).`);
       }
     } else if (pnl >= 2.20 && !openTrade.trendRidingActive) {
       // Early Capital Shield before reaching +$4.00: locks +$0.50 net (covers commission)
