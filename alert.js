@@ -103,7 +103,7 @@ export const INSTRUMENT_PROFILES = {
     lotSize: 0.005,
     stakeUsd: 5.0,
     commissionUsd: 0.15,
-    strategyProfile: "PROFILE_V75_EMA_STOCH15",
+    strategyProfile: "PROFILE_V75_TREND_MACD_STOCH1525",
     gateType: "EMA_STOCH15_RETRACEMENT",
     stochParams: { k: 15, d: 2, slowing: 5, method: "Simple", levels: [25, 75] },
     emaPeriod: 100,
@@ -3367,9 +3367,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
   }
   // 3.5 VOLATILITY 75 (1s) & VOLATILITY 10 MACRO TREND STOCH 200, MACD (25,75,1), EMA 100 & STOCH (5,3,3) RE-ENTRY ENGINE
-  else if (STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
+  else if (STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_TREND_MACD_STOCH1525" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
+    const isV75 = SYMBOL === "R_75";
     const isV10 = SYMBOL === "R_10";
-    const prefix = isV10 ? "V10" : "V75_1S";
+    const prefix = isV10 ? "V10" : (isV75 ? "V75" : "V75_1S");
 
     // 1. Trend & Baseline Alignments
     const stoch200AlignedBuy = sK200 !== null && sK200 >= 50.0;
@@ -3386,12 +3387,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const macdCrossDownZero = prevMacdVal !== null && macdVal !== null && prevMacdVal >= 0.0 && macdVal < 0.0;
 
     // State Tracking & Arming (No timer window; stays armed until dealignment)
-    const stochArmedKeyBuy = isV10 ? "v10_stochArmedBuy" : "v75_1s_stochArmedBuy";
-    const stochArmedKeySell = isV10 ? "v10_stochArmedSell" : "v75_1s_stochArmedSell";
-    const macdArmedKeyBuy = isV10 ? "v10_macdArmedBuy" : "v75_1s_macdArmedBuy";
-    const macdArmedKeySell = isV10 ? "v10_macdArmedSell" : "v75_1s_macdArmedSell";
-    const initialBuyDoneKey = isV10 ? "v10_initialBuyDone" : "v75_1s_initialBuyDone";
-    const initialSellDoneKey = isV10 ? "v10_initialSellDone" : "v75_1s_initialSellDone";
+    const stochArmedKeyBuy = isV10 ? "v10_stochArmedBuy" : (isV75 ? "v75_stochArmedBuy" : "v75_1s_stochArmedBuy");
+    const stochArmedKeySell = isV10 ? "v10_stochArmedSell" : (isV75 ? "v75_stochArmedSell" : "v75_1s_stochArmedSell");
+    const macdArmedKeyBuy = isV10 ? "v10_macdArmedBuy" : (isV75 ? "v75_macdArmedBuy" : "v75_1s_macdArmedBuy");
+    const macdArmedKeySell = isV10 ? "v10_macdArmedSell" : (isV75 ? "v75_macdArmedSell" : "v75_1s_macdArmedSell");
+    const initialBuyDoneKey = isV10 ? "v10_initialBuyDone" : (isV75 ? "v75_initialBuyDone" : "v75_1s_initialBuyDone");
+    const initialSellDoneKey = isV10 ? "v10_initialSellDone" : (isV75 ? "v75_initialSellDone" : "v75_1s_initialSellDone");
 
     if (stoch200CrossUp50) state[stochArmedKeyBuy] = true;
     if (stoch200CrossDown50) state[stochArmedKeySell] = true;
@@ -3427,17 +3428,17 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state[initialSellDoneKey] = true;
       state[stochArmedKeySell] = false;
     }
-    // Re-Entry BUY Trigger on Stoch (15,2,5 Simple) Level 20 Cross (filtered by price > EMA 100)
-    else if (prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0 && stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && noActiveTrades) {
+    // Re-Entry BUY Trigger on Stoch Level 20 Cross (Stoch 15,2,5 for R_75/1HZ75V, Stoch 5,3,3 fallback for 1HZ75V)
+    else if (((isV75 || !isV10) ? (prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0) : (prevK533 !== null && sK533 !== null && prevK533 <= 20.0 && sK533 > 20.0)) && stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
-      setupLabel = `${prefix}_REENTRY_STOCH1525 (BUY)`;
+      setupLabel = `${prefix}_REENTRY (BUY)`;
     }
-    // Re-Entry SELL Trigger on Stoch (15,2,5 Simple) Level 80 Cross (filtered by price < EMA 100)
-    else if (prevK1525 !== null && sK1525 !== null && prevK1525 >= 80.0 && sK1525 < 80.0 && stoch200AlignedSell && macdAlignedSell && emaBaselineSell && noActiveTrades) {
+    // Re-Entry SELL Trigger on Stoch Level 80 Cross
+    else if (((isV75 || !isV10) ? (prevK1525 !== null && sK1525 !== null && prevK1525 >= 80.0 && sK1525 < 80.0) : (prevK533 !== null && sK533 !== null && prevK533 >= 80.0 && sK533 < 80.0)) && stoch200AlignedSell && macdAlignedSell && emaBaselineSell && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
-      setupLabel = `${prefix}_REENTRY_STOCH1525 (SELL)`;
+      setupLabel = `${prefix}_REENTRY (SELL)`;
     }
 
     // State Tracking for Dashboard Telemetry
