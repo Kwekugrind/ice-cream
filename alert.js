@@ -1254,7 +1254,7 @@ const ALLOWED_STATE_KEYS = new Set([
   "v50_stochArmedBuy", "v50_stochArmedSell", "v50_cciArmedBuy", "v50_cciArmedSell",
   "v25_trendDirection", "v25_initialBuyDone", "v25_initialSellDone", "v25_stochArmedBuy",
   "v25_stochArmedSell", "v25_cciArmedBuy", "v25_cciArmedSell", "v10_trend",
-  "v10_ema100", "v10_macd", "v10_stoch200", "v10_stoch533", "stochState", "stochSeparation",
+  "v10_ema100", "v10_macd", "v10_stoch200", "v10_stoch533", "healthStatus", "blockerReason", "nextTrigger", "lastScanTime", "stochState", "stochSeparation",
   "cciState", "nextPhase"
 ]);
 
@@ -3018,6 +3018,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   let indicatorsSatisfied = false;
   let signalDirection = "";
   let setupLabel = "";
+  let calculatedFibTp = null;
 
   // 1. UNIFIED V75 MIDLINE FRACTAL ENGINE (Legacy V75 Profile)
   if (STRATEGY_PROFILE === "PROFILE_V75_MIDLINE_FRACTAL") {
@@ -3568,9 +3569,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
   }
 
-  // Calculate Fibonacci Target TP Level from Daily Grid
-  let calculatedFibTp = null;
-  if (indicatorsSatisfied && signalDirection && keyLevels && keyLevels.length > 0) {
+  // Calculate Fibonacci Target TP Level from Daily Grid (if not already calculated by strategy)
+  if (!calculatedFibTp && indicatorsSatisfied && signalDirection && keyLevels && keyLevels.length > 0) {
     const sortedLevels = Array.from(new Set(keyLevels.map(k => k.lvl).filter(v => typeof v === "number" && !isNaN(v)))).sort((a, b) => a - b);
     if (signalDirection === "BUY") {
       const higher = sortedLevels.filter(l => l > currentPrice);
@@ -3788,6 +3788,109 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
   }
 
+  // ── AUTOMATED TRADE BLOCKER & OPERATIONAL HEALTH DETECTOR ──
+  let blockerReason = "";
+  let nextTrigger = "";
+  let healthStatus = "FUNCTIONING";
+
+  if (openTrades.length > 0) {
+    healthStatus = "IN_TRADE";
+    const activeTrade = openTrades[0];
+    const uPnl = calcUnrealizedPnL(activeTrade, currentPrice);
+    blockerReason = `Active Position Open: #${activeTrade.contractId || activeTrade.id} (${activeTrade.direction} @ ${Number(activeTrade.entry).toFixed(2)}, PnL: ${uPnl >= 0 ? "+" : ""}${uPnl.toFixed(2)})`;
+    nextTrigger = `Managing Position: Trailing Ratchet active (TP Target: ${TARGET_MIN_PROFIT.toFixed(2)} Net, SL: ${SOFTWARE_SL_USD.toFixed(2)})`;
+  } else if (state.dailyTargetReached) {
+    healthStatus = "FUNCTIONING";
+    blockerReason = `Daily Net Target (+${DAILY_PROFIT_TARGET_USD.toFixed(2)}) Secured Today (${(state.dailyNetPnl || 0).toFixed(2)})`;
+    nextTrigger = "Idling until 00:00 UTC daily rollover";
+  } else {
+    if (STRATEGY_PROFILE === "PROFILE_V75_EMA_STOCH15") {
+      const priceAboveBoth = currentEma100 !== null && currentEma200 !== null && currentPrice > currentEma100 && currentPrice > currentEma200;
+      const priceBelowBoth = currentEma100 !== null && currentEma200 !== null && currentPrice < currentEma100 && currentPrice < currentEma200;
+      if (priceAboveBoth) {
+        blockerReason = `Price (${currentPrice.toFixed(2)}) > EMA 100/200. Bullish Trend Active. SELL trades strictly forbidden by EMA 100 filter`;
+        nextTrigger = `Awaiting Stoch (15,2,5) %K (${(sK !== null ? sK.toFixed(1) : "N/A")}) cross > 80 for Initial BUY, or EMA 100 pullback touch`;
+      } else if (priceBelowBoth) {
+        blockerReason = `Price (${currentPrice.toFixed(2)}) < EMA 100/200. Bearish Trend Active. BUY trades strictly forbidden by EMA 100 filter`;
+        nextTrigger = `Awaiting Stoch (15,2,5) %K (${(sK !== null ? sK.toFixed(1) : "N/A")}) cross < 20 for Initial SELL, or EMA 100 pullback touch`;
+      } else if (state.v75_emaTouched_BUY) {
+        blockerReason = "EMA 100 Pullback Touched (BUY Armed)";
+        nextTrigger = `Awaiting Stoch (15,2,5) %K (${(sK !== null ? sK.toFixed(1) : "N/A")}) cross > 20 with candle close > EMA 100 (${currentEma100.toFixed(2)})`;
+      } else if (state.v75_emaTouched_SELL) {
+        blockerReason = "EMA 100 Pullback Touched (SELL Armed)";
+        nextTrigger = `Awaiting Stoch (15,2,5) %K (${(sK !== null ? sK.toFixed(1) : "N/A")}) cross < 80 with candle close < EMA 100 (${currentEma100.toFixed(2)})`;
+      } else {
+        blockerReason = `Consolidation between EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"}) and EMA 200 (${currentEma200 ? currentEma200.toFixed(2) : "N/A"})`;
+        nextTrigger = "Awaiting breakout above both EMAs or pullback touch to EMA 100";
+      }
+    } else if (STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533") {
+      const stochBuy = sK200 !== null && sK200 >= 50.0;
+      const macdBuy = macdVal !== null && macdVal >= 0.0;
+      const emaBuy = currentEma100 !== null && currentPrice > currentEma100;
+      const stochSell = sK200 !== null && sK200 <= 50.0;
+      const macdSell = macdVal !== null && macdVal <= 0.0;
+      const emaSell = currentEma100 !== null && currentPrice < currentEma100;
+
+      if (stochBuy && macdBuy && emaBuy) {
+        blockerReason = `Macro Trend Bullish (Stoch200: ${sK200.toFixed(1)} > 50, MACD: +${macdVal.toFixed(2)} > 0, Price > EMA100)`;
+        nextTrigger = `Awaiting Aux Stoch (15,2,5 Simple) %K (${sK1525 !== null ? sK1525.toFixed(1) : "N/A"}) cross > 20 for BUY re-entry`;
+      } else if (stochSell && macdSell && emaSell) {
+        blockerReason = `Macro Trend Bearish (Stoch200: ${sK200.toFixed(1)} < 50, MACD: ${macdVal.toFixed(2)} < 0, Price < EMA100)`;
+        nextTrigger = `Awaiting Aux Stoch (15,2,5 Simple) %K (${sK1525 !== null ? sK1525.toFixed(1) : "N/A"}) cross < 80 for SELL re-entry`;
+      } else {
+        healthStatus = "ATTENTION_REQUIRED";
+        blockerReason = `Indicators De-aligned: Stoch 200 is ${stochBuy ? "BULLISH" : "BEARISH"} (${sK200 ? sK200.toFixed(1) : "N/A"}), MACD is ${macdBuy ? "BULLISH" : "BEARISH"} (${macdVal ? macdVal.toFixed(2) : "N/A"}), Price vs EMA100 is ${emaBuy ? "ABOVE" : "BELOW"}`;
+        nextTrigger = "Awaiting confluence alignment across Stoch 200, MACD, and EMA 100";
+      }
+    } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15") {
+      const trend = state.v100_trendDir || (sK200 >= 50 ? "BUY" : "SELL");
+      if (trend === "BUY") {
+        blockerReason = `BUY Trend Armed (Stoch 200: ${sK200 ? sK200.toFixed(1) : "N/A"} > 48)`;
+        nextTrigger = `Awaiting Stoch (15,2,5) %K (${sK1525 ? sK1525.toFixed(1) : "N/A"}) oversold cross > 20`;
+      } else {
+        blockerReason = `SELL Trend Armed (Stoch 200: ${sK200 ? sK200.toFixed(1) : "N/A"} < 52)`;
+        nextTrigger = `Awaiting Stoch (15,2,5) %K (${sK1525 ? sK1525.toFixed(1) : "N/A"}) overbought cross < 80`;
+      }
+    } else if (STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100") {
+      const stochBuy = sK !== null && sK >= 50.0;
+      if (stochBuy) {
+        blockerReason = `BUY Trend Active (Stoch 200: ${(sK !== null ? sK.toFixed(1) : "N/A")} >= 50.0). CCI currently ${(cVal !== null ? cVal.toFixed(1) : "N/A")}`;
+        nextTrigger = "Awaiting fresh CCI 100 pullback & cross above 0";
+      } else {
+        blockerReason = `SELL Trend Active (Stoch 200: ${(sK !== null ? sK.toFixed(1) : "N/A")} <= 50.0). CCI currently ${(cVal !== null ? cVal.toFixed(1) : "N/A")}`;
+        nextTrigger = "Awaiting fresh CCI 100 rally & cross below 0";
+      }
+    } else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150") {
+      const stochBuy = sK !== null && sK >= 50.0;
+      if (stochBuy) {
+        blockerReason = `BUY Trend Active (Stoch 200: ${(sK !== null ? sK.toFixed(1) : "N/A")} >= 50.0). CCI currently ${(cVal !== null ? cVal.toFixed(1) : "N/A")}`;
+        nextTrigger = "Awaiting fresh CCI 150 pullback & cross above 0";
+      } else {
+        blockerReason = `SELL Trend Active (Stoch 200: ${(sK !== null ? sK.toFixed(1) : "N/A")} <= 50.0). CCI currently ${(cVal !== null ? cVal.toFixed(1) : "N/A")}`;
+        nextTrigger = "Awaiting fresh CCI 150 rally & cross below 0";
+      }
+    } else if (STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
+      const stochBuy = sK200 !== null && sK200 >= 50.0;
+      const macdBuy = macdVal !== null && macdVal >= 0.0;
+      const emaBuy = currentEma100 !== null && currentPrice > currentEma100;
+      if (stochBuy && macdBuy && emaBuy) {
+        blockerReason = `Macro Trend Bullish (Stoch200: ${sK200.toFixed(1)}, MACD: +${macdVal.toFixed(2)}, Price > EMA100)`;
+        nextTrigger = `Awaiting Fast Stoch (5,3,3) %K (${sK533 !== null ? sK533.toFixed(1) : "N/A"}) pullback & cross > 20`;
+      } else if (!stochBuy && !macdBuy && !emaBuy) {
+        blockerReason = `Macro Trend Bearish (Stoch200: ${sK200.toFixed(1)}, MACD: ${macdVal.toFixed(2)}, Price < EMA100)`;
+        nextTrigger = `Awaiting Fast Stoch (5,3,3) %K (${sK533 !== null ? sK533.toFixed(1) : "N/A"}) overbought rally & cross < 80`;
+      } else {
+        healthStatus = "ATTENTION_REQUIRED";
+        blockerReason = `Confluence De-aligned (Stoch200: ${sK200 ? sK200.toFixed(1) : "N/A"}, MACD: ${macdVal ? macdVal.toFixed(2) : "N/A"}, Price vs EMA100: ${emaBuy ? "ABOVE" : "BELOW"})`;
+        nextTrigger = "Awaiting macro confluence alignment";
+      }
+    }
+  }
+
+  state.healthStatus = healthStatus;
+  state.blockerReason = blockerReason;
+  state.nextTrigger = nextTrigger;
+  state.lastScanTime = new Date(m5BoundaryEpoch * 1000).toISOString();
   state.lastProcessedEpoch = m5BoundaryEpoch; saveState();
 }
 
@@ -3862,9 +3965,20 @@ export async function startContinuousEngine() {
         isScanning = true;
         await runSlowPathScan(currentM5Boundary);
         isScanning = false;
+        state.lastSuccessfulScan = new Date().toISOString();
+        if (state.lastError) {
+          state.lastError = null;
+          state.lastErrorTime = null;
+        }
+        try { saveState(); } catch (_) {}
       }
     } catch (err) {
       console.error(`[${REPO_LABEL}] Engine Loop Error:`, err.message);
+      state.lastError = err.message;
+      state.lastErrorTime = new Date().toISOString();
+      state.lastErrorStack = err.stack ? err.stack.split("\n").slice(0, 3).join(" | ") : null;
+      state.errorCount = (state.errorCount || 0) + 1;
+      try { saveState(); } catch (_) {}
       isScanning = false;
     }
 
