@@ -1859,17 +1859,18 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const liveContracts = (Array.isArray(allPortfolio) ? allPortfolio : []).filter(c => getContractSymbol(c).toUpperCase() === TRADING_SYMBOL.toUpperCase());
     
     for (const live of liveContracts) {
-      if (!trades.find(t => String(t.contractId) === String(live.contract_id))) {
+      const liveCid = String(live.contract_id || live.contractId || live.id);
+      if (!trades.find(t => String(t.contractId) === liveCid)) {
         const entryPrice = live.buy_price ? parseFloat(live.buy_price) : await fetchCurrentSpotPrice(); 
         const dir = (live.contract_type === "MULTUP" || (live.shortcode && live.shortcode.startsWith("MULTUP"))) ? "BUY" : "SELL";
         trades.push({
-          id: `${SYMBOL}-${Date.now()}`, contractId: live.contract_id, pending: false, repo: REPO_LABEL, symbol: SYMBOL,
-          direction: dir, entry: entryPrice, sl: deriveHardStopPrice(entryPrice, dir, live.lots || CTRADER_LOT_SIZE), rr: null, entryType: "RECOVERED_LIVE", brokerSlAmount: STAKE_USD,
-          lots: live.lots || CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE, is_ctrader: EXECUTION_MODE === "ctrader",
+          id: `${SYMBOL}-${Date.now()}`, contractId: Number(liveCid) || liveCid, pending: false, repo: REPO_LABEL, symbol: SYMBOL,
+          direction: dir, entry: entryPrice, sl: deriveHardStopPrice(entryPrice, dir, CTRADER_LOT_SIZE), rr: null, entryType: "RECOVERED_LIVE", brokerSlAmount: STAKE_USD,
+          lots: CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE, is_ctrader: EXECUTION_MODE === "ctrader",
           entryEpoch: live.date_start, fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false, fibTpPrice: null, keyLevel: null,
           openTime: new Date((live.date_start || Math.floor(Date.now() / 1000)) * 1000).toISOString().replace("T", " ").substring(0, 19), closeTime: null, result: null
         });
-        await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted unmanaged live contract \`${live.contract_id}\` (${dir}).`);
+        await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted unmanaged live contract \`${liveCid}\` (${dir}).`);
       }
     }
     
@@ -1978,13 +1979,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const sK = stoch.k[si], sD = stoch.d[si], prevK = stoch.k[si - 1], prevD = stoch.d[si - 1];
 
   if (STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
-    if (sK200 === null || prevK200 === null || macdVal === null || sK533 === null || prevK533 === null || currentEma100 === null) {
+    if (sK200 === null || prevK200 === null || macdVal === null || sK533 === null || prevK533 === null || sK1525 === null || prevK1525 === null || currentEma100 === null) {
       state.lastProcessedEpoch = m5BoundaryEpoch;
       saveState();
       return;
     }
   } else if (STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533") {
-    if (sK200 === null || prevK200 === null || macdVal === null || sK533 === null || prevK533 === null || currentEma100 === null) {
+    if (sK200 === null || prevK200 === null || macdVal === null || sK533 === null || prevK533 === null || sK1525 === null || prevK1525 === null || currentEma100 === null) {
       state.lastProcessedEpoch = m5BoundaryEpoch;
       saveState();
       return;
@@ -1995,8 +1996,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       saveState();
       return;
     }
-  } else if (STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || STRATEGY_PROFILE === "PROFILE_V25_STOCH45_VALIDATOR" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES") {
-    if (sK === null || prevK === null || cVal === null || prevCci === null) {
+  } else if (STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || STRATEGY_PROFILE === "PROFILE_V25_STOCH45_VALIDATOR") {
+    if (sK === null || prevK === null || cVal === null || prevCci === null || sK1525 === null || prevK1525 === null) {
+      state.lastProcessedEpoch = m5BoundaryEpoch;
+      saveState();
+      return;
+    }
+  } else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES") {
+    if (sK === null || prevK === null || sK1525 === null || prevK1525 === null) {
       state.lastProcessedEpoch = m5BoundaryEpoch;
       saveState();
       return;
@@ -2467,7 +2474,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
 
       // Invalidation 2: M5 Stoch 200 Crosses Adverse to Position Confirmed on M5 Close
-      if (sK200 !== null) {
+      const isPostEntryCandle = !t.entryEpoch || candles[si].epoch > t.entryEpoch;
+      if (isPostEntryCandle && sK200 !== null) {
         const stoch200Adverse = isBuy ? (sK200 < 50.0) : (sK200 > 50.0);
         if (stoch200Adverse) {
           closingContracts.add(t.contractId);
