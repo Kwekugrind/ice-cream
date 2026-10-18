@@ -181,7 +181,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 2.20,
     maxHardStopPoints: 5.50,
     slType: "M15_FRACTAL",
-    notes: "Macro Trend Stoch 200 Level 50 Gate & MACD Confirmation + M5 EMA 100 Baseline + M5 Fast Stoch (5,3,3) 20/80 Re-Entry Trigger + 3-Candle, Stoch 200 & Stoch 533 Midline Invalidation Exits + $2.20/$5.00 Trailing Stop."
+    notes: "Macro Trend Stoch 200 Level 50 Gate & MACD Confirmation + M5 EMA 100 Baseline + M5 Fast Stoch (5,3,3) 20/80 Re-Entry Trigger + 3-Candle, Stoch 200 & Closed-M5 Stoch (15,2,5) Level 50 Opposite Cross Early Exits + $4.00/$4.00 Dynamic Ratchet."
   },
   "R_25": {
     symbol: "R_25",
@@ -441,7 +441,7 @@ async function getOpenPortfolio() {
             underlying_symbol: mappedSym,
             contract_type: p.tradeData?.tradeSide === 1 ? "MULTUP" : "MULTDOWN",
             buy_price: p.price,
-            lots: (p.tradeData?.volume ? p.tradeData.volume / 100 : CTRADER_LOT_SIZE),
+            lots: CTRADER_LOT_SIZE,
             unrealizedPnl: p.unrealizedPnl,
             date_start: Math.floor((p.tradeData?.openTimestamp || Date.now()) / 1000)
           };
@@ -1322,8 +1322,8 @@ async function manageOpenTradesFastPath() {
           tracked.liveBrokerPnl = live.unrealizedPnl;
           tracked.unrealizedPnl = live.unrealizedPnl;
         }
-        if (live.lots && live.lots > 0 && tracked.lots !== live.lots) {
-          tracked.lots = live.lots;
+        if (tracked.lots !== CTRADER_LOT_SIZE) {
+          tracked.lots = CTRADER_LOT_SIZE;
           modified = true;
         }
       }
@@ -2270,7 +2270,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
 
       // Early Invalidation #2: M5 Stoch 200 Crosses Adverse to Position Confirmed on M5 Close
-      if (sK200 !== null) {
+      const isPostEntryCandle = !t.entryEpoch || candles[si].epoch > t.entryEpoch;
+      if (isPostEntryCandle && sK200 !== null) {
         const stoch200Adverse = isBuy ? (sK200 < 50.0) : (sK200 > 50.0);
         if (stoch200Adverse) {
           closingContracts.add(t.contractId);
@@ -2304,54 +2305,18 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
       }
 
-      // Early Invalidation #3: Stoch (5,3,3) crosses Level 50 in opposite direction and trade is in loss
-      const pnl = calcUnrealizedPnL(t, currentPrice);
-      if (sK533 !== null && pnl < 0) {
-        const stoch533Adverse = isBuy ? (sK533 < 50.0) : (sK533 > 50.0);
-        if (stoch533Adverse) {
-          closingContracts.add(t.contractId);
-          console.log(`[STOCH 533 LEVEL 50 LOSS EXIT] Active ${t.direction} in loss ($${pnl.toFixed(2)}): Stoch (5,3,3) %K crossed Level 50 in opposite direction (${sK533.toFixed(1)}). Liquidating immediately.`);
-          try {
-            const closeRes = await closeContract(t.contractId);
-            if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
-              console.error(`[STOCH 533 LEVEL 50 LOSS EXIT ERROR] Broker sell failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
-              closingContracts.delete(t.contractId);
-              continue;
-            }
-            const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
-            t.serverPnl = (closeRes && closeRes.sell?.profit) ?? (settled !== null ? settled.profit : parseFloat(pnl.toFixed(2)));
-            t.resultSource = (closeRes && closeRes.sell?.profit !== undefined) ? "server_close_confirmed" : (settled !== null ? "deriv_settled_official" : "estimated_fallback");
-            t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
-            t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
-            state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
-            saveTrades(trades);
-            saveState();
-            const icon = t.result === "WIN" ? "✅" : "❌";
-            const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
-            await sendTelegram(`${icon} *${REPO_LABEL} — Stoch (5,3,3) Midline Loss Exit*\n\nStoch (5,3,3) %K crossed *Level 50 in opposite direction* (${sK533.toFixed(1)}) while in floating loss.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
-          } catch (e) {
-            console.error(`[STOCH 533 LEVEL 50 LOSS EXIT] Failed to close contract ${t.contractId}:`, e.message);
-            closingContracts.delete(t.contractId);
-            continue;
-          }
-          closingContracts.delete(t.contractId);
-          continue;
-        }
-      }
+      // Early Invalidation #3: Closed-M5 Stoch (15,2,5) Level 50 Cross in Opposite Direction Early Exit
+      const stoch15OppositeCross = isPostEntryCandle && (isBuy
+        ? (sK1525 !== null && prevK1525 !== null && prevK1525 >= 50.0 && sK1525 < 50.0)
+        : (sK1525 !== null && prevK1525 !== null && prevK1525 <= 50.0 && sK1525 > 50.0));
 
-      // Early Invalidation #4: Entry-Hour H1 Adverse Close Exit
-      const m5Close = parseFloat(candles[si].close);
-      const h1Eval = evaluateH1AdverseClose(t, candles, si);
-      const h1ClosedAgainst = h1Eval.triggered;
-      const h1OpenPrice = h1Eval.h1OpenPrice || t.entry;
-
-      if (h1ClosedAgainst) {
+      if (stoch15OppositeCross) {
         closingContracts.add(t.contractId);
-        console.log(`[H1 ADVERSE CLOSE EXIT] Entry-hour H1 candle closed adverse to ${t.direction} position. Liquidating immediately.`);
+        console.log(`[STOCH 1525 LEVEL 50 EXIT] Active ${t.direction} #${t.contractId}: Closed-M5 Stoch (15,2,5) %K crossed Level 50 in opposite direction (%K: ${sK1525.toFixed(1)}, prev: ${prevK1525.toFixed(1)}). Liquidating immediately.`);
         try {
           const closeRes = await closeContract(t.contractId);
           if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
-            console.error(`[H1 ADVERSE CLOSE EXIT ERROR] Broker sell failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+            console.error(`[STOCH 1525 LEVEL 50 EXIT ERROR] Broker sell failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
             closingContracts.delete(t.contractId);
             continue;
           }
@@ -2366,9 +2331,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           saveState();
           const icon = t.result === "WIN" ? "✅" : "❌";
           const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
-          await sendTelegram(`${icon} *${REPO_LABEL} — Entry-Hour H1 Adverse Close Exit*\n\nEntry hour H1 closed adverse (H1 Open: *${h1OpenPrice.toFixed(4)}*, Close: *${m5Close.toFixed(4)}*).\n💵 Final P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+          await sendTelegram(`${icon} *${REPO_LABEL} — Stoch (15,2,5) Opposite Level 50 Cross Exit*\n\nClosed-M5 Stoch (15,2,5) %K crossed *Level 50 in opposite direction* (%K: ${sK1525.toFixed(1)}, prev: ${prevK1525.toFixed(1)}).\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
         } catch (e) {
-          console.error(`[H1 ADVERSE CLOSE EXIT] Failed to close contract ${t.contractId}:`, e.message);
+          console.error(`[STOCH 1525 LEVEL 50 EXIT] Failed to close contract ${t.contractId}:`, e.message);
           closingContracts.delete(t.contractId);
           continue;
         }
@@ -3852,7 +3817,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
                          `• M5 Fast Stoch (5,3,3): *%K ${(sK533 !== null ? sK533.toFixed(1) : "N/A")}* | *%D ${(sD533 !== null ? sD533.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">20 Pullback Exit" : "<80 Pullback Exit"})\n` +
                          `• Trigger Type: *${setupLabel}*\n` +
                          `• Take Profit Target: *${tpPrice.toFixed(4)}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n` +
-                         `• Early Invalidation: *3 Adverse M5 Closes / Stoch 200 Invalidation / Stoch 533 Midline Exit*\n`;
+                         `• Early Invalidation: *3 Adverse M5 Closes / Stoch 200 Invalidation / Closed-M5 Stoch (15,2,5) Lvl 50 Cross*\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V75_EMA_STOCH15") {
       confluenceLines += `• M5 Price vs EMA 100/200: *Price (${entry.toFixed(2)}) ${direction === "BUY" ? ">" : "<"} EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"}) | EMA 200 (${currentEma200 ? currentEma200.toFixed(2) : "N/A"})*\n` +
                          `• Setup Mode: *${setupLabel}*\n` +
