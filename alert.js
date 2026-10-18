@@ -244,7 +244,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 3.00,
     maxHardStopPoints: 8.00,
     slType: "M15_FRACTAL",
-    notes: "Macro Trend Stoch (200,1,1) Level 50 Gate & Initial Trigger + M5 MACD (25,75,1) Zero Line Alignment + M5 EMA 100 Baseline + M5 Stoch (5,3,3) 20/80 Re-Entry Trigger + 3 Consecutive Adverse M5 Candle & Stoch 200 Invalidation Exits + Stoch 533 Level 50 Loss Exit + $3.00/$1.50 Trailing Stop (Mapped from V75 1s Institutional Model)."
+    notes: "400x multiplier (0.50 lots); Initial Entry: Triggered immediately when all 3 conditions are met in any order — 1) M5 Stoch (200,1,1) %K >= 50.0 (BUY) / <= 50.0 (SELL), 2) M5 MACD (25,75,1) >= 0.0 (BUY) / <= 0.0 (SELL), 3) Price > M5 EMA 100 (BUY) / < M5 EMA 100 (SELL); Re-Entry: M5 Fast Stoch (5,3,3) 20/80 Cross while all 3 conditions remain aligned; Early Exits: 1) 3 Consecutive Adverse M5 Candles, 2) Stoch 200 Adverse Cross, 3) M5 Stoch (15,2,5) Level 50 Loss Exit, 4) Entry-Hour H1 Adverse Close Exit."
   }
 };
 
@@ -2501,16 +2501,16 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
 
       // Invalidation 3 (V10 only — Stoch 5,3,3 completely removed from 1HZ75V per Trader Mandate Oct 18, 2026):
-      // Stoch (5,3,3) genuinely crosses Level 50 in opposite direction while trade is in loss on candle after entry
-      if (SYMBOL !== "1HZ75V" && sK533 !== null && prevK533 !== null && pnl < 0 && (!t.entryEpoch || candles[si].epoch > t.entryEpoch)) {
-        const stoch533Adverse = isBuy ? (prevK533 >= 50.0 && sK533 < 50.0) : (prevK533 <= 50.0 && sK533 > 50.0);
-        if (stoch533Adverse) {
+      // M5 Stoch (15,2,5) genuinely crosses Level 50 in opposite direction while trade is in loss on candle after entry
+      if (SYMBOL !== "1HZ75V" && sK1525 !== null && prevK1525 !== null && pnl < 0 && (!t.entryEpoch || candles[si].epoch > t.entryEpoch)) {
+        const stoch1525Adverse = isBuy ? (prevK1525 >= 50.0 && sK1525 < 50.0) : (prevK1525 <= 50.0 && sK1525 > 50.0);
+        if (stoch1525Adverse) {
           closingContracts.add(t.contractId);
-          console.log(`[STOCH 533 LEVEL 50 LOSS EXIT] Active ${t.direction} in loss ($${pnl.toFixed(2)}): Stoch (5,3,3) %K crossed Level 50 in opposite direction (${sK533.toFixed(1)}). Liquidating immediately.`);
+          console.log(`[STOCH 1525 LEVEL 50 LOSS EXIT] Active ${t.direction} in loss ($${pnl.toFixed(2)}): Stoch (15,2,5) %K crossed Level 50 in opposite direction (${sK1525.toFixed(1)}, prev: ${prevK1525.toFixed(1)}). Liquidating immediately.`);
           try {
             const closeRes = await closeContract(t.contractId);
             if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
-              console.error(`[STOCH 533 LEVEL 50 LOSS EXIT ERROR] Broker sell failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+              console.error(`[STOCH 1525 LEVEL 50 LOSS EXIT ERROR] Broker sell failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
               closingContracts.delete(t.contractId);
               continue;
             }
@@ -2524,9 +2524,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             saveState();
             const icon = t.result === "WIN" ? "✅" : "❌";
             const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
-            await sendTelegram(`${icon} *${REPO_LABEL} — Stoch (5,3,3) Midline Loss Exit*\n\nStoch (5,3,3) %K crossed *Level 50 in opposite direction* (${sK533.toFixed(1)}) while in floating loss.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+            await sendTelegram(`${icon} *${REPO_LABEL} — Stoch (15,2,5) Midline Loss Exit*\n\nM5 Stoch (15,2,5) %K crossed *Level 50 in opposite direction* (${sK1525.toFixed(1)}, prev: ${prevK1525.toFixed(1)}) while in floating loss.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
           } catch (e) {
-            console.error(`[STOCH 533 LEVEL 50 LOSS EXIT] Failed to close contract ${t.contractId}:`, e.message);
+            console.error(`[STOCH 1525 LEVEL 50 LOSS EXIT] Failed to close contract ${t.contractId}:`, e.message);
             closingContracts.delete(t.contractId);
             continue;
           }
@@ -3451,20 +3451,20 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     // Dealignment checks: if an indicator breaks its threshold, immediately disarm
     if (!stoch200AlignedBuy) { state[stochArmedKeyBuy] = false; state[initialBuyDoneKey] = false; }
     if (!stoch200AlignedSell) { state[stochArmedKeySell] = false; state[initialSellDoneKey] = false; }
-    if (!macdAlignedBuy) { state[macdArmedKeyBuy] = false; }
-    if (!macdAlignedSell) { state[macdArmedKeySell] = false; }
+    if (!macdAlignedBuy) { state[macdArmedKeyBuy] = false; if (isV10) state[initialBuyDoneKey] = false; }
+    if (!macdAlignedSell) { state[macdArmedKeySell] = false; if (isV10) state[initialSellDoneKey] = false; }
 
     const noActiveTrades = !trades.some(t => !t.result && !t.closeTime);
 
     // Initial Entry Trigger:
     // For V75-1s (1HZ75V): Stoch (200,1,1) must cross first (> 50 BUY / < 50 SELL) to arm, EMA 100 baseline aligned, and MACD (25,75,1) crossing 0 triggers the initial trade.
-    // For V10 (R_10): Either order or simultaneous.
+    // For V10 (R_10): Trigger initial entry immediately when all 3 conditions are met (Stoch 200, MACD, Price vs EMA 100), in any order.
     const isInitialBuyTrigger = isV10
-      ? (stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && (state[stochArmedKeyBuy] || stoch200CrossUp50) && (state[macdArmedKeyBuy] || macdCrossUpZero) && (stoch200CrossUp50 || macdCrossUpZero) && !state[initialBuyDoneKey] && noActiveTrades)
+      ? (stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && !state[initialBuyDoneKey] && noActiveTrades)
       : (stoch200AlignedBuy && (state[stochArmedKeyBuy] || stoch200CrossUp50) && emaBaselineBuy && macdCrossUpZero && !state[initialBuyDoneKey] && noActiveTrades);
 
     const isInitialSellTrigger = isV10
-      ? (stoch200AlignedSell && macdAlignedSell && emaBaselineSell && (state[stochArmedKeySell] || stoch200CrossDown50) && (state[macdArmedKeySell] || macdCrossDownZero) && (stoch200CrossDown50 || macdCrossDownZero) && !state[initialSellDoneKey] && noActiveTrades)
+      ? (stoch200AlignedSell && macdAlignedSell && emaBaselineSell && !state[initialSellDoneKey] && noActiveTrades)
       : (stoch200AlignedSell && (state[stochArmedKeySell] || stoch200CrossDown50) && emaBaselineSell && macdCrossDownZero && !state[initialSellDoneKey] && noActiveTrades);
 
     // Initial BUY Trigger
@@ -3499,7 +3499,30 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
 
     // Dashboard Arming & Phase Telemetry
-    if (!isV10) {
+    if (isV10) {
+      if (stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy) {
+        state.armed = { dir: "BUY", lbl: "V10 Bullish Trend Armed (Await Stoch 5,3,3 > 20)", lvl: currentPrice };
+        if (!state.armedEpoch) { state.armedEpoch = m5BoundaryEpoch; state.armedTime = new Date(m5BoundaryEpoch * 1000).toISOString().substring(11, 16) + " UTC"; }
+        state.nextPhase = `V10 Bullish Aligned (Stoch200 >= 50, MACD >= 0, Price > EMA100) — Await Stoch (5,3,3) %K (${sK533 !== null ? sK533.toFixed(1) : "N/A"}) > 20`;
+      } else if (stoch200AlignedSell && macdAlignedSell && emaBaselineSell) {
+        state.armed = { dir: "SELL", lbl: "V10 Bearish Trend Armed (Await Stoch 5,3,3 < 80)", lvl: currentPrice };
+        if (!state.armedEpoch) { state.armedEpoch = m5BoundaryEpoch; state.armedTime = new Date(m5BoundaryEpoch * 1000).toISOString().substring(11, 16) + " UTC"; }
+        state.nextPhase = `V10 Bearish Aligned (Stoch200 <= 50, MACD <= 0, Price < EMA100) — Await Stoch (5,3,3) %K (${sK533 !== null ? sK533.toFixed(1) : "N/A"}) < 80`;
+      } else if (stoch200AlignedBuy && macdAlignedBuy && !emaBaselineBuy) {
+        state.armed = { dir: "BUY", lbl: "V10 Stoch200 & MACD Bullish (Await Price > EMA100)", lvl: currentPrice };
+        if (!state.armedEpoch) { state.armedEpoch = m5BoundaryEpoch; state.armedTime = new Date(m5BoundaryEpoch * 1000).toISOString().substring(11, 16) + " UTC"; }
+        state.nextPhase = `V10 Initial BUY Armed (Stoch200 >= 50, MACD >= 0) — Awaiting Price (${currentPrice.toFixed(2)}) > EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"})`;
+      } else if (stoch200AlignedSell && macdAlignedSell && !emaBaselineSell) {
+        state.armed = { dir: "SELL", lbl: "V10 Stoch200 & MACD Bearish (Await Price < EMA100)", lvl: currentPrice };
+        if (!state.armedEpoch) { state.armedEpoch = m5BoundaryEpoch; state.armedTime = new Date(m5BoundaryEpoch * 1000).toISOString().substring(11, 16) + " UTC"; }
+        state.nextPhase = `V10 Initial SELL Armed (Stoch200 <= 50, MACD <= 0) — Awaiting Price (${currentPrice.toFixed(2)}) < EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"})`;
+      } else {
+        state.armed = null;
+        state.armedEpoch = null;
+        state.armedTime = null;
+        state.nextPhase = "Monitoring Stoch 200, MACD (25,75,1) & EMA 100 Confluence";
+      }
+    } else {
       if (stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy) {
         state.armed = { dir: "BUY", lbl: "V75-1s Bullish Trend Armed (Await AuxStoch15 > 20)", lvl: currentPrice };
         if (!state.armedEpoch) { state.armedEpoch = m5BoundaryEpoch; state.armedTime = new Date(m5BoundaryEpoch * 1000).toISOString().substring(11, 16) + " UTC"; }
@@ -3896,13 +3919,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
                          `• Take Profit Target: *${tpPrice.toFixed(4)}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n` +
                          `• Early Invalidation: *3 Consecutive Adverse M5 Closes / Stoch 200 / Closed-M5 Stoch 50 Profit Cross / Entry-Hour H1 Adverse Close*\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
-      confluenceLines += `• M5 Stoch 200: *${(sK200 !== null ? sK200.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [BULLISH TREND]" : "<50 [BEARISH TREND]"})\n` +
-                         `• M5 MACD (25,75,1): *${(macdVal !== null ? macdVal.toFixed(4) : "N/A")}* (${direction === "BUY" ? ">0 [BULLISH MOMENTUM]" : "<0 [BEARISH MOMENTUM]"})\n` +
+      confluenceLines += `• M5 Stoch 200: *${(sK200 !== null ? sK200.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">=50 [BULLISH TREND]" : "<=50 [BEARISH TREND]"})\n` +
+                         `• M5 MACD (25,75,1): *${(macdVal !== null ? macdVal.toFixed(4) : "N/A")}* (${direction === "BUY" ? ">=0 [BULLISH MOMENTUM]" : "<=0 [BEARISH MOMENTUM]"})\n` +
                          `• M5 EMA 100: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > EMA 100" : "Price < EMA 100"})\n` +
-                         `• M5 Stoch (5,3,3): *%K ${(sK533 !== null ? sK533.toFixed(1) : "N/A")}* | *%D ${(sD533 !== null ? sD533.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">20 Oversold Cross" : "<80 Overbought Cross"} [TRIGGERED])\n` +
+                         `• M5 Stoch (5,3,3): *%K ${(sK533 !== null ? sK533.toFixed(1) : "N/A")}* | *%D ${(sD533 !== null ? sD533.toFixed(1) : "N/A")}* | M5 Stoch (15,2,5): *%K ${(sK1525 !== null ? sK1525.toFixed(1) : "N/A")}*\n` +
                          `• Trigger Type: *${setupLabel}*\n` +
                          `• Take Profit Target: *${tpPrice.toFixed(4)}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n` +
-                         `• Early Invalidation: *3 Consecutive Adverse M5 Closes / Stoch 200 / Stoch (5,3,3) Loss Exit*\n`;
+                         `• Early Invalidation: *3 Consecutive Adverse M5 Closes / Stoch 200 / Stoch (15,2,5) Loss Exit / H1 Adverse Close*\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
       confluenceLines += `• M5 Stoch 200 (48/52): *${(sK200 !== null ? sK200.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">48 [BULLISH TREND]" : "<52 [BEARISH TREND]"})\n` +
                          `• M5 Stoch (15,2,5): *%K ${(sK1525 !== null ? sK1525.toFixed(1) : "N/A")}* | *%D ${(sD1525 !== null ? sD1525.toFixed(1) : "N/A")}* (${setupLabel})\n` +
