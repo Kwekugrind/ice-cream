@@ -125,15 +125,16 @@ export const INSTRUMENT_PROFILES = {
     stakeUsd: 5.0,
     commissionUsd: 0.15,
     strategyProfile: "PROFILE_V75_1S_TREND_MACD_STOCH533",
-    gateType: "STOCH200_MACD_EMA100_STOCH533",
+    gateType: "STOCH200_MACD_EMA100_AUXSTOCH15",
     stoch200Params: { k: 200, d: 1, slowing: 1 },
     macdParams: { fast: 25, slow: 75, signal: 1 },
     emaPeriod: 100,
-    stoch533Params: { k: 5, d: 3, slowing: 3 },
+    auxStochParams: { k: 15, d: 2, slowing: 5, method: "Simple", levels: [20, 80] },
     minTakeProfitPoints: 5.10,
     minTakeProfitUsd: 4.00,
     softwareSlUsd: 2.50,
-    trailActivationUsd: 3.00,
+    trailActivationUsd: 4.00,
+    trailBufferUsd: 4.00,
     maxHardStopPoints: 18.0,
     slType: "M15_FRACTAL",
     notes: "Macro Trend Stoch (200,1,1) Level 50 Gate & Initial Trigger + M5 MACD (25,75,1) Zero Line Alignment + M5 EMA 100 Baseline + M5 Stoch (5,3,3) 20/80 Re-Entry Trigger + 3 Consecutive Adverse M5 Candle & Stoch 200 Invalidation Exits + Stoch 533 Level 50 Loss Exit + $3.00/$1.50 Trailing Stop."
@@ -2830,17 +2831,17 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state[stochArmedKeySell] = false;
       state[macdArmedKeySell] = false;
     }
-    // Re-Entry BUY Trigger on Fast Stoch (5,3,3) Level 20 Cross
-    else if (prevK533 !== null && sK533 !== null && prevK533 <= 20.0 && sK533 > 20.0 && stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && noActiveTrades) {
+    // Re-Entry BUY Trigger on Aux Stoch (15,2,5 Simple) Level 20 Cross
+    else if (prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0 && stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
-      setupLabel = `${prefix}_REENTRY_STOCH533 (BUY)`;
+      setupLabel = `${prefix}_REENTRY_AUXSTOCH15 (BUY)`;
     }
-    // Re-Entry SELL Trigger on Fast Stoch (5,3,3) Level 80 Cross
-    else if (prevK533 !== null && sK533 !== null && prevK533 >= 80.0 && sK533 < 80.0 && stoch200AlignedSell && macdAlignedSell && emaBaselineSell && noActiveTrades) {
+    // Re-Entry SELL Trigger on Aux Stoch (15,2,5 Simple) Level 80 Cross
+    else if (prevK1525 !== null && sK1525 !== null && prevK1525 >= 80.0 && sK1525 < 80.0 && stoch200AlignedSell && macdAlignedSell && emaBaselineSell && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
-      setupLabel = `${prefix}_REENTRY_STOCH533 (SELL)`;
+      setupLabel = `${prefix}_REENTRY_AUXSTOCH15 (SELL)`;
     }
 
     // State Tracking for Dashboard Telemetry
