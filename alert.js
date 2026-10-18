@@ -309,9 +309,9 @@ const MARKET_DATA_APP_ID = /^\d+$/.test(rawAppId) ? rawAppId : "1089";
 const TARGET_MIN_PROFIT = PROFILE.minTakeProfitUsd || 4.00;
 
 // Continuous Dollar Trailing Stop Settings (High Activation + Wide Buffer Calibration)
-const TRAIL_ACTIVATION_USD = PROFILE.trailActivationUsd || 3.00; // Activated once profit reaches +$3.00 net
-const TRAIL_BUFFER_USD = 1.50;     // Trail $1.50 behind peak unrealized profit
-const TRAIL_INITIAL_FLOOR_USD = 1.50; // Initial guaranteed lock at activation (+$3.00 peak - $1.50 buffer = +$1.50)
+const TRAIL_ACTIVATION_USD = PROFILE.trailActivationUsd || 4.00; // Activated once profit reaches +$4.00 net
+const TRAIL_BUFFER_USD = 4.00;     // Trail $4.00 behind peak unrealized profit
+const TRAIL_INITIAL_FLOOR_USD = 2.50; // Initial guaranteed lock at activation (+$4.00 peak - $4.00 buffer, floored at $2.50 base floor)
 
 const STOCH_MIDLINE_FALLBACK_SYMBOLS = ["R_50"];
 
