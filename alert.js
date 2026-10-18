@@ -3411,35 +3411,17 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     const noActiveTrades = !trades.some(t => !t.result && !t.closeTime);
 
-    // Initial BUY Trigger
-    if (bothBuyArmed && hasFreshBuyEvent && !state[initialBuyDoneKey] && noActiveTrades) {
+    // BUY Trigger: Main Trend Aligned (Stoch 200 > 50, MACD > 0, Price > EMA 100) + Stoch (15,2,5 Simple) Fresh Cross Above 20
+    if (stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0 && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
-      setupLabel = (stoch200CrossUp50 && macdCrossUpZero) ? `${prefix}_INITIAL_TREND_SIMULTANEOUS (BUY)` : `${prefix}_INITIAL_TREND (BUY)`;
-      state[initialBuyDoneKey] = true;
-      state[stochArmedKeyBuy] = false;
-      state[macdArmedKeyBuy] = false;
+      setupLabel = `${prefix}_TREND_STOCH1525 (BUY)`;
     }
-    // Initial SELL Trigger
-    else if (bothSellArmed && hasFreshSellEvent && !state[initialSellDoneKey] && noActiveTrades) {
+    // SELL Trigger: Main Trend Aligned (Stoch 200 < 50, MACD < 0, Price < EMA 100) + Stoch (15,2,5 Simple) Fresh Cross Below 80
+    else if (stoch200AlignedSell && macdAlignedSell && emaBaselineSell && prevK1525 !== null && sK1525 !== null && prevK1525 >= 80.0 && sK1525 < 80.0 && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
-      setupLabel = (stoch200CrossDown50 && macdCrossDownZero) ? `${prefix}_INITIAL_TREND_SIMULTANEOUS (SELL)` : `${prefix}_INITIAL_TREND (SELL)`;
-      state[initialSellDoneKey] = true;
-      state[stochArmedKeySell] = false;
-      state[macdArmedKeySell] = false;
-    }
-    // Re-Entry BUY Trigger on Stoch (15,2,5 Simple) Level 20 Cross (filtered by price > EMA 100)
-    else if (((prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0) || (prevK533 !== null && sK533 !== null && prevK533 <= 20.0 && sK533 > 20.0)) && stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && noActiveTrades) {
-      indicatorsSatisfied = true;
-      signalDirection = "BUY";
-      setupLabel = `${prefix}_REENTRY_STOCH1525 (BUY)`;
-    }
-    // Re-Entry SELL Trigger on Stoch (15,2,5 Simple) Level 80 Cross (filtered by price < EMA 100)
-    else if (((prevK1525 !== null && sK1525 !== null && prevK1525 >= 80.0 && sK1525 < 80.0) || (prevK533 !== null && sK533 !== null && prevK533 >= 80.0 && sK533 < 80.0)) && stoch200AlignedSell && macdAlignedSell && emaBaselineSell && noActiveTrades) {
-      indicatorsSatisfied = true;
-      signalDirection = "SELL";
-      setupLabel = `${prefix}_REENTRY_STOCH1525 (SELL)`;
+      setupLabel = `${prefix}_TREND_STOCH1525 (SELL)`;
     }
 
     // State Tracking for Dashboard Telemetry
