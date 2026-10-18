@@ -3411,23 +3411,21 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     const noActiveTrades = !trades.some(t => !t.result && !t.closeTime);
 
-    // Initial BUY Trigger
-    if (bothBuyArmed && hasFreshBuyEvent && !state[initialBuyDoneKey] && noActiveTrades) {
+    // Initial BUY Trigger: Stoch 200 crossed 50 first (armed), EMA 100 filter (price > EMA), and MACD crosses above 0 to trigger
+    if (stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && state[stochArmedKeyBuy] && macdCrossUpZero && !state[initialBuyDoneKey] && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
-      setupLabel = (stoch200CrossUp50 && macdCrossUpZero) ? `${prefix}_INITIAL_TREND_SIMULTANEOUS (BUY)` : `${prefix}_INITIAL_TREND (BUY)`;
+      setupLabel = `${prefix}_INITIAL_TREND (BUY)`;
       state[initialBuyDoneKey] = true;
       state[stochArmedKeyBuy] = false;
-      state[macdArmedKeyBuy] = false;
     }
-    // Initial SELL Trigger
-    else if (bothSellArmed && hasFreshSellEvent && !state[initialSellDoneKey] && noActiveTrades) {
+    // Initial SELL Trigger: Stoch 200 crossed below 50 first (armed), EMA 100 filter (price < EMA), and MACD crosses below 0 to trigger
+    else if (stoch200AlignedSell && macdAlignedSell && emaBaselineSell && state[stochArmedKeySell] && macdCrossDownZero && !state[initialSellDoneKey] && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
-      setupLabel = (stoch200CrossDown50 && macdCrossDownZero) ? `${prefix}_INITIAL_TREND_SIMULTANEOUS (SELL)` : `${prefix}_INITIAL_TREND (SELL)`;
+      setupLabel = `${prefix}_INITIAL_TREND (SELL)`;
       state[initialSellDoneKey] = true;
       state[stochArmedKeySell] = false;
-      state[macdArmedKeySell] = false;
     }
     // Re-Entry BUY Trigger on Stoch (15,2,5 Simple) Level 20 Cross (filtered by price > EMA 100)
     else if (((prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0) || (prevK533 !== null && sK533 !== null && prevK533 <= 20.0 && sK533 > 20.0)) && stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && noActiveTrades) {
