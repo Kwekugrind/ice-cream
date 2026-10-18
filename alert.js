@@ -158,7 +158,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 3.00,
     maxHardStopPoints: 3.00,
     slType: "M15_FRACTAL",
-    notes: "40x multiplier; Condition 1: M5 Stoch 200 (48/52) Main Trend Identifier; Condition 2: M5 Stoch (15,2,5) Initial (Lvl 50 +/-2 bars) & Re-Entry (Lvl 20/80); Early Exits: Opposite M5 Fractal Break & Entry-Hour H1 Adverse Close; Min $4.00 TP & Trailing ($3.00 act / $1.50 buffer)."
+    notes: "40x multiplier; Condition 1: M5 Stoch 200 (48/52) Main Trend Identifier; Condition 2: M5 Stoch (15,2,5) Initial (Lvl 50 unbounded while armed) & Re-Entry (Lvl 20/80); Early Exits: 1) Stoch (15,2,5) %K < 65 (BUY) / > 35 (SELL) cross, 2) Opposite M5 Fractal Break, 3) Entry-Hour H1 Adverse Close; Min $4.00 TP & Dynamic Ratchet."
   },
   "1HZ100V": {
     symbol: "1HZ100V",
@@ -2043,9 +2043,18 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           trendExhausted = true;
           exhaustionDetail = `M5 CCI (${cVal !== null ? cVal.toFixed(1) : 0}, prev: ${prevCci !== null ? prevCci.toFixed(1) : 0}) crossed ${isBuy ? "<= 0.0 baseline" : ">= 0.0 baseline"}`;
         }
+      } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100") || SYMBOL === "R_100") {
+        // Volatility 100 (R_100) Fast Profit Protection: Stoch (15,2,5) %K crosses below 65 (BUY) or above 35 (SELL)
+        const v100Exhausted = isBuy
+          ? (prevK1525 !== null && sK1525 !== null && prevK1525 >= 65.0 && sK1525 < 65.0)
+          : (prevK1525 !== null && sK1525 !== null && prevK1525 <= 35.0 && sK1525 > 35.0);
+        if (v100Exhausted) {
+          trendExhausted = true;
+          exhaustionDetail = `M5 Stoch (15,2,5) %K (${sK1525 !== null ? sK1525.toFixed(1) : "N/A"}, prev: ${prevK1525 !== null ? prevK1525.toFixed(1) : "N/A"}) crossed ${isBuy ? "below 65.0" : "above 35.0"}`;
+        }
       } else {
         // Standardized Auxiliary Stochastic (15, 2, 5) Level 50 Midline Adverse Crossover
-        // Applies to all Stoch instruments: V75, V75-1s, V100, V100-1s, V10
+        // Applies to remaining Stoch instruments: V75, V75-1s, V100-1s, V10
         const stoch1525Exhausted = isBuy
           ? (prevK1525 !== null && sK1525 !== null && prevK1525 > 50.0 && sK1525 <= 50.0)
           : (prevK1525 !== null && sK1525 !== null && prevK1525 < 50.0 && sK1525 >= 50.0);
@@ -2135,19 +2144,20 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
       const isBuy = t.direction === "BUY";
       const m5Close = parseFloat(candles[si].close);
+      const isPostEntryCandle = !t.entryEpoch || candles[si].epoch > t.entryEpoch;
 
-      // Early Exit 1: Stoch (15,2,5) Crossing Level 50 in Opposite Direction
-      const stoch15OppositeCross = isBuy
-        ? (sK1525 !== null && prevK1525 !== null && prevK1525 >= 50.0 && sK1525 < 50.0)
-        : (sK1525 !== null && prevK1525 !== null && prevK1525 <= 50.0 && sK1525 > 50.0);
+      // Early Exit 1: Stoch (15,2,5) %K Crossing Below 65.0 (BUY) or Above 35.0 (SELL) on Closed M5 Candle
+      const stoch15OppositeCross = isPostEntryCandle && (isBuy
+        ? (sK1525 !== null && prevK1525 !== null && prevK1525 >= 65.0 && sK1525 < 65.0)
+        : (sK1525 !== null && prevK1525 !== null && prevK1525 <= 35.0 && sK1525 > 35.0));
 
       // Early Exit 2: Opposite M5 Fractal Cross
       // For BUY trade: M5 candle closes below recent M5 swing low (support) or opposite fractal
       // For SELL trade: M5 candle closes above recent M5 swing high (resistance) or opposite fractal
       const fracAnchor = t.m5Fractal || (isBuy ? findRecentFractalBelow(candles, si, t.entry) : findRecentFractalAbove(candles, si, t.entry));
-      const m5FractalCrossed = isBuy
+      const m5FractalCrossed = isPostEntryCandle && (isBuy
         ? (fracAnchor !== null && m5Close < fracAnchor)
-        : (fracAnchor !== null && m5Close > fracAnchor);
+        : (fracAnchor !== null && m5Close > fracAnchor));
 
       // Early Exit 3: Entry-Hour H1 Candle Closed Against Position
       const h1Eval = evaluateH1AdverseClose(t, candles, si);
@@ -2161,8 +2171,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
       if (stoch15OppositeCross) {
         earlyExitTriggered = true;
-        earlyExitType = "Stoch (15,2,5) Opposite Level 50 Cross Exit";
-        earlyExitDesc = `M5 Stoch (15,2,5) %K crossed Level 50 in opposite direction (%K: ${sK1525 !== null ? sK1525.toFixed(2) : "N/A"}, prev: ${prevK1525 !== null ? prevK1525.toFixed(2) : "N/A"})`;
+        earlyExitType = `Stoch (15,2,5) Level ${isBuy ? "65" : "35"} Cross Exit`;
+        earlyExitDesc = `M5 Stoch (15,2,5) %K crossed ${isBuy ? "below Level 65.0" : "above Level 35.0"} (%K: ${sK1525 !== null ? sK1525.toFixed(2) : "N/A"}, prev: ${prevK1525 !== null ? prevK1525.toFixed(2) : "N/A"})`;
       } else if (m5FractalCrossed) {
         earlyExitTriggered = true;
         earlyExitType = "Opposite M5 Fractal Cross Exit";
@@ -3868,7 +3878,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
       confluenceLines += `• M5 Stoch 200 (48/52): *${(sK200 !== null ? sK200.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">48 [BULLISH TREND]" : "<52 [BEARISH TREND]"})\n` +
                          `• M5 Stoch (15,2,5): *%K ${(sK1525 !== null ? sK1525.toFixed(1) : "N/A")}* | *%D ${(sD1525 !== null ? sD1525.toFixed(1) : "N/A")}* (${setupLabel})\n` +
-                         `• Early Exits: *Stoch (15,2,5) Opposite Lvl 50 / Opposite M5 Fractal / Entry-Hour H1 Adverse Close*\n` +
+                         `• Early Exits: *Stoch (15,2,5) Cross ${direction === "BUY" ? "<65" : ">35"} / Opposite M5 Fractal / Entry-Hour H1 Adverse Close*\n` +
                          `• Take Profit Target: *${tpPrice.toFixed(4)}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || STRATEGY_PROFILE === "PROFILE_V25_STOCH45_VALIDATOR") {
       confluenceLines += `• M5 Stoch (200,1,1) Trend: *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [BULLISH ARMED]" : "<50 [BEARISH ARMED]"})\n` +
