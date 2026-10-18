@@ -3011,8 +3011,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     // Startup/continuation recovery: if price is above/below both EMAs and initial entry hasn't fired in the current breakout wave, verify price crossed both EMAs in recent history
     if (isAboveBothEma && !state.v75_initialBuyArmed && !state.v75_initialBuyDone) {
-      for (let k = si; k >= Math.max(1, si - 60); k--) {
-        if (state.lastTriggeredEpoch && candles[k].epoch <= state.lastTriggeredEpoch) break;
+      for (let k = si; k >= Math.max(1, si - 100); k--) {
         const kc = parseFloat(candles[k].close), kl = parseFloat(candles[k].low);
         const e1 = ema100[k], e2 = ema200[k];
         if (e1 === null || e2 === null) break;
@@ -3023,8 +3022,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
     if (isBelowBothEma && !state.v75_initialSellArmed && !state.v75_initialSellDone) {
-      for (let k = si; k >= Math.max(1, si - 60); k--) {
-        if (state.lastTriggeredEpoch && candles[k].epoch <= state.lastTriggeredEpoch) break;
+      for (let k = si; k >= Math.max(1, si - 100); k--) {
         const kc = parseFloat(candles[k].close), kh = parseFloat(candles[k].high);
         const e1 = ema100[k], e2 = ema200[k];
         if (e1 === null || e2 === null) break;
