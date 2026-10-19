@@ -4177,7 +4177,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         blockerReason = `Macro Trend Bearish (Stoch200: ${sK200.toFixed(1)} < 50, MACD: ${macdVal.toFixed(2)} < 0, Price < EMA100)`;
         nextTrigger = `Awaiting Aux Stoch (15,2,5 Simple) %K (${sK1525 !== null ? sK1525.toFixed(1) : "N/A"}) cross < 80 for SELL re-entry`;
       } else {
-        healthStatus = "ATTENTION_REQUIRED";
+        healthStatus = "FUNCTIONING";
         blockerReason = `Indicators De-aligned: Stoch 200 is ${stochBuy ? "BULLISH" : "BEARISH"} (${sK200 ? sK200.toFixed(1) : "N/A"}), MACD is ${macdBuy ? "BULLISH" : "BEARISH"} (${macdVal ? macdVal.toFixed(2) : "N/A"}), Price vs EMA100 is ${emaBuy ? "ABOVE" : "BELOW"}`;
         nextTrigger = "Awaiting confluence alignment across Stoch 200, MACD, and EMA 100";
       }
@@ -4230,17 +4230,27 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         blockerReason = `Macro Trend Bearish (Stoch200: ${sK200.toFixed(1)}, MACD: ${macdVal.toFixed(2)}, Price < EMA100)`;
         nextTrigger = `Awaiting Fast Stoch (5,3,3) %K (${sK533 !== null ? sK533.toFixed(1) : "N/A"}) overbought rally & cross < 80`;
       } else {
-        healthStatus = "ATTENTION_REQUIRED";
+        healthStatus = "FUNCTIONING";
         blockerReason = `Confluence De-aligned (Stoch200: ${sK200 ? sK200.toFixed(1) : "N/A"}, MACD: ${macdVal ? macdVal.toFixed(2) : "N/A"}, Price vs EMA100: ${emaBuy ? "ABOVE" : "BELOW"})`;
         nextTrigger = "Awaiting macro confluence alignment";
       }
     }
   }
 
+  // Real operational blockers override normal scanning status
+  if (state.dailyLossLockout) {
+    healthStatus = "ATTENTION_REQUIRED";
+    blockerReason = `Daily Max Loss Reached ($${(state.dailyNetPnl || 0).toFixed(2)}). Trading locked until 00:00 UTC rollover.`;
+  } else if (state.lastError && (Date.now() - new Date(state.lastErrorTime || 0).getTime() < 30 * 60 * 1000)) {
+    healthStatus = "ATTENTION_REQUIRED";
+    blockerReason = `Recent Error: ${state.lastError}`;
+  }
+
   state.healthStatus = healthStatus;
   state.blockerReason = blockerReason;
   state.nextTrigger = nextTrigger;
   state.lastScanTime = new Date(m5BoundaryEpoch * 1000).toISOString();
+  state.lastSuccessfulScan = new Date().toISOString();
   state.lastProcessedEpoch = m5BoundaryEpoch; saveState();
 }
 
