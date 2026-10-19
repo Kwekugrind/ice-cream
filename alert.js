@@ -1434,29 +1434,61 @@ async function manageOpenTradesFastPath() {
     openTrade.unrealizedPnl = pnl;
 
     // =========================================================================
-    // 🛡️ DYNAMIC PROFIT RATCHET & TREND-RIDER ACTIVATION (STRICTLY IN PROFIT)
+    // 🛡️ TIERED DYNAMIC PROFIT RATCHET & SUPER-RUNNER ENGINE
     // =========================================================================
     openTrade.maxUnrealizedPnL = Math.max(openTrade.maxUnrealizedPnL || 0, pnl);
+    const peak = openTrade.maxUnrealizedPnL;
 
-    if (pnl >= 4.00 || (openTrade.maxUnrealizedPnL && openTrade.maxUnrealizedPnL >= 4.00)) {
-      if (!openTrade.trendRidingActive) {
-        openTrade.trendRidingActive = true;
-        console.log(`[${REPO_LABEL}] 🚀 Trend-Rider ACTIVATED for #${openTrade.contractId} (${openTrade.direction}): Current PnL +${pnl.toFixed(2)} (>= +$4.00). Base floor $2.50 + $4.00 trailing interval activated.`);
-      }
-      // Initial floor locked at $2.50, trailing with $4.00 interval behind peak profit (every increase in peak expands floor)
-      const trailingFloor = Math.max(2.50, parseFloat((openTrade.maxUnrealizedPnL - 4.00).toFixed(2)));
-      if (!openTrade.lockedPnlFloor || trailingFloor > openTrade.lockedPnlFloor) {
-        openTrade.lockedPnlFloor = trailingFloor;
+    // Hard Take Profit / Cash-out Ceiling: Cash out full super runner at +$20.00
+    let superRunnerCeilingHit = false;
+    if (pnl >= 20.00) {
+      superRunnerCeilingHit = true;
+    }
+
+    if (peak >= 12.00) {
+      // Tier 4: Super Runner (Peak >= $12.00)
+      // Locks at least 80% of peak profit (capping max retracement giveback to $2.50)
+      openTrade.trendRidingActive = true;
+      const tier4Floor = Math.max(
+        parseFloat((peak * 0.80).toFixed(2)),
+        parseFloat((peak - 2.50).toFixed(2))
+      );
+      if (!openTrade.lockedPnlFloor || tier4Floor > openTrade.lockedPnlFloor) {
+        openTrade.lockedPnlFloor = tier4Floor;
         saveTrades(trades);
-        console.log(`[TRAILING RATCHET] #${openTrade.contractId} Peak PnL +${openTrade.maxUnrealizedPnL.toFixed(2)} -> Base floor expanded to +${openTrade.lockedPnlFloor.toFixed(2)} ($4.00 trailing interval).`);
+        console.log(`[TIER 4 SUPER RUNNER RATCHET] #${openTrade.contractId} Peak PnL +$${peak.toFixed(2)} -> Floor locked at +$${openTrade.lockedPnlFloor.toFixed(2)} (80% / $2.50 max giveback).`);
+      }
+    } else if (peak >= 8.00) {
+      // Tier 3: Advanced Runner (Peak $8.00 - $11.99)
+      // Locks at least 70% of peak profit (capping giveback to $2.20)
+      openTrade.trendRidingActive = true;
+      const tier3Floor = Math.max(
+        parseFloat((peak * 0.70).toFixed(2)),
+        parseFloat((peak - 2.20).toFixed(2))
+      );
+      if (!openTrade.lockedPnlFloor || tier3Floor > openTrade.lockedPnlFloor) {
+        openTrade.lockedPnlFloor = tier3Floor;
+        saveTrades(trades);
+        console.log(`[TIER 3 RUNNER RATCHET] #${openTrade.contractId} Peak PnL +$${peak.toFixed(2)} -> Floor expanded to +$${openTrade.lockedPnlFloor.toFixed(2)} (70% / $2.20 max giveback).`);
+      }
+    } else if (peak >= 4.00) {
+      // Tier 2: Standard Runner (Peak $4.00 - $7.99)
+      // Base floor locked at $2.50, trailing with tight $1.80 distance behind peak
+      openTrade.trendRidingActive = true;
+      const tier2Floor = Math.max(2.50, parseFloat((peak - 1.80).toFixed(2)));
+      if (!openTrade.lockedPnlFloor || tier2Floor > openTrade.lockedPnlFloor) {
+        openTrade.lockedPnlFloor = tier2Floor;
+        saveTrades(trades);
+        console.log(`[TIER 2 STANDARD RATCHET] #${openTrade.contractId} Peak PnL +$${peak.toFixed(2)} -> Base floor expanded to +$${openTrade.lockedPnlFloor.toFixed(2)} ($1.80 trailing interval).`);
       }
     } else if (pnl >= 2.20 && !openTrade.trendRidingActive) {
-      // Early Capital Shield before reaching +$4.00: locks +$0.50 net (covers commission)
-      let targetFloor = 0.50;
+      // Tier 1: Early Capital Shield (Peak $2.20 - $3.99)
+      // Locks +$1.00 net breakeven floor to protect capital and spread
+      const targetFloor = 1.00;
       if (!openTrade.lockedPnlFloor || targetFloor > openTrade.lockedPnlFloor) {
         openTrade.lockedPnlFloor = targetFloor;
         saveTrades(trades);
-        console.log(`[CAPITAL-SHIELD] ${openTrade.contractId} PnL +${pnl.toFixed(2)} -> Breakeven floor set to +${openTrade.lockedPnlFloor.toFixed(2)}.`);
+        console.log(`[TIER 1 CAPITAL SHIELD] #${openTrade.contractId} PnL +$${pnl.toFixed(2)} -> Breakeven floor set to +$${openTrade.lockedPnlFloor.toFixed(2)}.`);
       }
     }
     // =========================================================================
@@ -1501,7 +1533,10 @@ async function manageOpenTradesFastPath() {
     // to prevent premature 3-second exits on trades entered near levels 20 or 80.
 
     let reason = null;
-    if (tpHit) { 
+    if (superRunnerCeilingHit) {
+      reason = `Super Runner TP Ceiling reached at ${currentPrice.toFixed(4)} (+ $${pnl.toFixed(2)})`;
+    }
+    else if (tpHit) { 
       reason = `Take Profit Target reached at ${currentPrice.toFixed(4)} (+ ${pnl.toFixed(2)})`; 
     } 
     else if (rescueBreakevenHit) {
@@ -1511,7 +1546,7 @@ async function manageOpenTradesFastPath() {
       reason = `Opposite M15 Fractal Fakeout Exit — Closed at ${currentPrice.toFixed(4)} ($${pnl.toFixed(2)}) to avoid full -$2.50 SL (Opposing ${openTrade.opposingM15Fractal.type} at ${Number(openTrade.opposingM15Fractal.price).toFixed(4)})`;
     }
     else if (openTrade.lockedPnlFloor && pnl <= openTrade.lockedPnlFloor) { 
-      reason = `Profit-Lock hit — Secured +$${openTrade.lockedPnlFloor.toFixed(2)}`; 
+      reason = `Profit-Lock hit — Secured +$${openTrade.lockedPnlFloor.toFixed(2)} (Peak: +$${(openTrade.maxUnrealizedPnL || 0).toFixed(2)})`; 
     }
     else if (hardStopBreached) { reason = `Hard SL breached at ${currentPrice.toFixed(4)}`; } 
     else if (pnl <= CATASTROPHIC_PNL_FLOOR) { reason = `Catastrophic floor hit — PnL $${pnl.toFixed(2)}`; } 
@@ -2084,7 +2119,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     // =========================================================================
     const isBuy = t.direction === "BUY";
     const currentPnl = calcUnrealizedPnL(t, currentPrice);
-    const inProfitExhaustion = (currentPnl > 0.00 || t.trendRidingActive) && (!t.entryEpoch || candles[si].epoch > t.entryEpoch);
+    // 🛡️ RUNNER IMMUNITY: Trades with PnL >= $3.50 or active Trend-Rider ratchet are managed by the Tiered Dynamic Ratchet
+    // and are immune to sensitive M5 indicator exhaustion exits (Stoch 50, Stoch 65/35, CCI 0)
+    const isRunner = Boolean(t.trendRidingActive || currentPnl >= 3.50 || (t.maxUnrealizedPnL && t.maxUnrealizedPnL >= 4.00));
+    const inProfitExhaustion = !isRunner && (currentPnl > 0.00) && (!t.entryEpoch || candles[si].epoch > t.entryEpoch);
     if (inProfitExhaustion) {
       const isCciInstrument = (
         STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || 
@@ -2231,12 +2269,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const h1ClosedAgainst = h1Eval.triggered;
       const h1OpenPrice = h1Eval.h1OpenPrice || t.entry;
 
-      // Whichever early exit triggers first closes the trade immediately
+      // Whichever early exit triggers first closes the trade immediately (Loss-prevention only: bypassed for profitable runners)
       let earlyExitTriggered = false;
       let earlyExitType = "";
       let earlyExitDesc = "";
 
-      if (stoch15OppositeCross) {
+      if (isRunner) {
+        // 🛡️ RUNNER IMMUNITY: Position is in profit and protected by Tiered Ratchet (Tier 2-4: 70-80% locked)
+        // Do NOT close on minor pullback oscillations (Stoch 65/35 or M5 fractal)
+      } else if (!isRunner && stoch15OppositeCross) {
         earlyExitTriggered = true;
         earlyExitType = `Stoch (15,2,5) Level ${isBuy ? "65" : "35"} Cross Exit`;
         earlyExitDesc = `M5 Stoch (15,2,5) %K crossed ${isBuy ? "below Level 65.0" : "above Level 35.0"} (%K: ${sK1525 !== null ? sK1525.toFixed(2) : "N/A"}, prev: ${prevK1525 !== null ? prevK1525.toFixed(2) : "N/A"})`;
@@ -2244,7 +2285,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         earlyExitTriggered = true;
         earlyExitType = "Opposite M5 Fractal Cross Exit";
         earlyExitDesc = `M5 candle closed at ${m5Close.toFixed(4)} crossing opposite M5 fractal (${fracAnchor !== null ? fracAnchor.toFixed(4) : "N/A"})`;
-      } else if (h1ClosedAgainst) {
+      } else if (!isRunner && h1ClosedAgainst) {
         earlyExitTriggered = true;
         earlyExitType = "Entry-Hour H1 Adverse Close Exit";
         earlyExitDesc = `Entry hour H1 closed adverse (H1 Open: ${h1OpenPrice !== null ? h1OpenPrice.toFixed(4) : "N/A"}, H1 Close: ${m5Close.toFixed(4)})`;
@@ -2305,9 +2346,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
       }
 
-      if (adverseCandleCount >= 3) {
+      if (!isRunner && adverseCandleCount >= 3) {
         closingContracts.add(t.contractId);
-        console.log(`[EARLY INVALIDATION] 3 consecutive M5 candles closed against ${t.direction} position. Exiting immediately.`);
+        console.log(`[EARLY INVALIDATION] 3 consecutive M5 candles closed against ${t.direction} position while not in runner status. Exiting immediately.`);
         try {
           const closeRes = await closeContract(t.contractId);
           if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
@@ -2377,9 +2418,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         ? (sK1525 !== null && prevK1525 !== null && prevK1525 >= 50.0 && sK1525 < 50.0)
         : (sK1525 !== null && prevK1525 !== null && prevK1525 <= 50.0 && sK1525 > 50.0));
 
-      if (stoch15OppositeCross) {
+      if (!isRunner && stoch15OppositeCross) {
         closingContracts.add(t.contractId);
-        console.log(`[STOCH 1525 LEVEL 50 EXIT] Active ${t.direction} #${t.contractId}: Closed-M5 Stoch (15,2,5) %K crossed Level 50 in opposite direction (%K: ${sK1525.toFixed(1)}, prev: ${prevK1525.toFixed(1)}). Liquidating immediately.`);
+        console.log(`[STOCH 1525 LEVEL 50 EXIT] Active ${t.direction} #${t.contractId}: Closed-M5 Stoch (15,2,5) %K crossed Level 50 in opposite direction (%K: ${sK1525.toFixed(1)}, prev: ${prevK1525.toFixed(1)}) while not in runner status. Liquidating immediately.`);
         try {
           const closeRes = await closeContract(t.contractId);
           if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
@@ -2438,7 +2479,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         earlyExitTriggered = true;
         exitReason = "Stoch %K/%D Opposite Cross Early Exit";
         exitDetail = `M5 Stoch (15,2,5 Simple) opposite direction (%K: ${sK.toFixed(1)} vs %D: ${sD.toFixed(1)}) while in loss ($${pnl.toFixed(2)})`;
-      } else if (h1ClosedAgainst) {
+      } else if (!isRunner && h1ClosedAgainst) {
         earlyExitTriggered = true;
         exitReason = "Entry-Hour H1 Adverse Close Exit";
         exitDetail = `Entry-hour H1 closed adverse (H1 Open: ${h1OpenPrice.toFixed(2)}, H1 Close: ${m5Close.toFixed(2)})`;
@@ -2501,9 +2542,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
       }
 
-      if (adverseCandleCount >= 3) {
+      if (!isRunner && adverseCandleCount >= 3) {
         closingContracts.add(t.contractId);
-        console.log(`[EARLY INVALIDATION] 3 consecutive M5 candles closed against ${t.direction} position. Exiting immediately.`);
+        console.log(`[EARLY INVALIDATION] 3 consecutive M5 candles closed against ${t.direction} position while not in runner status. Exiting immediately.`);
         try {
           const closeRes = await closeContract(t.contractId);
           if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
@@ -2607,9 +2648,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const h1ClosedAgainst = h1Eval.triggered;
       const h1OpenPrice = h1Eval.h1OpenPrice || t.entry;
 
-      if (h1ClosedAgainst) {
+      if (!isRunner && h1ClosedAgainst) {
         closingContracts.add(t.contractId);
-        console.log(`[H1 ADVERSE CLOSE EXIT] Entry-hour H1 candle closed adverse to ${t.direction} position. Liquidating immediately.`);
+        console.log(`[H1 ADVERSE CLOSE EXIT] Entry-hour H1 candle closed adverse to ${t.direction} position while not in runner status. Liquidating immediately.`);
         try {
           const closeRes = await closeContract(t.contractId);
           if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
@@ -2679,11 +2720,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         earlyExitTriggered = true;
         exitReason = "Stoch (200,1,1) Adverse Invalidation Exit";
         exitDetail = `M5 Stoch (200,1,1) crossed adverse to position (%K: ${sK.toFixed(1)} ${isBuy ? '< 50.0' : '> 50.0'})`;
-      } else if (stoch15OppositeCross) {
+      } else if (!isRunner && stoch15OppositeCross) {
         earlyExitTriggered = true;
         exitReason = "Stoch (15,2,5) Opposite Level 50 Cross Exit";
         exitDetail = `Closed-M5 Stoch (15,2,5) %K crossed Level 50 in opposite direction (%K: ${sK1525.toFixed(1)}, prev: ${prevK1525.toFixed(1)})`;
-      } else if (h1ClosedAgainst) {
+      } else if (!isRunner && h1ClosedAgainst) {
         earlyExitTriggered = true;
         exitReason = "Entry-Hour H1 Adverse Close Exit";
         exitDetail = `Entry-hour H1 closed adverse (H1 Open: ${h1OpenPrice.toFixed(2)}, H1 Close: ${m5Close.toFixed(2)})`;
