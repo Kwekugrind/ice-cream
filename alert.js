@@ -100,18 +100,18 @@ export const INSTRUMENT_PROFILES = {
     repoLabel: "Lery's Alerts (V75 Demo)",
     server: "S1",
     multiplier: 50,
-    lotSize: 0.005,
+    lotSize: 0.01,
     stakeUsd: 5.0,
     commissionUsd: 0.15,
     strategyProfile: "PROFILE_V75_EMA_STOCH15",
     gateType: "EMA_STOCH15_RETRACEMENT",
     stochParams: { k: 15, d: 2, slowing: 5, method: "Simple", levels: [20, 80] },
     emaPeriod: 100,
-    minTakeProfitPoints: 1330.0,
+    minTakeProfitPoints: 400.0,
     minTakeProfitUsd: 4.00,
     softwareSlUsd: 2.50,
     trailActivationUsd: 3.00,
-    maxHardStopPoints: 180.0,
+    maxHardStopPoints: 250.0,
     slType: "M15_FRACTAL",
     notes: "Initial Entry: Condition 1 Price crosses above/below EMA 100 & EMA 200 -> Condition 2 Fresh M5 Stoch (15,2,5 Simple) %K cross > 80 (BUY) or < 20 (SELL). Retracement Entry: Condition 1 Price physically touches EMA 100 -> Condition 2 Fresh Stoch %K cross > 20 with close > EMA 100 (BUY) or < 80 with close < EMA 100 (SELL)."
   },
@@ -121,7 +121,7 @@ export const INSTRUMENT_PROFILES = {
     repoLabel: "Coffee (V75-1s Demo)",
     server: "S1",
     multiplier: 100,
-    lotSize: 0.005,
+    lotSize: 0.05,
     stakeUsd: 5.0,
     commissionUsd: 0.15,
     strategyProfile: "PROFILE_V75_1S_TREND_MACD_STOCH533",
@@ -130,12 +130,12 @@ export const INSTRUMENT_PROFILES = {
     macdParams: { fast: 25, slow: 75, signal: 1 },
     emaPeriod: 100,
     auxStochParams: { k: 15, d: 2, slowing: 5, method: "Simple", levels: [20, 80] },
-    minTakeProfitPoints: 5.10,
+    minTakeProfitPoints: 80.0,
     minTakeProfitUsd: 4.00,
     softwareSlUsd: 2.50,
     trailActivationUsd: 4.00,
     trailBufferUsd: 4.00,
-    maxHardStopPoints: 18.0,
+    maxHardStopPoints: 50.0,
     slType: "M15_FRACTAL",
     notes: "Macro Trend Stoch (200,1,1) Level 50 Gate & Initial Trigger + M5 MACD (25,75,1) Zero Line Alignment + M5 EMA 100 Baseline + M5 Aux Stoch (15,2,5 Simple) 20/80 Re-Entry Trigger + 3 Consecutive Adverse M5 Candle & Stoch 200 Invalidation Exits + Aux Stoch Level 50 Midline Profit Exit + $4.00/$4.00 Trailing Stop."
   },
@@ -145,20 +145,20 @@ export const INSTRUMENT_PROFILES = {
     repoLabel: "Milk (V100 Demo)",
     server: "S1",
     multiplier: 40,
-    lotSize: 0.20,
+    lotSize: 1.00,
     stakeUsd: 5.0,
     commissionUsd: 0.15,
     strategyProfile: "PROFILE_V100_STOCH200_STOCH15",
     gateType: "STOCH200_STOCH15",
     stoch200Params: { k: 200, d: 1, slowing: 1 },
     stoch15Params: { k: 15, d: 2, slowing: 5 },
-    minTakeProfitPoints: 10.70,
+    minTakeProfitPoints: 4.00,
     minTakeProfitUsd: 4.00,
     softwareSlUsd: 2.50,
     trailActivationUsd: 3.00,
-    maxHardStopPoints: 3.00,
+    maxHardStopPoints: 2.50,
     slType: "M15_FRACTAL",
-    notes: "40x multiplier; Condition 1: M5 Stoch 200 (48/52) Main Trend Identifier; Condition 2: M5 Stoch (15,2,5) Initial (Lvl 50 unbounded while armed) & Re-Entry (Lvl 20/80); Early Exits: 1) Stoch (15,2,5) %K < 65 (BUY) / > 35 (SELL) cross, 2) Opposite M5 Fractal Break, 3) Entry-Hour H1 Adverse Close; Min $4.00 TP & Dynamic Ratchet."
+    notes: "1.00 lot cTrader minimum; Condition 1: M5 Stoch 200 (48/52) Main Trend Identifier; Condition 2: M5 Stoch (15,2,5) Initial (Lvl 50 unbounded while armed) & Re-Entry (Lvl 20/80); Early Exits: 1) Stoch (15,2,5) %K < 65 (BUY) / > 35 (SELL) cross, 2) Opposite M5 Fractal Break, 3) Entry-Hour H1 Adverse Close; Min $4.00 TP & Dynamic Ratchet."
   },
   "1HZ100V": {
     symbol: "1HZ100V",
@@ -166,7 +166,7 @@ export const INSTRUMENT_PROFILES = {
     repoLabel: "Ice Cream Machine",
     server: "S2",
     multiplier: 40,
-    lotSize: 0.20,
+    lotSize: 1.00,
     stakeUsd: 5.0,
     commissionUsd: 0.15,
     strategyProfile: "PROFILE_V100_1S_TREND_MACD_STOCH",
@@ -175,11 +175,11 @@ export const INSTRUMENT_PROFILES = {
     macdParams: { fast: 25, slow: 75, signal: 1 },
     stoch533Params: { k: 5, d: 3, slowing: 3 },
     emaPeriod: 100, // M5 EMA 100
-    minTakeProfitPoints: 30.80,
+    minTakeProfitPoints: 4.00,
     minTakeProfitUsd: 4.00,
     softwareSlUsd: 2.50,
     trailActivationUsd: 2.20,
-    maxHardStopPoints: 5.50,
+    maxHardStopPoints: 2.50,
     slType: "M15_FRACTAL",
     notes: "Macro Trend Stoch 200 Level 50 Gate & MACD Confirmation + M5 EMA 100 Baseline + M5 Fast Stoch (5,3,3) 20/80 Re-Entry Trigger + 3-Candle, Stoch 200 & Closed-M5 Stoch (15,2,5) Level 50 Opposite Cross Early Exits + $4.00/$4.00 Dynamic Ratchet."
   },
@@ -195,11 +195,11 @@ export const INSTRUMENT_PROFILES = {
     strategyProfile: "PROFILE_V25_STOCH200_CCI100",
     gateType: "STOCH200_CCI100_M5FRACTAL",
     stochParams: { k: 200, d: 1, slowing: 1 },
-    minTakeProfitPoints: 5.52,
+    minTakeProfitPoints: 8.00,
     minTakeProfitUsd: 4.00,
     softwareSlUsd: 3.50,
     trailActivationUsd: 3.00,
-    maxHardStopPoints: 18.00,
+    maxHardStopPoints: 7.00,
     slType: "M5_FRACTAL",
     notes: "400x multiplier (0.50 lots); Condition 1: M5 Stoch (200,1,1) Main Trend Identifier (cross above 50 arms BUY, cross below 50 arms SELL, unbounded); Condition 2: M5 CCI 100 zero-line cross Initial Trigger (>0 BUY / <0 SELL) + M5 Stoch (15,2,5) Re-Entry (>25 BUY / <75 SELL while Stoch 200 & CCI 100 aligned); Early Exits: 1) Previous M5 Fractal break in loss, 2) Stoch 200 Adverse Cross, 3) Closed-M5 Stoch (15,2,5) Level 50 Opposite Cross, 4) Entry-Hour H1 Adverse Close; Profit Protection: Closed-M5 Stoch (15,2,5) Midline Profit Exit & CCI 100 Zero-Line Profit Exit + $4.00/$4.00 Dynamic Ratchet."
   },
@@ -215,11 +215,11 @@ export const INSTRUMENT_PROFILES = {
     strategyProfile: "PROFILE_V50_STOCH200_CCI150",
     gateType: "STOCH200_STOCH15_M5FRACTAL",
     stochParams: { k: 200, d: 1, slowing: 1 },
-    minTakeProfitPoints: 1.63,
+    minTakeProfitPoints: 1.00,
     minTakeProfitUsd: 4.00,
     softwareSlUsd: 2.50,
     trailActivationUsd: 3.00,
-    maxHardStopPoints: 0.20,
+    maxHardStopPoints: 0.625,
     slType: "M5_FRACTAL",
     notes: "80x multiplier (4.00 lots); Condition 1: M5 Stoch (200,1,1) Main Trend Identifier (>=50 arms BUY, <=50 arms SELL, unbounded); Initial Entry: Fresh M5 Stoch (15,2,5) %K cross of Level 50 (>50 BUY / <50 SELL) after Condition 1 is already armed; Re-Entry: Fresh M5 Stoch (15,2,5) %K cross >25 (BUY) or <85 (SELL) while Condition 1 remains valid after initial trade is taken and closed; Early Exits: 1) Previous M5 Fractal break in loss, 2) Stoch 200 Adverse Cross, 3) Closed-M5 Stoch (15,2,5) Level 50.0 Opposite Cross, 4) Entry-Hour H1 Adverse Close; Fib TP min $4.00."
   },
@@ -238,11 +238,11 @@ export const INSTRUMENT_PROFILES = {
     macdParams: { fast: 25, slow: 75, signal: 1 },
     emaPeriod: 100,
     stoch533Params: { k: 5, d: 3, slowing: 3 },
-    minTakeProfitPoints: 9.60,
+    minTakeProfitPoints: 8.00,
     minTakeProfitUsd: 4.00,
     softwareSlUsd: 2.50,
     trailActivationUsd: 3.00,
-    maxHardStopPoints: 8.00,
+    maxHardStopPoints: 5.00,
     slType: "M15_FRACTAL",
     notes: "400x multiplier (0.50 lots); Initial Entry: Triggered immediately when all 3 conditions are met in any order — 1) M5 Stoch (200,1,1) %K >= 50.0 (BUY) / <= 50.0 (SELL), 2) M5 MACD (25,75,1) >= 0.0 (BUY) / <= 0.0 (SELL), 3) Price > M5 EMA 100 (BUY) / < M5 EMA 100 (SELL); Re-Entry: M5 Fast Stoch (5,3,3) 20/80 Cross while all 3 conditions remain aligned; Early Exits: 1) 3 Consecutive Adverse M5 Candles, 2) Stoch 200 Adverse Cross, 3) M5 Stoch (15,2,5) Level 50 Loss Exit, 4) Entry-Hour H1 Adverse Close Exit."
   }
@@ -279,10 +279,20 @@ const STRATEGY_PROFILE = PROFILE.strategyProfile;
 
 const TRADING_SYMBOL = SYMBOL;
 
-// ── Execution Mode & Lot Size Configuration (Deriv Standard Architecture, matching S1) ──
+// ── Execution Mode & Lot Size Configuration (Enforcing cTrader Broker Minimum Volume Floors) ──
 // Default execution engine: cTrader (CFD) across all bots unless manually overridden via EXECUTION_MODE in .env
 const EXECUTION_MODE = (process.env.EXECUTION_MODE || "ctrader").toLowerCase();
-const CTRADER_LOT_SIZE = parseFloat(process.env.LOT_SIZE || (PROFILE.lotSize !== undefined ? String(PROFILE.lotSize) : (SYMBOL === "1HZ75V" || SYMBOL === "R_75" ? "0.005" : "0.50")));
+const CTRADER_MIN_LOT_MAP = {
+  "R_75": 0.01,
+  "1HZ75V": 0.05,
+  "R_100": 1.00,
+  "1HZ100V": 1.00,
+  "R_25": 0.50,
+  "R_50": 4.00,
+  "R_10": 0.50
+};
+const _rawLotSize = parseFloat(process.env.LOT_SIZE || (PROFILE.lotSize !== undefined ? String(PROFILE.lotSize) : "0.50"));
+const CTRADER_LOT_SIZE = Math.max(isNaN(_rawLotSize) ? 0.01 : _rawLotSize, CTRADER_MIN_LOT_MAP[SYMBOL] || 0.01);
 
 // ── Configurable Software Stop Loss per Instrument Profile ──
 const INSTRUMENT_SOFTWARE_SL_MAP = {
@@ -425,26 +435,36 @@ async function getOpenPortfolio() {
         const CTRADER_ID_TO_SYMBOL = {
           2435: "1HZ75V",
           2434: "R_75",
-          2431: "R_50",
+          2432: "R_50",
+          2431: "1HZ25V",
+          2433: "1HZ50V",
           2430: "R_25",
           2428: "R_10",
+          2429: "1HZ10V",
           2436: "R_100",
           2437: "1HZ100V"
         };
         return res.positions.map(p => {
-          const symId = p.tradeData?.symbolId || p.symbolId;
-          const mappedSym = CTRADER_ID_TO_SYMBOL[symId] || SYMBOL;
+          const symId = Number(p.tradeData?.symbolId || p.symbolId);
+          const mappedSym = CTRADER_ID_TO_SYMBOL[symId] || null;
+          if (!mappedSym) return null;
+          const rawVol = p.tradeData?.volume ?? p.volume;
+          const actualLots = (typeof rawVol === "number" && rawVol > 0)
+            ? rawVol / 100
+            : (typeof p.lots === "number" && p.lots > 0 ? p.lots : (CTRADER_MIN_LOT_MAP[mappedSym] || CTRADER_LOT_SIZE));
           return {
             contract_id: String(p.positionId),
             symbol: mappedSym,
             underlying_symbol: mappedSym,
             contract_type: p.tradeData?.tradeSide === 1 ? "MULTUP" : "MULTDOWN",
             buy_price: p.price,
-            lots: CTRADER_LOT_SIZE,
-            unrealizedPnl: p.unrealizedPnl,
+            lots: actualLots,
+            stopLoss: p.stopLoss || null,
+            takeProfit: p.takeProfit || null,
+            unrealizedPnl: typeof p.unrealizedPnl === "number" ? p.unrealizedPnl : undefined,
             date_start: Math.floor((p.tradeData?.openTimestamp || Date.now()) / 1000)
           };
-        });
+        }).filter(Boolean);
       }
     } catch (e) {
       dbg(`[PORTFOLIO] cTrader query failed (${e.message}), falling back to Deriv gateway...`);
@@ -476,14 +496,14 @@ async function executeTrade(direction, orderContext = {}) {
         lots: CTRADER_LOT_SIZE,
         slPrice: orderContext.slPrice || null,
         tpPrice: orderContext.tpPrice || orderContext.fibTpPrice || null,
-        slUsd: Math.abs(SOFTWARE_SL_USD) || 3.60,
+        slUsd: Math.abs(SOFTWARE_SL_USD) || 2.50,
         tpUsd: TARGET_MIN_PROFIT || 4.00,
         comment: `${REPO_LABEL} cTrader`
       };
       console.log(`[CTRADER ORDER] Sending ${direction} order: ${CTRADER_LOT_SIZE} lots on ${SYMBOL_NAME || SYMBOL} (SL: ${payload.slPrice || payload.slUsd}, TP: ${payload.tpPrice || payload.tpUsd})`);
       const res = await gatewayFetch("/ctrader/order", "POST", payload);
       if (res && res.ok && res.order?.positionId) {
-        console.log(`[CTRADER ORDER SUCCESS] Position ID #${res.order.positionId} confirmed by broker.`);
+        console.log(`[CTRADER ORDER SUCCESS] Position ID #${res.order.positionId} confirmed by broker (${res.order.lots || CTRADER_LOT_SIZE} lots @ ${res.order.entryPrice || 'market'}).`);
         return String(res.order.positionId);
       }
       const errDetail = res?.error || res?.message || (res ? JSON.stringify(res) : "Unknown broker error");
@@ -544,7 +564,8 @@ async function getContractProfitFromHistory(contractId, approxOpenEpoch) {
     try {
       const res = await gatewayFetch("/ctrader/deals");
       if (res && res.ok && Array.isArray(res.deals)) {
-        const match = res.deals.find(d => String(d.positionId) === String(contractId));
+        // Match only the CLOSING deal (which contains closePositionDetail), never the opening deal
+        const match = res.deals.find(d => String(d.positionId) === String(contractId) && d.closePositionDetail);
         if (match) {
           const detail = match.closePositionDetail;
           let profit = 0;
@@ -1033,35 +1054,33 @@ const checkStochasticStateArmed = checkStochastic8HrLookback;
 
 function deriveHardStopPrice(entry, direction, lots = CTRADER_LOT_SIZE) {
   const targetLoss = -5.00;
-  const requiredRawPnl = targetLoss + COMMISSION_USD;
   if (EXECUTION_MODE === "ctrader") {
     const activeLots = (lots && lots > 0) ? lots : CTRADER_LOT_SIZE;
-    const priceMove = requiredRawPnl / activeLots;
+    const priceMove = targetLoss / activeLots;
     return direction === "BUY" ? entry + priceMove : entry - priceMove;
   }
+  const requiredRawPnl = targetLoss + COMMISSION_USD;
   const priceMoveFraction = requiredRawPnl / (STAKE_USD * MULTIPLIER);
   return direction === "BUY" ? entry * (1 + priceMoveFraction) : entry * (1 - priceMoveFraction);
 }
 
 function calcUnrealizedPnL(trade, currentPrice) {
-  // 1. Direct Live Broker PnL (Highest Fidelity from cTrader / Deriv)
-  if (typeof trade.liveBrokerPnl === "number" && !isNaN(trade.liveBrokerPnl)) {
+  // 1. Direct Live Broker PnL (Used for Deriv Multipliers when liveBrokerPnl is present)
+  if (EXECUTION_MODE !== "ctrader" && typeof trade.liveBrokerPnl === "number" && !isNaN(trade.liveBrokerPnl)) {
     return trade.liveBrokerPnl;
   }
-  if (typeof trade.unrealizedPnl === "number" && !isNaN(trade.unrealizedPnl)) {
-    return trade.unrealizedPnl;
-  }
 
-  // 2. High-Precision Price Point Calculation Fallback
+  // 2. High-Precision Price Point Calculation for cTrader CFD & Deriv Fallback
   const pointsDiff = trade.direction === "BUY"
     ? (currentPrice - trade.entry)
     : (trade.entry - currentPrice);
 
   const activeLots = (trade.lots && trade.lots > 0) ? trade.lots : CTRADER_LOT_SIZE;
-  const rawPnl = EXECUTION_MODE === "ctrader"
-    ? pointsDiff * activeLots
-    : (pointsDiff / trade.entry) * STAKE_USD * MULTIPLIER;
+  if (EXECUTION_MODE === "ctrader") {
+    return parseFloat((pointsDiff * activeLots).toFixed(2));
+  }
 
+  const rawPnl = (pointsDiff / trade.entry) * STAKE_USD * MULTIPLIER;
   return rawPnl - COMMISSION_USD;
 }
 
@@ -1155,6 +1174,7 @@ let state = {
   symbol: SYMBOL,
   currentPrice: null,
   lastPriceUpdate: null,
+  openTrade: null,
   lastProcessedEpoch: null, lastTgUpdateId: 0, armed: null, armedEpoch: null, armedTime: null, confirm: null, dailyBiasPrice: null,
   last50Origin: null,
   lastTriggeredSetup: null,
@@ -1228,7 +1248,7 @@ const CODE_TIMESTAMP = "2026-10-03T10:35:00Z";
 
 const ALLOWED_STATE_KEYS = new Set([
   "engineVersion", "codeTimestamp", "symbol", "strategyProfile", "currentPrice",
-  "lastPriceUpdate", "lastProcessedEpoch", "lastTgUpdateId", "armed", "armedEpoch",
+  "lastPriceUpdate", "openTrade", "lastProcessedEpoch", "lastTgUpdateId", "armed", "armedEpoch",
   "armedTime", "confirm", "dailyBiasPrice", "last50Origin", "lastTriggeredSetup",
   "lastTriggeredEpoch", "dailyNetPnl", "dailyTargetReached", "dailyTargetDate",
   "currentDayDate", "dailyKeyLevelTouchedToday", "keyLevelTouched", "levelTouched",
@@ -1305,14 +1325,14 @@ async function manageOpenTradesFastPath() {
   let openTrades = trades.filter(t => !t.result && !t.pending);
 
   // 🛡️ Universal Live Portfolio Adoption & Self-Healing: Always query deriv-gateway for active broker positions.
-  // Ensures any live contract running on Deriv for this instrument is instantly adopted and monitored by Fast-Path Software SL.
+  // Ensures any live contract running on cTrader / Deriv for this instrument is instantly adopted and monitored by Fast-Path Software SL.
   try {
     const allPortfolio = await getOpenPortfolio();
     const allLiveIdSet = new Set((Array.isArray(allPortfolio) ? allPortfolio : []).map(c => String(c.contract_id || c.id || c.contractId)));
     const liveContracts = (Array.isArray(allPortfolio) ? allPortfolio : []).filter(c => getContractSymbol(c).toUpperCase() === TRADING_SYMBOL.toUpperCase());
     let modified = false;
 
-    // Live Broker PnL & Volume Synchronization:
+    // Live Broker PnL, Entry & Actual Volume Synchronization:
     for (const live of liveContracts) {
       const liveCid = String(live.contract_id || live.contractId || live.id);
       const tracked = trades.find(t => String(t.contractId) === liveCid && !t.result);
@@ -1321,8 +1341,14 @@ async function manageOpenTradesFastPath() {
           tracked.liveBrokerPnl = live.unrealizedPnl;
           tracked.unrealizedPnl = live.unrealizedPnl;
         }
-        if (tracked.lots !== CTRADER_LOT_SIZE) {
-          tracked.lots = CTRADER_LOT_SIZE;
+        const brokerLots = (typeof live.lots === "number" && live.lots > 0) ? live.lots : CTRADER_LOT_SIZE;
+        if (tracked.lots !== brokerLots) {
+          tracked.lots = brokerLots;
+          modified = true;
+        }
+        const brokerEntry = live.buy_price ? parseFloat(live.buy_price) : null;
+        if (brokerEntry && brokerEntry > 0 && tracked.entry !== brokerEntry) {
+          tracked.entry = brokerEntry;
           modified = true;
         }
       }
@@ -1341,7 +1367,7 @@ async function manageOpenTradesFastPath() {
         modified = true;
         await sendTelegram(
           `🩹 *${REPO_LABEL} — AUTOMATED SELF-HEALING RECOVERY* 🩹\n\n` +
-          `Contract \`${t.contractId}\` (*${t.direction}*) was falsely marked as \`${prevResult}\`, but is STILL LIVE on Deriv!\n\n` +
+          `Contract \`${t.contractId}\` (*${t.direction}*) was falsely marked as \`${prevResult}\`, but is STILL LIVE on broker!\n\n` +
           `Restored active state in V8 RAM. Fast-Path Software SL ($-\\ $2.50) and Trailing Stop are now actively monitoring this position.`
         );
       }
@@ -1354,15 +1380,17 @@ async function manageOpenTradesFastPath() {
         if (!alreadyTracked) {
           const entryPrice = live.buy_price ? parseFloat(live.buy_price) : (live.entry_price ? parseFloat(live.entry_price) : await fetchCurrentSpotPrice()); 
           const dir = (live.contract_type === "MULTUP" || (live.shortcode && live.shortcode.startsWith("MULTUP"))) ? "BUY" : "SELL";
+          const actualLots = (typeof live.lots === "number" && live.lots > 0) ? live.lots : CTRADER_LOT_SIZE;
           trades.push({
             id: `${SYMBOL}-${Date.now()}`, contractId: Number(liveCid) || liveCid, pending: false, repo: REPO_LABEL, symbol: SYMBOL,
-            direction: dir, entry: entryPrice, sl: deriveHardStopPrice(entryPrice, dir, live.lots || CTRADER_LOT_SIZE), rr: null, entryType: "RECOVERED_LIVE_FAST", brokerSlAmount: STAKE_USD,
-            lots: live.lots || CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE, is_ctrader: EXECUTION_MODE === "ctrader",
-            entryEpoch: live.date_start || Math.floor(Date.now() / 1000), fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false, fibTpPrice: null, keyLevel: null,
+            direction: dir, entry: entryPrice, sl: live.stopLoss || deriveHardStopPrice(entryPrice, dir, actualLots), rr: null, entryType: "RECOVERED_LIVE_FAST", brokerSlAmount: STAKE_USD,
+            lots: actualLots, executionMode: EXECUTION_MODE, is_ctrader: EXECUTION_MODE === "ctrader",
+            entryEpoch: live.date_start || Math.floor(Date.now() / 1000), fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false,
+            tpPrice: live.takeProfit || null, fibTpPrice: live.takeProfit || null, keyLevel: null,
             openTime: new Date((live.date_start || Math.floor(Date.now() / 1000)) * 1000).toISOString().replace("T", " ").substring(0, 19), closeTime: null, result: null
           });
           modified = true;
-          await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted live contract \`${liveCid}\` (${dir}) in Fast Path.`);
+          await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted live contract \`${liveCid}\` (${dir}, ${actualLots} lots) in Fast Path.`);
         }
       }
     }
@@ -1374,7 +1402,13 @@ async function manageOpenTradesFastPath() {
     dbg("Fast portfolio adoption skipped:", pErr.message);
   }
 
-  if (openTrades.length === 0) return false;
+  if (openTrades.length === 0) {
+    if (state.openTrade) {
+      state.openTrade = null;
+      saveState();
+    }
+    return false;
+  }
 
   let currentPrice;
   try {
@@ -1397,6 +1431,7 @@ async function manageOpenTradesFastPath() {
     
     const isBuy = openTrade.direction === "BUY";
     const pnl = calcUnrealizedPnL(openTrade, currentPrice);
+    openTrade.unrealizedPnl = pnl;
 
     // =========================================================================
     // 🛡️ DYNAMIC PROFIT RATCHET & TREND-RIDER ACTIVATION (STRICTLY IN PROFIT)
@@ -1426,7 +1461,7 @@ async function manageOpenTradesFastPath() {
     }
     // =========================================================================
 
-    const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction);
+    const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction, openTrade.lots);
 
     const hardStopBreached = isBuy ? currentPrice <= hardStopPrice : currentPrice >= hardStopPrice;
     const activeTpTarget = openTrade.tpPrice || openTrade.fibTpPrice || null;
@@ -1482,6 +1517,24 @@ async function manageOpenTradesFastPath() {
     else if (pnl <= CATASTROPHIC_PNL_FLOOR) { reason = `Catastrophic floor hit — PnL $${pnl.toFixed(2)}`; } 
     else if (pnl <= SOFTWARE_SL_USD) { reason = `Software SL hit — PnL $${pnl.toFixed(2)}`; }
 
+    if (!reason) {
+      state.openTrade = {
+        ...openTrade,
+        entryPrice: openTrade.entry,
+        stopLoss: openTrade.sl,
+        tpPrice: openTrade.tpPrice || openTrade.fibTpPrice,
+        unrealizedPnl: pnl,
+        livePnl: pnl,
+        profit: pnl,
+        peakPnl: openTrade.maxUnrealizedPnL || 0,
+        lockedProfit: openTrade.lockedPnlFloor || 0,
+        trailingActive: !!openTrade.trendRidingActive
+      };
+      saveTrades(trades);
+      saveState();
+      continue;
+    }
+
     if (reason) {
       closingContracts.add(openTrade.contractId);
       console.log(`[RISK] Closing ${openTrade.contractId}: ${reason}`);
@@ -1500,7 +1553,7 @@ async function manageOpenTradesFastPath() {
           serverPnl = pnl;
           resultSource = "broker_already_closed";
         } else if (closeRes && (closeRes.ok || closeRes.sell || closeRes.result)) {
-          serverPnl = closeRes.sell?.profit ?? closeRes.result?.profit ?? pnl;
+          serverPnl = closeRes.sell?.profit ?? closeRes.result?.profit ?? closeRes.profit ?? pnl;
           resultSource = "server_close_confirmed";
         }
       } catch (e) {
@@ -1514,6 +1567,7 @@ async function manageOpenTradesFastPath() {
       openTrade.resultSource = resultSource;
       openTrade.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
       openTrade.serverPnl = serverPnl;
+      state.openTrade = null;
       
       // Update cumulative daily net PnL
       state.dailyNetPnl = (state.dailyNetPnl || 0) + serverPnl;
@@ -1860,17 +1914,19 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     
     for (const live of liveContracts) {
       const liveCid = String(live.contract_id || live.contractId || live.id);
+      const actualLots = (typeof live.lots === "number" && live.lots > 0) ? live.lots : CTRADER_LOT_SIZE;
       if (!trades.find(t => String(t.contractId) === liveCid)) {
         const entryPrice = live.buy_price ? parseFloat(live.buy_price) : await fetchCurrentSpotPrice(); 
         const dir = (live.contract_type === "MULTUP" || (live.shortcode && live.shortcode.startsWith("MULTUP"))) ? "BUY" : "SELL";
         trades.push({
           id: `${SYMBOL}-${Date.now()}`, contractId: Number(liveCid) || liveCid, pending: false, repo: REPO_LABEL, symbol: SYMBOL,
-          direction: dir, entry: entryPrice, sl: deriveHardStopPrice(entryPrice, dir, CTRADER_LOT_SIZE), rr: null, entryType: "RECOVERED_LIVE", brokerSlAmount: STAKE_USD,
-          lots: CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE, is_ctrader: EXECUTION_MODE === "ctrader",
-          entryEpoch: live.date_start, fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false, fibTpPrice: null, keyLevel: null,
+          direction: dir, entry: entryPrice, sl: live.stopLoss || deriveHardStopPrice(entryPrice, dir, actualLots), rr: null, entryType: "RECOVERED_LIVE", brokerSlAmount: STAKE_USD,
+          lots: actualLots, executionMode: EXECUTION_MODE, is_ctrader: EXECUTION_MODE === "ctrader",
+          entryEpoch: live.date_start, fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false,
+          tpPrice: live.takeProfit || null, fibTpPrice: live.takeProfit || null, keyLevel: null,
           openTime: new Date((live.date_start || Math.floor(Date.now() / 1000)) * 1000).toISOString().replace("T", " ").substring(0, 19), closeTime: null, result: null
         });
-        await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted unmanaged live contract \`${liveCid}\` (${dir}).`);
+        await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted unmanaged live contract \`${liveCid}\` (${dir}, ${actualLots} lots).`);
       }
     }
     
@@ -1882,6 +1938,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         if (rec && typeof rec.profit === "number") {
           t.result = rec.profit >= 0 ? "WIN" : "LOSS"; t.serverPnl = rec.profit; t.resultSource = "server_history_verified";
           t.closeTime = new Date(rec.sellTime * 1000).toISOString().replace("T", " ").substring(0, 19);
+          state.openTrade = null;
           state.dailyNetPnl = (state.dailyNetPnl || 0) + rec.profit;
           if (state.dailyNetPnl >= DAILY_PROFIT_TARGET_USD) {
             state.dailyTargetReached = true;
@@ -1889,11 +1946,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           }
           await sendTelegram(`${t.result === "WIN" ? "✅" : "❌"} *${REPO_LABEL} — Trade ${t.result} (Broker Native Exit)*\n\n💵 P&L: *${rec.profit >= 0 ? `+$${rec.profit.toFixed(2)}` : `-$${Math.abs(rec.profit).toFixed(2)}`}*`);
         } else {
-          // Fallback: Contract is confirmed closed on Deriv (absent from entire broker portfolio). Reconcile to unblock execution gate.
+          // Fallback: Contract is confirmed closed on broker (absent from entire broker portfolio). Reconcile to unblock execution gate.
           t.result = "CLOSED_EXTERNAL";
           t.serverPnl = 0;
           t.resultSource = "server_portfolio_reconciled";
           t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+          state.openTrade = null;
           console.log(`[PORTFOLIO SYNC] Contract ${t.contractId} no longer in portfolio. Reconciled as CLOSED_EXTERNAL to unblock bot.`);
         }
       }
@@ -3852,7 +3910,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     // Daily Fibonacci Target TP Level with $4.00 Minimum Floor Enforcement
     let fibTpPrice = calculatedFibTp || null;
     let calibratedMinPts = MIN_TP_POINTS_FLOOR;
-    const requiredRawPnl = TARGET_MIN_PROFIT + COMMISSION_USD;
+    const requiredRawPnl = EXECUTION_MODE === "ctrader" ? TARGET_MIN_PROFIT : (TARGET_MIN_PROFIT + COMMISSION_USD);
     const dollarTpPrice = EXECUTION_MODE === "ctrader"
       ? (direction === "BUY" ? entry + (requiredRawPnl / CTRADER_LOT_SIZE) : entry - (requiredRawPnl / CTRADER_LOT_SIZE))
       : (direction === "BUY" ? entry * (1 + requiredRawPnl / (STAKE_USD * MULTIPLIER)) : entry * (1 - requiredRawPnl / (STAKE_USD * MULTIPLIER)));
@@ -3876,7 +3934,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const hardStopPrice = deriveHardStopPrice(entry, direction, CTRADER_LOT_SIZE); // -$5.00 broker hard stop
     
     // Calculate maximum initial Stop Loss price capped by configured Software SL (-$3.50 for V25, -$2.50 standard)
-    const reqPnlSoft = SOFTWARE_SL_USD + COMMISSION_USD;
+    const reqPnlSoft = EXECUTION_MODE === "ctrader" ? SOFTWARE_SL_USD : (SOFTWARE_SL_USD + COMMISSION_USD);
     const slCapPrice = EXECUTION_MODE === "ctrader"
       ? (direction === "BUY" ? entry + (reqPnlSoft / CTRADER_LOT_SIZE) : entry - (reqPnlSoft / CTRADER_LOT_SIZE))
       : (direction === "BUY" ? entry * (1 + reqPnlSoft / (STAKE_USD * MULTIPLIER)) : entry * (1 - reqPnlSoft / (STAKE_USD * MULTIPLIER)));
@@ -3991,11 +4049,21 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         pendingTradeRecord.contractId = contractId;
         pendingTradeRecord.pending = false;
         saveTrades(trades);
+        state.openTrade = {
+          ...pendingTradeRecord,
+          entryPrice: pendingTradeRecord.entry,
+          stopLoss: pendingTradeRecord.sl,
+          tpPrice: pendingTradeRecord.tpPrice,
+          unrealizedPnl: 0,
+          livePnl: 0,
+          profit: 0
+        };
         state.armed = null;
         state.armedEpoch = null;
         state.armedTime = null;
         state.confirm = null;
         state.nextPhase = null;
+        saveState();
         await sendTelegram(message);
       }
     } catch (execErr) {
@@ -4013,13 +4081,27 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     healthStatus = "IN_TRADE";
     const activeTrade = openTrades[0];
     const uPnl = calcUnrealizedPnL(activeTrade, currentPrice);
+    state.openTrade = {
+      ...activeTrade,
+      entryPrice: activeTrade.entry,
+      stopLoss: activeTrade.sl,
+      tpPrice: activeTrade.tpPrice || activeTrade.fibTpPrice,
+      unrealizedPnl: uPnl,
+      livePnl: uPnl,
+      profit: uPnl,
+      peakPnl: activeTrade.maxUnrealizedPnL || 0,
+      lockedProfit: activeTrade.lockedPnlFloor || 0,
+      trailingActive: !!activeTrade.trendRidingActive
+    };
     blockerReason = `Active Position Open: #${activeTrade.contractId || activeTrade.id} (${activeTrade.direction} @ ${Number(activeTrade.entry).toFixed(2)}, PnL: ${uPnl >= 0 ? "+" : ""}${uPnl.toFixed(2)})`;
     nextTrigger = `Managing Position: Trailing Ratchet active (TP Target: ${TARGET_MIN_PROFIT.toFixed(2)} Net, SL: ${SOFTWARE_SL_USD.toFixed(2)})`;
   } else if (state.dailyTargetReached) {
+    state.openTrade = null;
     healthStatus = "FUNCTIONING";
     blockerReason = `Daily Net Target (+${DAILY_PROFIT_TARGET_USD.toFixed(2)}) Secured Today (${(state.dailyNetPnl || 0).toFixed(2)})`;
     nextTrigger = "Idling until 00:00 UTC daily rollover";
   } else {
+    state.openTrade = null;
     if (STRATEGY_PROFILE === "PROFILE_V75_EMA_STOCH15") {
       const priceAboveBoth = currentEma100 !== null && currentEma200 !== null && currentPrice > currentEma100 && currentPrice > currentEma200;
       const priceBelowBoth = currentEma100 !== null && currentEma200 !== null && currentPrice < currentEma100 && currentPrice < currentEma200;
