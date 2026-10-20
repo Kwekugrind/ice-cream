@@ -52,7 +52,26 @@ All active trading bots operate on cTrader Open API execution, targeting a **$4.
 
 ---
 
-## 5. STRICT AI SYSTEM DISCIPLINE & CAPITAL PROTECTION MANDATE
+## 5. UNIVERSAL M5 EMA 100 DIRECTIONAL FILTER & CONTINUOUS RE-ENTRY ENGINE
+
+* **Universal M5 EMA 100 Filter Across All 7 Bots:**
+  * **BUY Orders (Initial & Re-Entry):** Strictly permitted **ONLY** when current M5 candle price is **ABOVE** M5 EMA 100 (`currentPrice > currentEma100`). If price is below or equal to EMA 100, BUY triggers are blocked.
+  * **SELL Orders (Initial & Re-Entry):** Strictly permitted **ONLY** when current M5 candle price is **BELOW** M5 EMA 100 (`currentPrice < currentEma100`). If price is above or equal to EMA 100, SELL triggers are blocked.
+  * **Live Engine Verification:** Both the continuous M5 slow-path scan and the immediate fast-path re-entry engine actively enforce this rule before placing any order.
+
+* **Continuous Signal Search & Immediate Re-Entry Execution:**
+  * While a trade is active, the engine continues evaluating every closed M5 candle to detect qualifying re-entry setups.
+  * Qualifying setups are latched in `state.activeReentryOpportunity`.
+  * The instant an active trade exits (via take profit, dynamic ratchet, or software SL), the fast-path watchdog executes `checkAndExecuteImmediateReentry()` immediately without waiting up to 5 minutes for the next candle boundary.
+
+* **Fleet Monitor Re-Entry Mode Telemetry:**
+  * When an initial trade has executed and closed, the bot transitions to **RE-ENTRY WATCH** status (`state.isReentryMode = true`).
+  * If the market has not pulled back into the trigger zone, `state.armed` is explicitly `null` (not static "ARMED"), displaying `Awaiting Re-Entry Signal` (purple status).
+  * When price enters the active pullback zone and aligns with EMA 100, `state.armed` engages with `type: "RE_ENTRY"`.
+
+---
+
+## 6. STRICT AI SYSTEM DISCIPLINE & CAPITAL PROTECTION MANDATE
 
 > [!] **CRITICAL AI OPERATIONAL DIRECTIVE (LIVE CAPITAL SAFETY):**
 > 1. **Zero Assumptions Policy:** The AI engineering engine must **NEVER make assumptions, extrapolate, or guess user intent** regarding trading rules, indicators, target engines, or strategy profiles. If any instruction is underspecified, ambiguous, or unclear, the AI MUST HALT execution and ask the trader for explicit clarification.

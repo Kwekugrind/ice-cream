@@ -624,34 +624,44 @@ When a position achieves profitable expansion, the engine transitions from defen
 
 ### 3. Volatility 100 (`R_100`) -- Milk Machine
 * **Server:** Server 1 | **Dir:** `~/trading-bots/milk`
-* **Multiplier:** 40x | **Stake:** $5.00 | **cTrader Lot Size:** `0.20` lots
-* **Strategy Gate:** M5 Stoch 200 (48/52 Hysteresis) Trend + M5 Stoch (15,2,5 Simple) Initial Entry (Level 50 cross, unbounded window while armed) & Re-Entry (Levels 20/80); Early Exits: 1) Closed M5 Stoch (15,2,5) `%K` crosses below `65.0` for BUY (`prevK1525 >= 65.0 && sK1525 < 65.0`) or crosses above `35.0` for SELL (`prevK1525 <= 35.0 && sK1525 > 35.0`), 2) Opposite M5 Fractal cross, 3) Entry-Hour H1 Adverse Close Exit (whichever triggers first).
-* **Min TP:** 10.70 pts ($4.00 Net) | **Max SL:** 3.00 pts
+* **Multiplier:** 40x | **Stake:** $5.00 | **cTrader Lot Size:** `1.00` lot
+* **Strategy Gate:** 
+  1. **Directional Filter:** BUY permitted only when M5 Price > EMA 100; SELL permitted only when M5 Price < EMA 100.
+  2. **Initial Entry:** M5 Stoch 200 (48/52 Hysteresis) Trend + M5 Stoch (15,2,5 Simple) Level 50 cross (unbounded window while armed) + Price vs EMA 100.
+  3. **Re-Entry & Latching Engine:** While Stoch 200 and EMA 100 remain aligned, BUY on fresh Stoch (15,2,5) %K cross > 20 (SELL on %K cross < 80). Active re-entry opportunities are latched while in trade and executed immediately upon position exit.
+  4. **Early Exits:** 1) Closed M5 Stoch (15,2,5) `%K` crosses below `65.0` for BUY (`prevK1525 >= 65.0 && sK1525 < 65.0`) or crosses above `35.0` for SELL (`prevK1525 <= 35.0 && sK1525 > 35.0`), 2) Opposite M5 Fractal cross, 3) Entry-Hour H1 Adverse Close Exit (whichever triggers first).
+* **Min TP:** 10.70 pts ($4.00 Net) | **Max SL:** 2.50 pts
 
 ### 4. Volatility 25 (`R_25`) -- Tea Machine
 * **Server:** Server 1 | **Dir:** `~/trading-bots/tea`
 * **Multiplier:** 400x | **Stake:** $5.00 | **cTrader Lot Size:** `0.50` lots
 * **Strategy Gate:**
-  1. **Initial Entry:** M5 Stoch (200,1,1) Trend (`>= 50` BUY / `<= 50` SELL, unbounded window while armed) + M5 CCI 100 Zero Cross (`prevCci <= 0 && cVal > 0` BUY / `prevCci >= 0 && cVal < 0` SELL).
-  2. **Re-Entry:** While M5 Stoch (200,1,1) and M5 CCI 100 remain aligned and no trade is open, **BUY Re-Entry** on fresh M5 Stoch (15,2,5) `%K` cross above `25.0` (`prevK1525 <= 25.0 && sK1525 > 25.0`); **SELL Re-Entry** on fresh M5 Stoch (15,2,5) `%K` cross below `75.0` (`prevK1525 >= 75.0 && sK1525 < 75.0`).
-  3. **Early Exits & Profit Protection:** 1) Previous M5 Fractal Break in loss, 2) Stoch 200 Adverse Cross, 3) Closed-M5 Stoch (15,2,5) Level 50 Cross in Opposite Direction (`prevK1525 >= 50 && sK1525 < 50` BUY / `prevK1525 <= 50 && sK1525 > 50` SELL), 4) Entry-Hour H1 Adverse Close Exit; **Profit Protection & Trailing Engine:** Closed-M5 Stoch (15,2,5) Midline Profit Exit (`<= 50` BUY / `>= 50` SELL) & Closed-M5 CCI 100 Zero-Line Profit Exit when trade is in profit + $4.00/$4.00 Dynamic Ratchet.
+  1. **Directional Filter:** BUY permitted only when M5 Price > EMA 100; SELL permitted only when M5 Price < EMA 100.
+  2. **Initial Entry:** M5 Stoch (200,1,1) Trend (`>= 50` BUY / `<= 50` SELL, unbounded window while armed) + M5 CCI 100 Zero Cross (`prevCci <= 0 && cVal > 0` BUY / `prevCci >= 0 && cVal < 0` SELL) + Price vs EMA 100.
+  3. **Re-Entry & Latching Engine:** While M5 Stoch (200,1,1), M5 CCI 100, and EMA 100 remain aligned, **BUY Re-Entry** on fresh M5 Stoch (15,2,5) `%K` cross above `25.0` (`prevK1525 <= 25.0 && sK1525 > 25.0`); **SELL Re-Entry** on fresh M5 Stoch (15,2,5) `%K` cross below `75.0` (`prevK1525 >= 75.0 && sK1525 < 75.0`). Active re-entry opportunities are latched while in trade and executed immediately upon position exit.
+  4. **Early Exits & Profit Protection:** 1) Previous M5 Fractal Break in loss, 2) Stoch 200 Adverse Cross, 3) Closed-M5 Stoch (15,2,5) Level 50 Cross in Opposite Direction (`prevK1525 >= 50 && sK1525 < 50` BUY / `prevK1525 <= 50 && sK1525 > 50` SELL), 4) Entry-Hour H1 Adverse Close Exit; **Profit Protection & Trailing Engine:** Closed-M5 Stoch (15,2,5) Midline Profit Exit (`<= 50` BUY / `>= 50` SELL) & Closed-M5 CCI 100 Zero-Line Profit Exit when trade is in profit + $4.00/$4.00 Dynamic Ratchet.
 * **Min TP:** 5.52 pts ($4.00 Net) | **Max SL:** 3.50 pts
 
 ### 5. Volatility 100 (1s) (`1HZ100V`) -- Ice Cream
 * **Server:** Server 2 | **Dir:** `~/trading-bots/ice-cream`
-* **Multiplier:** 40x | **Stake:** $5.00 | **cTrader Lot Size:** `0.20` lots
-* **Strategy Gate:** M5 Stoch 200 + MACD (25,75,1) + EMA 100 + Fast Stoch (5,3,3) Re-Entry; Early Exits: 1) 3 Consecutive Adverse M5 Candles, 2) M5 Stoch (200,1,1) Adverse Cross (`< 50` BUY / `> 50` SELL), 3) Closed-M5 Stoch (15,2,5) Level 50 Cross in Opposite Direction (`prevK1525 >= 50.0 && sK1525 < 50.0` for BUY; `prevK1525 <= 50.0 && sK1525 > 50.0` for SELL) (whichever triggers first; Stoch 533 Midline Loss Exit and Entry-Hour H1 Adverse Close Exit removed).
-* **Min TP:** 30.80 pts ($4.00 Net) | **Max SL:** 5.50 pts
+* **Multiplier:** 40x | **Stake:** $5.00 | **cTrader Lot Size:** `1.00` lot
+* **Strategy Gate:** 
+  1. **Directional Filter:** BUY permitted only when M5 Price > EMA 100; SELL permitted only when M5 Price < EMA 100.
+  2. **Initial Entry:** M5 Stoch 200 + MACD (25,75,1) + EMA 100.
+  3. **Re-Entry & Latching Engine:** Fast Stoch (5,3,3) pullback cross > 20 (BUY) / < 80 (SELL) with continuous latching while in trade for immediate execution.
+  4. **Early Exits:** 1) 3 Consecutive Adverse M5 Candles, 2) M5 Stoch (200,1,1) Adverse Cross (`< 50` BUY / `> 50` SELL), 3) Closed-M5 Stoch (15,2,5) Level 50 Cross in Opposite Direction (`prevK1525 >= 50.0 && sK1525 < 50.0` for BUY; `prevK1525 <= 50.0 && sK1525 > 50.0` for SELL).
+* **Min TP:** 30.80 pts ($4.00 Net) | **Max SL:** 2.50 pts
 
 ### 6. Volatility 50 (`R_50`) -- OmniSight
 * **Server:** Server 2 | **Dir:** `~/trading-bots/OmniSight`
 * **Multiplier:** 80x | **Stake:** $5.00 | **cTrader Lot Size:** `4.00` lots
 * **Strategy Gate:**
-  1. **Condition 1 (Macro Trend Arming):** M5 Stoch (200,1,1) Trend (`>= 50.0` arms BUY, `<= 50.0` arms SELL, unbounded window while aligned; disarms immediately on `< 50.0` for BUY or `> 50.0` for SELL and resets initial trade state). *(Legacy M5 CCI 150 Zero-Line Cross condition removed).*
-  2. **Initial Entry:** Fresh M5 Stoch (15,2,5) `%K` cross of Level `50.0` (`prevK1525 <= 50.0 && sK1525 > 50.0` for BUY; `prevK1525 >= 50.0 && sK1525 < 50.0` for SELL) after Condition 1 is already armed.
-  3. **Re-Entry:** Fresh M5 Stoch (15,2,5) `%K` cross **above `25.0`** for BUY (`prevK1525 <= 25.0 && sK1525 > 25.0`) or **below `85.0`** for SELL (`prevK1525 >= 85.0 && sK1525 < 85.0`) while Condition 1 remains valid after the initial trade has been taken and closed.
-  4. **Early Exits & Profit Protection:** 1) Previous M5 Fractal Break in loss, 2) Stoch 200 Adverse Cross (`< 50.0` BUY / `> 50.0` SELL), 3) Closed-M5 Stoch (15,2,5) Level `50.0` Opposite Cross (`prevK1525 >= 50.0 && sK1525 < 50.0` BUY / `prevK1525 <= 50.0 && sK1525 > 50.0` SELL), 4) Entry-Hour H1 Adverse Close Exit; **Profit Protection & Trailing Engine:** Closed-M5 Stoch (15,2,5) Midline Profit Exit (`<= 50.0` BUY / `>= 50.0` SELL) + $4.00/$4.00 Dynamic Ratchet.
-* **Min TP:** 1.63 pts ($4.00 Net) | **Max SL:** 0.20 pts
+  1. **Directional Filter:** BUY permitted only when M5 Price > EMA 100; SELL permitted only when M5 Price < EMA 100.
+  2. **Condition 1 (Macro Trend Arming):** M5 Stoch (200,1,1) Trend (`>= 50.0` arms BUY, `<= 50.0` arms SELL, unbounded window while aligned; disarms immediately on `< 50.0` for BUY or `> 50.0` for SELL and resets initial trade state).
+  3. **Initial Entry:** Fresh M5 Stoch (15,2,5) `%K` cross of Level `50.0` (`prevK1525 <= 50.0 && sK1525 > 50.0` for BUY; `prevK1525 >= 50.0 && sK1525 < 50.0` for SELL) after Condition 1 is already armed + Price vs EMA 100.
+  4. **Re-Entry & Latching Engine:** Fresh M5 Stoch (15,2,5) `%K` cross **above `25.0`** for BUY (`prevK1525 <= 25.0 && sK1525 > 25.0`) or **below `85.0`** for SELL (`prevK1525 >= 85.0 && sK1525 < 85.0`) while Condition 1 and EMA 100 remain valid after initial trade has closed. Continuous latching executes immediately on position close.
+  5. **Early Exits & Profit Protection:** 1) Previous M5 Fractal Break in loss, 2) Stoch 200 Adverse Cross (`< 50.0` BUY / `> 50.0` SELL), 3) Closed-M5 Stoch (15,2,5) Level `50.0` Opposite Cross (`prevK1525 >= 50.0 && sK1525 < 50.0` BUY / `prevK1525 <= 50.0 && sK1525 > 50.0` SELL), 4) Entry-Hour H1 Adverse Close Exit; **Profit Protection & Trailing Engine:** Closed-M5 Stoch (15,2,5) Midline Profit Exit (`<= 50.0` BUY / `>= 50.0` SELL) + $4.00/$4.00 Dynamic Ratchet.
+* **Min TP:** 1.63 pts ($4.00 Net) | **Max SL:** 0.625 pts
 
 ### 7. Volatility 10 (`R_10`) -- Test Bot
 * **Server:** Server 2 | **Dir:** `~/trading-bots/Test-Bot`
