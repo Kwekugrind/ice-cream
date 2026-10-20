@@ -1591,6 +1591,18 @@ async function manageOpenTradesFastPath() {
           serverPnl = closeRes.sell?.profit ?? closeRes.result?.profit ?? closeRes.profit ?? pnl;
           resultSource = "server_close_confirmed";
         }
+
+        // In cTrader CFD mode, immediately verify the official net settled deal (including broker commission)
+        if (EXECUTION_MODE === "ctrader") {
+          try {
+            await new Promise(r => setTimeout(r, 600));
+            const rec = await getContractProfitFromHistory(openTrade.contractId, openTrade.entryEpoch);
+            if (rec && typeof rec.profit === "number") {
+              serverPnl = rec.profit;
+              resultSource = "ctrader_deal_confirmed";
+            }
+          } catch (e) {}
+        }
       } catch (e) {
         console.error(`[RISK EXCEPTION] closeContract failed for ${openTrade.contractId}:`, e.message);
         closingContracts.delete(openTrade.contractId);
@@ -2118,16 +2130,25 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
     
-    for (const t of trades.filter(t => !t.result && t.contractId)) {
+    for (const t of trades.filter(t => t.contractId && (!t.result || (EXECUTION_MODE === "ctrader" && t.resultSource !== "ctrader_deal_confirmed")))) {
       // Strict Check: Only reconcile as closed if contract is absent from the ENTIRE broker portfolio (all symbols)
       const isStillInBrokerPortfolio = allLiveIdSet.has(String(t.contractId));
       if (!isStillInBrokerPortfolio && !closingContracts.has(t.contractId)) {
         const rec = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
         if (rec && typeof rec.profit === "number") {
-          t.result = rec.profit >= 0 ? "WIN" : "LOSS"; t.serverPnl = rec.profit; t.resultSource = "server_history_verified";
+          const hadResult = Boolean(t.result);
+          const oldPnl = typeof t.serverPnl === "number" ? t.serverPnl : (typeof t.profit === "number" ? t.profit : 0);
+          t.result = rec.profit >= 0 ? "WIN" : "LOSS";
+          t.serverPnl = rec.profit;
+          t.profit = rec.profit;
+          t.amount = rec.profit;
+          t.resultSource = "ctrader_deal_confirmed";
           t.closeTime = new Date(rec.sellTime * 1000).toISOString().replace("T", " ").substring(0, 19);
           state.openTrade = null;
-          state.dailyNetPnl = (state.dailyNetPnl || 0) + rec.profit;
+          const diff = hadResult ? (rec.profit - oldPnl) : rec.profit;
+          state.dailyNetPnl = Number(((state.dailyNetPnl || 0) + diff).toFixed(2));
+          saveState();
+          saveTrades(trades);
           if (state.dailyNetPnl >= DAILY_PROFIT_TARGET_USD) {
             state.dailyTargetReached = true;
             state.dailyTargetDate = todayStr;
