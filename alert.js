@@ -420,7 +420,18 @@ async function gatewayFetch(endpoint, method = "GET", body = null, timeoutMs = 1
       signal: controller.signal
     });
     clearTimeout(timer);
-    if (!res.ok) throw new Error(`Gateway HTTP error ${res.status}`);
+    if (!res.ok) {
+      let errText = "";
+      try { errText = await res.text(); } catch {}
+      let parsedMsg = "";
+      try {
+        const j = JSON.parse(errText);
+        parsedMsg = j.error || j.message || errText;
+      } catch {
+        parsedMsg = errText || `status ${res.status}`;
+      }
+      throw new Error(`Gateway HTTP error ${res.status}: ${parsedMsg}`);
+    }
     return await res.json();
   } catch (err) {
     clearTimeout(timer);
@@ -503,13 +514,26 @@ async function executeTrade(direction, orderContext = {}) {
         comment: `${REPO_LABEL} cTrader`
       };
       console.log(`[CTRADER ORDER] Sending ${direction} order: ${CTRADER_LOT_SIZE} lots on ${SYMBOL_NAME || SYMBOL} (SL: ${payload.slPrice || payload.slUsd}, TP: ${payload.tpPrice || payload.tpUsd})`);
-      const res = await gatewayFetch("/ctrader/order", "POST", payload);
-      if (res && res.ok && res.order?.positionId) {
-        console.log(`[CTRADER ORDER SUCCESS] Position ID #${res.order.positionId} confirmed by broker (${res.order.lots || CTRADER_LOT_SIZE} lots @ ${res.order.entryPrice || 'market'}).`);
-        return String(res.order.positionId);
+      let lastError = null;
+      const maxAttempts = 3;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const res = await gatewayFetch("/ctrader/order", "POST", payload, 20000);
+          if (res && res.ok && res.order?.positionId) {
+            console.log(`[CTRADER ORDER SUCCESS] Position ID #${res.order.positionId} confirmed by broker (attempt ${attempt}/${maxAttempts}) (${res.order.lots || CTRADER_LOT_SIZE} lots @ ${res.order.entryPrice || 'market'}).`);
+            return String(res.order.positionId);
+          }
+          const errDetail = res?.error || res?.message || (res ? JSON.stringify(res) : "Unknown broker error");
+          throw new Error(`cTrader order rejected by broker: ${errDetail}`);
+        } catch (attemptErr) {
+          lastError = attemptErr;
+          console.warn(`[CTRADER ORDER ATTEMPT ${attempt}/${maxAttempts} FAILED] ${attemptErr.message}`);
+          if (attempt < maxAttempts) {
+            await new Promise(r => setTimeout(r, 1500 * attempt));
+          }
+        }
       }
-      const errDetail = res?.error || res?.message || (res ? JSON.stringify(res) : "Unknown broker error");
-      throw new Error(`cTrader order rejected by broker: ${errDetail}`);
+      throw lastError;
     } catch (e) {
       console.error(`[TRADE EXECUTION ERROR] cTrader order failed: ${e.message}`);
       // User policy: STRICT cTrader execution. Never silently fall back to Deriv!
@@ -1249,8 +1273,8 @@ const __dirname = path.dirname(__filename);
 const STATE_FILE_PATH = path.resolve(__dirname, "state.json");
 const TRADES_FILE_PATH = path.resolve(__dirname, "trades.json");
 
-const ENGINE_VERSION = "v6.6-v75-1s-dynamic-runner";
-const CODE_TIMESTAMP = "2026-10-21T01:30:00Z";
+const ENGINE_VERSION = "v6.7-gateway-resilience-hardened";
+const CODE_TIMESTAMP = "2026-10-21T07:45:00Z";
 
 const ALLOWED_STATE_KEYS = new Set([
   "engineVersion", "codeTimestamp", "symbol", "strategyProfile", "currentPrice",
@@ -1337,6 +1361,74 @@ function saveTrades(t) { fs.writeFileSync(TRADES_FILE_PATH, JSON.stringify(t, nu
 
 // ==================== FAST PATH: RISK MANAGEMENT (ADAPTIVE: 3S IN-TRADE / 10S IDLE) ====================
 const closingContracts = new Set();
+
+async function processQueuedPendingOrder(currentPrice) {
+  const queued = state.queuedPendingOrder;
+  if (!queued) return;
+  const nowEpoch = Math.floor(Date.now() / 1000);
+
+  // Check if expired (2.5 minutes elapsed without gateway reconnection)
+  if (nowEpoch > queued.expiresEpoch) {
+    console.warn(`[${REPO_LABEL}] Queued pending order expired after 2.5 minutes without gateway reconnection.`);
+    const tIdx = trades.findIndex(t => t.id === queued.tradeRecordId);
+    if (tIdx !== -1) {
+      trades.splice(tIdx, 1);
+      saveTrades(trades);
+    }
+    state.queuedPendingOrder = null;
+    saveState();
+    await sendTelegram(`⌛ *${REPO_LABEL}* — Execution window expired (gateway was unavailable for 2.5 minutes). Trade aborted safely.`);
+    return;
+  }
+
+  // Throttle retries to once every 5 seconds so we don't spam during an outage
+  if (nowEpoch - (queued.lastAttemptEpoch || 0) < 5) {
+    return;
+  }
+  queued.lastAttemptEpoch = nowEpoch;
+  queued.retryAttempts = (queued.retryAttempts || 1) + 1;
+
+  console.log(`[${REPO_LABEL}] Retrying queued pending order (attempt ${queued.retryAttempts}, ${queued.expiresEpoch - nowEpoch}s remaining)...`);
+
+  try {
+    const contractId = await executeTrade(queued.direction, queued.orderContext);
+    if (contractId) {
+      const tIdx = trades.findIndex(t => t.id === queued.tradeRecordId);
+      if (tIdx !== -1) {
+        trades[tIdx].contractId = contractId;
+        trades[tIdx].pending = false;
+        trades[tIdx].entry = currentPrice || trades[tIdx].entry;
+        saveTrades(trades);
+        state.openTrade = {
+          ...trades[tIdx],
+          entryPrice: trades[tIdx].entry,
+          stopLoss: trades[tIdx].sl,
+          tpPrice: trades[tIdx].tpPrice,
+          unrealizedPnl: 0,
+          livePnl: 0,
+          profit: 0
+        };
+      }
+      state.armed = null;
+      state.armedEpoch = null;
+      state.armedTime = null;
+      state.confirm = null;
+      state.nextPhase = null;
+      state.queuedPendingOrder = null;
+      saveState();
+
+      await sendTelegram(
+        `⚡ *${REPO_LABEL} — RECONNECTED & FILLED!* ⚡\n\n` +
+        `Gateway connection restored! Order executed successfully after ${queued.retryAttempts} attempts.`
+      );
+      if (queued.message) {
+        await sendTelegram(queued.message);
+      }
+    }
+  } catch (err) {
+    console.warn(`[${REPO_LABEL}] Queued order retry failed: ${err.message}. Retrying until expiration...`);
+  }
+}
 
 async function manageOpenTradesFastPath() {
   let trades = loadTrades();
@@ -2113,9 +2205,24 @@ async function checkAndExecuteImmediateReentry(spotPrice) {
       );
     }
   } catch (execErr) {
-    trades.splice(trades.findIndex(t => t.id === pendingTradeRecord.id), 1);
-    saveTrades(trades);
-    console.error(`[${REPO_LABEL}] Immediate re-entry execution failed:`, execErr.message);
+    console.error(`[${REPO_LABEL}] Immediate re-entry execution initial attempt failed: ${execErr.message}. Queueing for 2.5-min reconnect...`);
+    state.queuedPendingOrder = {
+      tradeRecordId: pendingTradeRecord.id,
+      direction,
+      orderContext: { slPrice: sl, fibTpPrice: tpPrice, tpPrice },
+      signalEpoch: nowEpoch,
+      expiresEpoch: nowEpoch + 150,
+      message: `⚡ *${SYMBOL_NAME.toUpperCase()} — IMMEDIATE RE-ENTRY EXECUTED* ⚡\n\nDirection: *${direction}*\nSetup: *${escapeMarkdown(setupLabel)}*`,
+      firstFailureMessage: execErr.message,
+      retryAttempts: 1,
+      lastAttemptEpoch: nowEpoch
+    };
+    saveState();
+    await sendTelegram(
+      `⚠️ *${REPO_LABEL} — Immediate Re-Entry Paused (Gateway Transient Error)*\n\n` +
+      `Reason: \`${escapeMarkdown(execErr.message)}\`\n` +
+      `🔄 *Auto-Reconnect Engine Active*: Retrying order execution continuously over the next 2.5 minutes.`
+    );
   }
 }
 
@@ -4753,8 +4860,24 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         await sendTelegram(message);
       }
     } catch (execErr) {
-      trades.splice(trades.findIndex(t => t.id === pendingTradeRecord.id), 1); saveTrades(trades);
-      await sendTelegram(`❌ *${REPO_LABEL}* — Live execution failed: ${execErr.message}`);
+      console.error(`[${REPO_LABEL}] Live execution initial attempt failed: ${execErr.message}. Queueing for 2.5-min reconnect...`);
+      state.queuedPendingOrder = {
+        tradeRecordId: pendingTradeRecord.id,
+        direction,
+        orderContext: { slPrice: sl, fibTpPrice: tpPrice, tpPrice },
+        signalEpoch: m5BoundaryEpoch,
+        expiresEpoch: m5BoundaryEpoch + 150,
+        message,
+        firstFailureMessage: execErr.message,
+        retryAttempts: 1,
+        lastAttemptEpoch: Math.floor(Date.now() / 1000)
+      };
+      saveState();
+      await sendTelegram(
+        `⚠️ *${REPO_LABEL} — Live Execution Paused (Gateway Transient Error)*\n\n` +
+        `Reason: \`${escapeMarkdown(execErr.message)}\`\n` +
+        `🔄 *Auto-Reconnect Engine Active*: Retrying order execution continuously over the next 2.5 minutes as connection restores.`
+      );
     }
   }
 
@@ -4997,6 +5120,11 @@ export async function startContinuousEngine() {
       const currentM5Boundary = nowEpoch - (nowEpoch % 300);
 
       hasOpenTrade = await manageOpenTradesFastPath();
+
+      // 🔄 Auto-Reconnect Engine: If an order was paused due to gateway 500/timeout, process retries
+      if (state.queuedPendingOrder && !hasOpenTrade) {
+        await processQueuedPendingOrder(state.currentPrice);
+      }
 
       // ⚡ Immediate Re-Entry Watchdog: When an active trade closes, immediately check for re-entry opportunities
       if (previousHasOpenTrade && !hasOpenTrade && !state.dailyTargetReached) {
