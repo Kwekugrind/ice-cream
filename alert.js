@@ -2107,7 +2107,7 @@ async function checkAndExecuteImmediateReentry(spotPrice) {
         `Setup: *${escapeMarkdown(setupLabel)}*\n` +
         `📍 Entry: *${price.toFixed(4)}*\n` +
         `🛑 Initial SL: *${sl.toFixed(4)}*\n` +
-        `🎯 Take Profit: *${tpPrice.toFixed(4)}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n` +
+        `🎯 Take Profit: *${tpPrice ? tpPrice.toFixed(4) : "Dynamic Runner"}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n` +
         `💰 Stake: $${STAKE_USD} | Mode: ${EXECUTION_MODE === "ctrader" ? `cTrader CFD (${CTRADER_LOT_SIZE} lots)` : `Multiplier ${MULTIPLIER}x`}\n` +
         `⏰ Time (UTC): ${timeFormatted}`
       );
@@ -4651,13 +4651,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
                          `• M5 EMA 100: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > EMA 100" : "Price < EMA 100"})\n` +
                          `• M5 Fast Stoch (5,3,3): *%K ${(sK533 !== null ? sK533.toFixed(1) : "N/A")}* | *%D ${(sD533 !== null ? sD533.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">20 Pullback Exit" : "<80 Pullback Exit"})\n` +
                          `• Trigger Type: *${setupLabel}*\n` +
-                         `• Take Profit Target: *${tpPrice.toFixed(4)}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n` +
+                         `• Take Profit Target: *${tpPrice ? tpPrice.toFixed(4) : "Dynamic Runner"}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n` +
                          `• Early Invalidation: *3 Adverse M5 Closes / Stoch 200 Invalidation / Closed-M5 Stoch (15,2,5) Lvl 50 Cross*\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V75_EMA_STOCH15") {
       confluenceLines += `• M5 Price vs EMA 100/200: *Price (${entry.toFixed(2)}) ${direction === "BUY" ? ">" : "<"} EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"}) | EMA 200 (${currentEma200 ? currentEma200.toFixed(2) : "N/A"})*\n` +
                          `• Setup Mode: *${setupLabel}*\n` +
                          `• M5 Stoch (15,2,5 Simple): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")} (prev: ${(prevK !== null ? prevK.toFixed(1) : "N/A")})* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}* [FRESH LEVEL CROSS TRIGGERED]\n` +
-                         `• Take Profit Target: *${tpPrice.toFixed(2)}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Stop)\n` +
+                         `• Take Profit Target: *${tpPrice ? tpPrice.toFixed(2) : "Dynamic Runner"}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Stop)\n` +
                          `• Early Exit Engine: *Loss Protection (%K/%D Cross) / Closed-M5 Stoch 50 Cross / Entry-Hour H1 Adverse Close*\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15") {
       confluenceLines += `• M5 Stoch 200: *${(sK200 !== null ? sK200.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [BULLISH TREND]" : "<50 [BEARISH TREND]"})\n` +
@@ -4665,7 +4665,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
                          `• M5 EMA 100: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > EMA 100" : "Price < EMA 100"})\n` +
                          `• M5 Aux Stoch (15,2,5 Simple): *%K ${(sK1525 !== null ? sK1525.toFixed(1) : "N/A")}* | *%D ${(sD1525 !== null ? sD1525.toFixed(1) : "N/A")}*\n` +
                          `• Trigger Type: *${setupLabel}*\n` +
-                         `• Take Profit Target: *${tpPrice.toFixed(4)}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n` +
+                         `• Take Profit Target: *${tpPrice ? tpPrice.toFixed(4) : "Dynamic Runner"}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n` +
                          `• Early Invalidation: *3 Consecutive Adverse M5 Closes / Stoch 200 / Closed-M5 Stoch 50 Profit Cross / Entry-Hour H1 Adverse Close*\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
       confluenceLines += `• M5 Stoch 200: *${(sK200 !== null ? sK200.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">=50 [BULLISH TREND]" : "<=50 [BEARISH TREND]"})\n` +
@@ -4673,7 +4673,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
                          `• M5 EMA 100: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > EMA 100" : "Price < EMA 100"})\n` +
                          `• M5 Stoch (5,3,3): *%K ${(sK533 !== null ? sK533.toFixed(1) : "N/A")}* | *%D ${(sD533 !== null ? sD533.toFixed(1) : "N/A")}* | M5 Stoch (15,2,5): *%K ${(sK1525 !== null ? sK1525.toFixed(1) : "N/A")}*\n` +
                          `• Trigger Type: *${setupLabel}*\n` +
-                         `• Take Profit Target: *${tpPrice.toFixed(4)}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n` +
+                         `• Take Profit Target: *${tpPrice ? tpPrice.toFixed(4) : "Dynamic Runner"}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n` +
                          `• Early Invalidation: *3 Consecutive Adverse M5 Closes / Stoch 200 / Stoch (15,2,5) Loss Exit / H1 Adverse Close*\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
       confluenceLines += `• M5 Stoch 200 (48/52): *${(sK200 !== null ? sK200.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">48 [BULLISH TREND]" : "<52 [BEARISH TREND]"})\n` +
@@ -4686,13 +4686,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
                          `• M5 EMA 100: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > EMA 100" : "Price < EMA 100"})\n` +
                          `• M5 CCI 100: *${(cVal !== null ? cVal.toFixed(1) : "N/A")}* | M5 Stoch (15,2,5): *%K ${(sK1525 !== null ? sK1525.toFixed(1) : "N/A")}*\n` +
                          `• Trigger Type: *${setupLabel || "STANDARD"}*\n` +
-                         `• Take Profit Target: *${tpPrice.toFixed(4)}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n` +
+                         `• Take Profit Target: *${tpPrice ? tpPrice.toFixed(4) : "Dynamic Runner"}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n` +
                          `• Early Exit Engine: *Previous M5 Fractal (${initialM5Fractal ? initialM5Fractal.toFixed(2) : "N/A"}) Break / Stoch 200 / Closed-M5 Stoch (15,2,5) Lvl 50 Cross / H1 Adverse Close*\n`;
     } else {
       confluenceLines += `• M5 Stoch (200,1,1) Trend: *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">=50 [BULLISH ARMED]" : "<=50 [BEARISH ARMED]"})\n` +
                          `• M5 EMA 100: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > EMA 100" : "Price < EMA 100"})\n` +
                          `• M5 Stoch (15,2,5) Trigger: *%K ${(sK1525 !== null ? sK1525.toFixed(1) : "N/A")}* | *%D ${(sD1525 !== null ? sD1525.toFixed(1) : "N/A")}* (${setupLabel || "STANDARD"})\n` +
-                         `• Take Profit Target: *${tpPrice.toFixed(4)}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n` +
+                         `• Take Profit Target: *${tpPrice ? tpPrice.toFixed(4) : "Dynamic Runner"}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n` +
                          `• Early Exit Engine: *Previous M5 Fractal (${initialM5Fractal ? initialM5Fractal.toFixed(2) : "N/A"}) Break / Stoch 200 / Closed-M5 Stoch (15,2,5) Lvl 50 Cross / H1 Adverse Close*\n`;
     }
     confluenceLines += `• Daily Target Progress: *$${(state.dailyNetPnl || 0).toFixed(2)} / $${DAILY_PROFIT_TARGET_USD.toFixed(2)}*`;
