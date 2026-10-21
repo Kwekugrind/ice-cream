@@ -132,12 +132,12 @@ export const INSTRUMENT_PROFILES = {
     auxStochParams: { k: 15, d: 2, slowing: 5, method: "Simple", levels: [20, 80] },
     minTakeProfitPoints: 80.0,
     minTakeProfitUsd: 4.00,
-    softwareSlUsd: 2.50,
-    trailActivationUsd: 4.00,
-    trailBufferUsd: 4.00,
-    maxHardStopPoints: 50.0,
+    softwareSlUsd: 4.00,
+    trailActivationUsd: 2.20,
+    trailBufferUsd: 1.80,
+    maxHardStopPoints: 80.0,
     slType: "M15_FRACTAL",
-    notes: "Macro Trend Stoch (200,1,1) Level 50 Gate & Initial Trigger + M5 MACD (25,75,1) Zero Line Alignment + M5 EMA 100 Baseline + M5 Aux Stoch (15,2,5 Simple) 20/80 Re-Entry Trigger + 3 Consecutive Adverse M5 Candle & Stoch 200 Invalidation Exits + Aux Stoch Level 50 Midline Profit Exit + $4.00/$4.00 Trailing Stop."
+    notes: "Macro Trend Stoch (200,1,1) Level 50 Gate & Initial Trigger + M5 MACD (25,75,1) Zero Line Alignment + M5 EMA 100 Baseline + M5 Aux Stoch (15,2,5 Simple) 20/80 Re-Entry Trigger + 3 Consecutive Adverse M5 Candle & Stoch 200 Invalidation Exits in loss + Closed-M5 Stoch (25,2,5) Level 50 Midline Profit Exit + Dynamic Runner under 4-Tier Ratchet up to $20.00 ceiling."
   },
   "R_100": {
     symbol: "R_100",
@@ -298,7 +298,7 @@ const CTRADER_LOT_SIZE = Math.max(isNaN(_rawLotSize) ? 0.01 : _rawLotSize, CTRAD
 // ── Configurable Software Stop Loss per Instrument Profile ──
 const INSTRUMENT_SOFTWARE_SL_MAP = {
   "R_25": -3.50,     // Tea Machine (V25, 400x) — Calibrated breathing room ($3.50 custom SL)
-  "1HZ75V": -2.50,   // Coffee (V75-1s, 100x)
+  "1HZ75V": -4.00,   // Coffee (V75-1s, 0.05 lots)
   "R_75": -2.50,     // Lery's Alerts (V75, 50x)
   "R_100": -4.00,    // Milk (V100, 40x) — Calibrated breathing room ($4.00 custom SL)    // Milk (V100, 40x)
   "1HZ100V": -2.50,  // Ice Cream (V100-1s, 40x)
@@ -491,7 +491,7 @@ async function getOpenPortfolio() {
 async function executeTrade(direction, orderContext = {}) {
   if (EXECUTION_MODE === "ctrader") {
     try {
-      const isDynamicRunner = STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES" || SYMBOL === "R_50";
+      const isDynamicRunner = STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES" || SYMBOL === "R_50" || STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || SYMBOL === "1HZ75V";
       const payload = {
         symbol: SYMBOL_NAME || SYMBOL,
         side: direction,
@@ -1249,8 +1249,8 @@ const __dirname = path.dirname(__filename);
 const STATE_FILE_PATH = path.resolve(__dirname, "state.json");
 const TRADES_FILE_PATH = path.resolve(__dirname, "trades.json");
 
-const ENGINE_VERSION = "v6.5-v50-dynamic-runner";
-const CODE_TIMESTAMP = "2026-10-21T01:00:00Z";
+const ENGINE_VERSION = "v6.6-v75-1s-dynamic-runner";
+const CODE_TIMESTAMP = "2026-10-21T01:30:00Z";
 
 const ALLOWED_STATE_KEYS = new Set([
   "engineVersion", "codeTimestamp", "symbol", "strategyProfile", "currentPrice",
@@ -1514,7 +1514,7 @@ async function manageOpenTradesFastPath() {
     const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction, openTrade.lots);
 
     const hardStopBreached = isBuy ? currentPrice <= hardStopPrice : currentPrice >= hardStopPrice;
-    const isDynamicRunner = STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES" || SYMBOL === "R_50";
+    const isDynamicRunner = STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES" || SYMBOL === "R_50" || STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || SYMBOL === "1HZ75V";
     const activeTpTarget = isDynamicRunner ? null : (openTrade.tpPrice || openTrade.fibTpPrice || null);
     let tpHit = false;
     if (activeTpTarget) {
@@ -2397,6 +2397,17 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           trendExhausted = true;
           exhaustionDetail = `Closed-M5 Stoch (25,2,5) Midline (50) Profit Exit — %K (${sK2525 !== null ? sK2525.toFixed(1) : "N/A"}, prev: ${prevK2525 !== null ? prevK2525.toFixed(1) : "N/A"}) crossed Level 50 opposite securing +${currentPnl.toFixed(2)}`;
         }
+      } else if (STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || SYMBOL === "1HZ75V") {
+        // Volatility 75 (1s) (1HZ75V) Closed-M5 Stoch (25,2,5) Midline (50) Profit Exit (when in profit >= $1.00):
+        // BUY: Closes on a closed M5 candle if Stoch (25,2,5) %K crosses below 50.0
+        // SELL: Closes on a closed M5 candle if Stoch (25,2,5) %K crosses above 50.0
+        const v75_1sStoch25Cross50Buy = isBuy && prevK2525 !== null && sK2525 !== null && prevK2525 >= 50.0 && sK2525 < 50.0;
+        const v75_1sStoch25Cross50Sell = !isBuy && prevK2525 !== null && sK2525 !== null && prevK2525 <= 50.0 && sK2525 > 50.0;
+        const v75_1sExhausted = (v75_1sStoch25Cross50Buy || v75_1sStoch25Cross50Sell) && currentPnl >= 1.00;
+        if (v75_1sExhausted) {
+          trendExhausted = true;
+          exhaustionDetail = `Closed-M5 Stoch (25,2,5) Midline (50) Profit Exit — %K (${sK2525 !== null ? sK2525.toFixed(1) : "N/A"}, prev: ${prevK2525 !== null ? prevK2525.toFixed(1) : "N/A"}) crossed Level 50 opposite securing +${currentPnl.toFixed(2)}`;
+        }
       } else {
         // Standardized Auxiliary Stochastic (15, 2, 5) Level 50 Midline Adverse Crossover
         // Applies to remaining Stoch instruments: V75, V75-1s, V100-1s, V50, V10
@@ -2576,9 +2587,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
       }
 
-      if (!isRunner && adverseCandleCount >= 3) {
+      if (pnl < 0 && adverseCandleCount >= 3) {
         closingContracts.add(t.contractId);
-        console.log(`[EARLY INVALIDATION] 3 consecutive M5 candles closed against ${t.direction} position while not in runner status. Exiting immediately.`);
+        console.log(`[EARLY INVALIDATION] 3 consecutive M5 candles closed against ${t.direction} position while in loss (${pnl.toFixed(2)}). Exiting immediately.`);
         try {
           const closeRes = await closeContract(t.contractId);
           if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
@@ -2878,9 +2889,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const h1ClosedAgainst = h1Eval.triggered;
       const h1OpenPrice = h1Eval.h1OpenPrice || t.entry;
 
-      if (!isRunner && h1ClosedAgainst) {
+      if (pnl < 0 && h1ClosedAgainst) {
         closingContracts.add(t.contractId);
-        console.log(`[H1 ADVERSE CLOSE EXIT] Entry-hour H1 candle closed adverse to ${t.direction} position while not in runner status. Liquidating immediately.`);
+        console.log(`[H1 ADVERSE CLOSE EXIT] Entry-hour H1 candle closed adverse to ${t.direction} position while in loss (${pnl.toFixed(2)}). Liquidating immediately.`);
         try {
           const closeRes = await closeContract(t.contractId);
           if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
@@ -4004,21 +4015,21 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state[macdArmedKeySell] = false;
     }
     // Re-Entry BUY Trigger (Aux Stoch 15,2,5 Simple for V75-1s; Fast Stoch 5,3,3 for V10)
-    else if ((isV10 ? (prevK533 !== null && sK533 !== null && prevK533 <= 20.0 && sK533 > 20.0) : (prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0)) && stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && noActiveTrades) {
+    else if ((isV10 ? (prevK533 !== null && sK533 !== null && prevK533 <= 20.0 && sK533 > 20.0) : (prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0)) && stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && (!isV10 ? Boolean(state[initialBuyDoneKey]) : true) && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
       setupLabel = isV10 ? `${prefix}_REENTRY_STOCH533 (BUY)` : `${prefix}_REENTRY_AUXSTOCH15 (BUY)`;
     }
     // Re-Entry SELL Trigger (Aux Stoch 15,2,5 Simple for V75-1s; Fast Stoch 5,3,3 for V10)
-    else if ((isV10 ? (prevK533 !== null && sK533 !== null && prevK533 >= 80.0 && sK533 < 80.0) : (prevK1525 !== null && sK1525 !== null && prevK1525 >= 80.0 && sK1525 < 80.0)) && stoch200AlignedSell && macdAlignedSell && emaBaselineSell && noActiveTrades) {
+    else if ((isV10 ? (prevK533 !== null && sK533 !== null && prevK533 >= 80.0 && sK533 < 80.0) : (prevK1525 !== null && sK1525 !== null && prevK1525 >= 80.0 && sK1525 < 80.0)) && stoch200AlignedSell && macdAlignedSell && emaBaselineSell && (!isV10 ? Boolean(state[initialSellDoneKey]) : true) && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
       setupLabel = isV10 ? `${prefix}_REENTRY_STOCH533 (SELL)` : `${prefix}_REENTRY_AUXSTOCH15 (SELL)`;
     }
 
     // Latch Re-Entry Opportunity while trade is running (for immediate entry upon trade close)
-    const hasReentryBuyOpp = (isV10 ? (prevK533 !== null && sK533 !== null && prevK533 <= 20.0 && sK533 > 20.0) : (prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0)) && stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy;
-    const hasReentrySellOpp = (isV10 ? (prevK533 !== null && sK533 !== null && prevK533 >= 80.0 && sK533 < 80.0) : (prevK1525 !== null && sK1525 !== null && prevK1525 >= 80.0 && sK1525 < 80.0)) && stoch200AlignedSell && macdAlignedSell && emaBaselineSell;
+    const hasReentryBuyOpp = (isV10 ? (prevK533 !== null && sK533 !== null && prevK533 <= 20.0 && sK533 > 20.0) : (prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0)) && stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && (!isV10 ? Boolean(state[initialBuyDoneKey]) : true);
+    const hasReentrySellOpp = (isV10 ? (prevK533 !== null && sK533 !== null && prevK533 >= 80.0 && sK533 < 80.0) : (prevK1525 !== null && sK1525 !== null && prevK1525 >= 80.0 && sK1525 < 80.0)) && stoch200AlignedSell && macdAlignedSell && emaBaselineSell && (!isV10 ? Boolean(state[initialSellDoneKey]) : true);
     if (hasReentryBuyOpp) {
       state.activeReentryOpportunity = {
         direction: "BUY",
@@ -4584,7 +4595,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     const minRequiredTp = direction === "BUY" ? Math.max(pointsTpPrice, dollarTpPrice) : Math.min(pointsTpPrice, dollarTpPrice);
 
-    const isDynamicRunner = STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES" || SYMBOL === "R_50";
+    const isDynamicRunner = STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES" || SYMBOL === "R_50" || STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || SYMBOL === "1HZ75V";
     if (isDynamicRunner) {
       fibTpPrice = null;
       entryType = entryType + " (Dynamic Runner - Tiered Ratchet & Profit Exit)";
