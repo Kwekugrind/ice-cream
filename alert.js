@@ -202,7 +202,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 3.00,
     maxHardStopPoints: 7.00,
     slType: "M5_FRACTAL",
-    notes: "400x multiplier (0.50 lots); Condition 1: M5 Stoch (200,1,1) Main Trend Identifier (cross above 50 arms BUY, cross below 50 arms SELL, unbounded); Condition 2: M5 CCI 100 zero-line cross Initial Trigger (>0 BUY / <0 SELL; or 20-min execution window waiting for Stoch 200 cross when CCI leads) + M5 Stoch (15,2,5) Re-Entry (>25 BUY / <75 SELL while Stoch 200 & CCI 100 aligned); Early Exits: 1) Previous M5 Fractal break in loss, 2) Stoch 200 Adverse Cross, 3) Closed-M5 Stoch (15,2,5) Level 50 Opposite Cross, 4) Entry-Hour H1 Adverse Close; Profit Protection: Closed-M5 Stoch (15,2,5) Midline Profit Exit & CCI 100 Zero-Line Profit Exit + Dynamic Runner Ratchet."
+    notes: "400x multiplier (0.50 lots); Condition 1: M5 Stoch (200,1,1) Main Trend Identifier (cross above 50 arms BUY, cross below 50 arms SELL, unbounded); Condition 2: M5 CCI 100 zero-line cross Initial Trigger (>0 BUY / <0 SELL; or 20-min execution window waiting for Stoch 200 cross when CCI leads) + M5 Stoch (15,2,5) Re-Entry (>25 BUY / <75 SELL while Stoch 200 & CCI 100 aligned); Early Exits: 1) Previous M5 Fractal break in loss, 2) Stoch 200 Adverse Cross, 3) Closed-M5 Stoch (15,2,5) Level 50 Opposite Cross, 4) Entry-Hour H1 Adverse Close; Profit Protection: Hardened M5 Fractal SL Buffer (min 6.00 pts / $3.00), Closed-M5 Stoch Midline Profit Exit (pnl >= $0.50) & Tier 0 Capital Shield (+ $1.50 -> + $0.50) + Dynamic Runner Ratchet."
   },
   "R_50": {
     symbol: "R_50",
@@ -1614,13 +1614,22 @@ async function manageOpenTradesFastPath() {
         console.log(`[TIER 2 STANDARD RATCHET] #${openTrade.contractId} Peak PnL +$${peak.toFixed(2)} -> Base floor expanded to +$${openTrade.lockedPnlFloor.toFixed(2)} ($1.80 trailing interval).`);
       }
     } else if (pnl >= 2.20 && !openTrade.trendRidingActive) {
-      // Tier 1: Early Capital Shield (Peak $2.20 - $3.99)
+      // Tier 1: Standard Capital Shield (Peak $2.20 - $3.99)
       // Locks +$1.00 net breakeven floor to protect capital and spread
       const targetFloor = 1.00;
       if (!openTrade.lockedPnlFloor || targetFloor > openTrade.lockedPnlFloor) {
         openTrade.lockedPnlFloor = targetFloor;
         saveTrades(trades);
         console.log(`[TIER 1 CAPITAL SHIELD] #${openTrade.contractId} PnL +$${pnl.toFixed(2)} -> Breakeven floor set to +$${openTrade.lockedPnlFloor.toFixed(2)}.`);
+      }
+    } else if (pnl >= 1.50 && !openTrade.trendRidingActive) {
+      // Tier 0: Early Capital Shield (Peak $1.50 - $2.19)
+      // Locks +$0.50 net profit floor to guarantee positive outcome and eliminate giveback
+      const targetFloor = 0.50;
+      if (!openTrade.lockedPnlFloor || targetFloor > openTrade.lockedPnlFloor) {
+        openTrade.lockedPnlFloor = targetFloor;
+        saveTrades(trades);
+        console.log(`[TIER 0 EARLY CAPITAL SHIELD] #${openTrade.contractId} PnL +$${pnl.toFixed(2)} -> Base floor set to +$${openTrade.lockedPnlFloor.toFixed(2)}.`);
       }
     }
     // =========================================================================
@@ -2153,10 +2162,16 @@ async function checkAndExecuteImmediateReentry(spotPrice) {
   if (PROFILE.slType === "HARD_POINTS") {
     sl = hardStopPrice;
   } else if (PROFILE.slType === "M5_FRACTAL") {
+    // Hardened Fractal SL Buffer: Do not anchor SL tighter than minimum buffer distance
+    // For R_25: minimum 6.00 points ($3.00), preventing tight sub-5-minute wick stopouts
+    const minFractalDist = (SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100") ? 6.00 : 0;
+    const fracDistBuy = initialM5Fractal ? (price - initialM5Fractal) : 0;
+    const fracDistSell = initialM5Fractal ? (initialM5Fractal - price) : 0;
+
     if (direction === "BUY") {
-      sl = (initialM5Fractal && initialM5Fractal > slCapPrice && initialM5Fractal < price) ? initialM5Fractal : slCapPrice;
+      sl = (initialM5Fractal && initialM5Fractal > slCapPrice && initialM5Fractal < price && fracDistBuy >= minFractalDist) ? initialM5Fractal : slCapPrice;
     } else {
-      sl = (initialM5Fractal && initialM5Fractal < slCapPrice && initialM5Fractal > price) ? initialM5Fractal : slCapPrice;
+      sl = (initialM5Fractal && initialM5Fractal < slCapPrice && initialM5Fractal > price && fracDistSell >= minFractalDist) ? initialM5Fractal : slCapPrice;
     }
   } else {
     if (direction === "BUY") {
@@ -2496,12 +2511,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         const stoch25Cross50Adverse = isBuy
           ? (prevK2525 !== null && sK2525 !== null && prevK2525 > 50.0 && sK2525 <= 50.0)
           : (prevK2525 !== null && sK2525 !== null && prevK2525 < 50.0 && sK2525 >= 50.0);
-        const v25Stoch50ProfitExit = (stoch15Cross50Adverse || stoch25Cross50Adverse) && currentPnl >= 1.00;
+        const v25Stoch50ProfitExit = (stoch15Cross50Adverse || stoch25Cross50Adverse) && currentPnl >= 0.50;
 
         if (v25Stoch50ProfitExit) {
           trendExhausted = true;
           exhaustionDetail = `Closed-M5 Stoch Midline (50) Profit Exit — %K crossed Level 50 opposite (%K15: ${sK1525?.toFixed(1)}, %K25: ${sK2525?.toFixed(1)}) securing +${currentPnl.toFixed(2)}`;
-        } else if (cciExhausted && !isRunner) {
+        } else if (cciExhausted && !isRunner && currentPnl >= 0.50) {
           trendExhausted = true;
           exhaustionDetail = `M5 CCI (${cVal !== null ? cVal.toFixed(1) : 0}, prev: ${prevCci !== null ? prevCci.toFixed(1) : 0}) crossed ${isBuy ? "<= 0.0 baseline" : ">= 0.0 baseline"}`;
         }
@@ -2511,7 +2526,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         // SELL: Closes on a closed M5 candle if Stoch (25,2,5) %K crosses above 35.0
         const v100Stoch25Cross65Buy = isBuy && prevK2525 !== null && sK2525 !== null && prevK2525 >= 65.0 && sK2525 < 65.0;
         const v100Stoch25Cross35Sell = !isBuy && prevK2525 !== null && sK2525 !== null && prevK2525 <= 35.0 && sK2525 > 35.0;
-        const v100Exhausted = (v100Stoch25Cross65Buy || v100Stoch25Cross35Sell) && currentPnl >= 1.00;
+        const v100Exhausted = (v100Stoch25Cross65Buy || v100Stoch25Cross35Sell) && currentPnl >= 0.50;
         if (v100Exhausted) {
           trendExhausted = true;
           exhaustionDetail = `Closed-M5 Stoch (25,2,5) 65/35 Profit Exit — %K (${sK2525 !== null ? sK2525.toFixed(1) : "N/A"}, prev: ${prevK2525 !== null ? prevK2525.toFixed(1) : "N/A"}) crossed ${isBuy ? "below 65.0" : "above 35.0"} securing +${currentPnl.toFixed(2)}`;
@@ -2540,7 +2555,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         // SELL: Closes on a closed M5 candle if Stoch (25,2,5) %K crosses above 50.0
         const vStoch25Cross50Buy = isBuy && prevK2525 !== null && sK2525 !== null && prevK2525 >= 50.0 && sK2525 < 50.0;
         const vStoch25Cross50Sell = !isBuy && prevK2525 !== null && sK2525 !== null && prevK2525 <= 50.0 && sK2525 > 50.0;
-        const vExhausted = (vStoch25Cross50Buy || vStoch25Cross50Sell) && currentPnl >= 1.00;
+        const vExhausted = (vStoch25Cross50Buy || vStoch25Cross50Sell) && currentPnl >= 0.50;
         if (vExhausted) {
           trendExhausted = true;
           exhaustionDetail = `Closed-M5 Stoch (25,2,5) Midline (50) Profit Exit — %K (${sK2525 !== null ? sK2525.toFixed(1) : "N/A"}, prev: ${prevK2525 !== null ? prevK2525.toFixed(1) : "N/A"}) crossed Level 50 opposite securing +${currentPnl.toFixed(2)}`;
@@ -2920,7 +2935,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
       }
 
-      if (!isRunner && adverseCandleCount >= 3) {
+      if (!isRunner && pnl < 0 && adverseCandleCount >= 3) {
         closingContracts.add(t.contractId);
         console.log(`[EARLY INVALIDATION] 3 consecutive M5 candles closed against ${t.direction} position while not in runner status. Exiting immediately.`);
         try {
@@ -2952,7 +2967,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
       // Invalidation 2: M5 Stoch 200 Crosses Adverse to Position Confirmed on M5 Close
       const isPostEntryCandle = !t.entryEpoch || candles[si].epoch > t.entryEpoch;
-      if (isPostEntryCandle && sK200 !== null) {
+      if (!isRunner && pnl < 0 && isPostEntryCandle && sK200 !== null) {
         const stoch200Adverse = isBuy ? (sK200 < 50.0) : (sK200 > 50.0);
         if (stoch200Adverse) {
           closingContracts.add(t.contractId);
@@ -4764,10 +4779,16 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     if (PROFILE.slType === "HARD_POINTS") {
       sl = hardStopPrice;
     } else if (PROFILE.slType === "M5_FRACTAL") {
+      // Hardened Fractal SL Buffer: Do not anchor SL tighter than minimum buffer distance
+      // For R_25: minimum 6.00 points ($3.00), preventing tight sub-5-minute wick stopouts
+      const minFractalDist = (SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100") ? 6.00 : 0;
+      const fracDistBuy = initialM5Fractal ? (entry - initialM5Fractal) : 0;
+      const fracDistSell = initialM5Fractal ? (initialM5Fractal - entry) : 0;
+
       if (direction === "BUY") {
-        sl = (initialM5Fractal && initialM5Fractal > slCapPrice && initialM5Fractal < entry) ? initialM5Fractal : slCapPrice;
+        sl = (initialM5Fractal && initialM5Fractal > slCapPrice && initialM5Fractal < entry && fracDistBuy >= minFractalDist) ? initialM5Fractal : slCapPrice;
       } else {
-        sl = (initialM5Fractal && initialM5Fractal < slCapPrice && initialM5Fractal > entry) ? initialM5Fractal : slCapPrice;
+        sl = (initialM5Fractal && initialM5Fractal < slCapPrice && initialM5Fractal > entry && fracDistSell >= minFractalDist) ? initialM5Fractal : slCapPrice;
       }
     } else {
       if (direction === "BUY") {
