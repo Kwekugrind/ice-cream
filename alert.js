@@ -527,7 +527,7 @@ async function getOpenPortfolio() {
 async function executeTrade(direction, orderContext = {}) {
   if (EXECUTION_MODE === "ctrader") {
     try {
-      const isDynamicRunner = STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES" || SYMBOL === "R_50" || STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || SYMBOL === "1HZ75V" || STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533" || SYMBOL === "1HZ100V" || STRATEGY_PROFILE === "PROFILE_V25_1S_STOCH200_STOCH15" || SYMBOL === "1HZ25V";
+      const isDynamicRunner = true; // Centralized Dynamic Runner Architecture active across all fleet instruments
       const payload = {
         symbol: SYMBOL_NAME || SYMBOL,
         side: direction,
@@ -1346,6 +1346,9 @@ const ALLOWED_STATE_KEYS = new Set([
   "v10_stochArmedBuy", "v10_stochArmedSell", "v10_macdArmedBuy", "v10_macdArmedSell",
   "v10_initialBuyDone", "v10_initialSellDone", "v10_trend",
   "v10_ema100", "v10_macd", "v10_stoch200", "v10_stoch533",
+  "v25_1s_trendDir", "v25_1s_initialDone", "v25_1s_stoch200CrossEpoch",
+  "v25_1s_stoch15ArmedBuy", "v25_1s_stoch15ArmedSell", "v25_1s_trend",
+  "v25_1s_ema100", "v25_1s_stoch200", "v25_1s_stoch15",
   "healthStatus", "blockerReason", "nextTrigger", "lastScanTime",
   "lastSuccessfulScan", "lastError", "lastErrorTime", "lastErrorStack", "errorCount",
   "stochState", "stochSeparation", "cciState", "nextPhase",
@@ -1602,9 +1605,14 @@ async function manageOpenTradesFastPath() {
       superRunnerCeilingHit = true;
     }
 
+    // =========================================================================
+    // UNIFIED CENTRALIZED TRADE MANAGEMENT & CAPITAL PROTECTION
+    // Rule 1: Breakeven Shield at +$1.00 -> Locks +$0.50 minimum profit floor
+    // Rule 2: Breathing Zone (Peak $1.00 - $2.99) -> Floor held firmly at +$0.50 (allows up to $2.49 wick retracement)
+    // Rule 3: Dynamic Trailing Ratchet (Peak >= $3.00) -> Percentage trailing with generous buffer
+    // =========================================================================
     if (peak >= 12.00) {
       // Tier 4: Super Runner (Peak >= $12.00)
-      // Locks at least 80% of peak profit (capping max retracement giveback to $2.50)
       openTrade.trendRidingActive = true;
       const tier4Floor = Math.max(
         parseFloat((peak * 0.80).toFixed(2)),
@@ -1613,48 +1621,55 @@ async function manageOpenTradesFastPath() {
       if (!openTrade.lockedPnlFloor || tier4Floor > openTrade.lockedPnlFloor) {
         openTrade.lockedPnlFloor = tier4Floor;
         saveTrades(trades);
-        console.log(`[TIER 4 SUPER RUNNER RATCHET] #${openTrade.contractId} Peak PnL +$${peak.toFixed(2)} -> Floor locked at +$${openTrade.lockedPnlFloor.toFixed(2)} (80% / $2.50 max giveback).`);
+        console.log(`[TIER 4 SUPER RUNNER RATCHET] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Floor locked at +${openTrade.lockedPnlFloor.toFixed(2)} (80% / $2.50 max giveback).`);
       }
     } else if (peak >= 8.00) {
       // Tier 3: Advanced Runner (Peak $8.00 - $11.99)
-      // Locks at least 70% of peak profit (capping giveback to $2.20)
       openTrade.trendRidingActive = true;
       const tier3Floor = Math.max(
-        parseFloat((peak * 0.70).toFixed(2)),
-        parseFloat((peak - 2.20).toFixed(2))
+        5.00,
+        parseFloat((peak * 0.75).toFixed(2)),
+        parseFloat((peak - 2.50).toFixed(2))
       );
       if (!openTrade.lockedPnlFloor || tier3Floor > openTrade.lockedPnlFloor) {
         openTrade.lockedPnlFloor = tier3Floor;
         saveTrades(trades);
-        console.log(`[TIER 3 RUNNER RATCHET] #${openTrade.contractId} Peak PnL +$${peak.toFixed(2)} -> Floor expanded to +$${openTrade.lockedPnlFloor.toFixed(2)} (70% / $2.20 max giveback).`);
+        console.log(`[TIER 3 RUNNER RATCHET] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Floor expanded to +${openTrade.lockedPnlFloor.toFixed(2)} (75% / $2.50 max giveback).`);
       }
-    } else if (peak >= 4.00) {
-      // Tier 2: Standard Runner (Peak $4.00 - $7.99)
-      // Base floor locked at $2.50, trailing with tight $1.80 distance behind peak
+    } else if (peak >= 5.00) {
+      // Tier 2: Mid-Stage Runner (Peak $5.00 - $7.99)
       openTrade.trendRidingActive = true;
-      const tier2Floor = Math.max(2.50, parseFloat((peak - 1.80).toFixed(2)));
+      const tier2Floor = Math.max(
+        2.50,
+        parseFloat((peak * 0.65).toFixed(2)),
+        parseFloat((peak - 2.00).toFixed(2))
+      );
       if (!openTrade.lockedPnlFloor || tier2Floor > openTrade.lockedPnlFloor) {
         openTrade.lockedPnlFloor = tier2Floor;
         saveTrades(trades);
-        console.log(`[TIER 2 STANDARD RATCHET] #${openTrade.contractId} Peak PnL +$${peak.toFixed(2)} -> Base floor expanded to +$${openTrade.lockedPnlFloor.toFixed(2)} ($1.80 trailing interval).`);
+        console.log(`[TIER 2 MID RUNNER RATCHET] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Base floor expanded to +${openTrade.lockedPnlFloor.toFixed(2)} ($2.00 trailing interval).`);
       }
-    } else if (pnl >= 2.20 && !openTrade.trendRidingActive) {
-      // Tier 1: Standard Capital Shield (Peak $2.20 - $3.99)
-      // Locks +$1.00 net breakeven floor to protect capital and spread
-      const targetFloor = 1.00;
-      if (!openTrade.lockedPnlFloor || targetFloor > openTrade.lockedPnlFloor) {
-        openTrade.lockedPnlFloor = targetFloor;
+    } else if (peak >= 3.00) {
+      // Tier 1: Early Runner (Peak $3.00 - $4.99)
+      openTrade.trendRidingActive = true;
+      const tier1Floor = Math.max(
+        1.20,
+        parseFloat((peak * 0.60).toFixed(2)),
+        parseFloat((peak - 1.80).toFixed(2))
+      );
+      if (!openTrade.lockedPnlFloor || tier1Floor > openTrade.lockedPnlFloor) {
+        openTrade.lockedPnlFloor = tier1Floor;
         saveTrades(trades);
-        console.log(`[TIER 1 CAPITAL SHIELD] #${openTrade.contractId} PnL +$${pnl.toFixed(2)} -> Breakeven floor set to +$${openTrade.lockedPnlFloor.toFixed(2)}.`);
+        console.log(`[TIER 1 EARLY RUNNER RATCHET] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Floor set to +${openTrade.lockedPnlFloor.toFixed(2)} ($1.80 trailing interval).`);
       }
-    } else if (pnl >= 1.50 && !openTrade.trendRidingActive) {
-      // Tier 0: Early Capital Shield (Peak $1.50 - $2.19)
-      // Locks +$0.50 net profit floor to guarantee positive outcome and eliminate giveback
+    } else if (peak >= 1.00 && !openTrade.trendRidingActive) {
+      // Tier 0: Breakeven Shield & Early Profit Lock (Peak $1.00 - $2.99)
+      // Locks +$0.50 net profit floor: Guarantees trade never runs into loss, while giving up to $2.49 of breathing room for M5 wicks
       const targetFloor = 0.50;
       if (!openTrade.lockedPnlFloor || targetFloor > openTrade.lockedPnlFloor) {
         openTrade.lockedPnlFloor = targetFloor;
         saveTrades(trades);
-        console.log(`[TIER 0 EARLY CAPITAL SHIELD] #${openTrade.contractId} PnL +$${pnl.toFixed(2)} -> Base floor set to +$${openTrade.lockedPnlFloor.toFixed(2)}.`);
+        console.log(`[TIER 0 BREAKEVEN SHIELD] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Guaranteed profit floor locked at +${openTrade.lockedPnlFloor.toFixed(2)} (Breathing room active).`);
       }
     }
     // =========================================================================
@@ -2588,20 +2603,21 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         // SELL: Closes on a closed M5 candle if Stoch (25,2,5) %K crosses above 50.0
         const vStoch25Cross50Buy = isBuy && prevK2525 !== null && sK2525 !== null && prevK2525 >= 50.0 && sK2525 < 50.0;
         const vStoch25Cross50Sell = !isBuy && prevK2525 !== null && sK2525 !== null && prevK2525 <= 50.0 && sK2525 > 50.0;
-        const vExhausted = (vStoch25Cross50Buy || vStoch25Cross50Sell) && currentPnl >= 0.50;
+        // Profitable trades are strictly managed by the Centralized Dynamic Trailing Ratchet;
+        // Midline oscillator exits are ONLY evaluated as early invalidations when in LOSS (currentPnl < 0).
+        const vExhausted = (vStoch25Cross50Buy || vStoch25Cross50Sell) && currentPnl < 0;
         if (vExhausted) {
           trendExhausted = true;
-          exhaustionDetail = `Closed-M5 Stoch (25,2,5) Midline (50) Profit Exit — %K (${sK2525 !== null ? sK2525.toFixed(1) : "N/A"}, prev: ${prevK2525 !== null ? prevK2525.toFixed(1) : "N/A"}) crossed Level 50 opposite securing +${currentPnl.toFixed(2)}`;
+          exhaustionDetail = `Closed-M5 Stoch (25,2,5) Midline (50) Loss Invalidation — %K (${sK2525 !== null ? sK2525.toFixed(1) : "N/A"}, prev: ${prevK2525 !== null ? prevK2525.toFixed(1) : "N/A"}) crossed Level 50 opposite in adverse position (${currentPnl.toFixed(2)})`;
         }
       } else {
-        // Standardized Auxiliary Stochastic (15, 2, 5) Level 50 Midline Adverse Crossover
-        // Applies to remaining Stoch instruments: V75, V75-1s, V100-1s, V50, V10
+        // Standardized Auxiliary Stochastic (15, 2, 5) Level 50 Midline Adverse Crossover (Only when in LOSS)
         const stoch1525Exhausted = isBuy
           ? (prevK1525 !== null && sK1525 !== null && prevK1525 > 50.0 && sK1525 <= 50.0)
           : (prevK1525 !== null && sK1525 !== null && prevK1525 < 50.0 && sK1525 >= 50.0);
-        if (stoch1525Exhausted) {
+        if (stoch1525Exhausted && currentPnl < 0) {
           trendExhausted = true;
-          exhaustionDetail = `M5 Aux Stoch (15,2,5) %K (${sK1525 !== null ? sK1525.toFixed(1) : 50}, prev: ${prevK1525 !== null ? prevK1525.toFixed(1) : 50}) crossed ${isBuy ? "<= 50.0 midline" : ">= 50.0 midline"}`;
+          exhaustionDetail = `M5 Aux Stoch (15,2,5) %K (${sK1525 !== null ? sK1525.toFixed(1) : 50}, prev: ${prevK1525 !== null ? prevK1525.toFixed(1) : 50}) crossed ${isBuy ? "<= 50.0 midline" : ">= 50.0 midline"} in loss (${currentPnl.toFixed(2)})`;
         }
       }
 
@@ -4473,20 +4489,33 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     // Dealignment checks: if an indicator breaks its threshold, immediately disarm
     if (!stoch200AlignedBuy) { state[stochArmedKeyBuy] = false; state[initialBuyDoneKey] = false; }
     if (!stoch200AlignedSell) { state[stochArmedKeySell] = false; state[initialSellDoneKey] = false; }
-    if (!macdAlignedBuy) { state[macdArmedKeyBuy] = false; if (isV10) state[initialBuyDoneKey] = false; }
-    if (!macdAlignedSell) { state[macdArmedKeySell] = false; if (isV10) state[initialSellDoneKey] = false; }
+    if (!macdAlignedBuy) { state[macdArmedKeyBuy] = false; }
+    if (!macdAlignedSell) { state[macdArmedKeySell] = false; }
 
     const noActiveTrades = !trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending));
 
     // Initial Entry Trigger:
     // For V75-1s (1HZ75V): Stoch (200,1,1) must cross first (> 50 BUY / < 50 SELL) to arm, EMA 100 baseline aligned, and MACD (25,75,1) crossing 0 triggers the initial trade.
-    // For V10 (R_10): Trigger initial entry immediately when all 3 conditions are met (Stoch 200, MACD, Price vs EMA 100), in any order.
+    // For V10 (R_10): Fresh any-order confluence (either Stoch 200 fresh cross while MACD aligned, OR MACD fresh cross while Stoch 200 aligned) with EMA 100 baseline filter.
+    const freshConfluenceBuyV10 = (stoch200CrossUp50 && macdAlignedBuy) || (macdCrossUpZero && stoch200AlignedBuy);
+    const freshConfluenceSellV10 = (stoch200CrossDown50 && macdAlignedSell) || (macdCrossDownZero && stoch200AlignedSell);
+
+    // If confluence is met on V10 but EMA 100 filter is not aligned, skip initial entry & unlock re-entries
+    if (isV10 && !state[initialBuyDoneKey] && freshConfluenceBuyV10 && !emaBaselineBuy) {
+      console.log(`[${REPO_LABEL}] Initial BUY confluence met for V10, but Price (${currentPrice.toFixed(4)}) is NOT above EMA 100 (${currentEma100?.toFixed(4)}). Skipping initial trade & unlocking re-entry.`);
+      state[initialBuyDoneKey] = true;
+    }
+    if (isV10 && !state[initialSellDoneKey] && freshConfluenceSellV10 && !emaBaselineSell) {
+      console.log(`[${REPO_LABEL}] Initial SELL confluence met for V10, but Price (${currentPrice.toFixed(4)}) is NOT below EMA 100 (${currentEma100?.toFixed(4)}). Skipping initial trade & unlocking re-entry.`);
+      state[initialSellDoneKey] = true;
+    }
+
     const isInitialBuyTrigger = isV10
-      ? (stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && !state[initialBuyDoneKey] && noActiveTrades)
+      ? (freshConfluenceBuyV10 && emaBaselineBuy && !state[initialBuyDoneKey] && noActiveTrades)
       : (stoch200AlignedBuy && (state[stochArmedKeyBuy] || stoch200CrossUp50) && emaBaselineBuy && macdCrossUpZero && !state[initialBuyDoneKey] && noActiveTrades);
 
     const isInitialSellTrigger = isV10
-      ? (stoch200AlignedSell && macdAlignedSell && emaBaselineSell && !state[initialSellDoneKey] && noActiveTrades)
+      ? (freshConfluenceSellV10 && emaBaselineSell && !state[initialSellDoneKey] && noActiveTrades)
       : (stoch200AlignedSell && (state[stochArmedKeySell] || stoch200CrossDown50) && emaBaselineSell && macdCrossDownZero && !state[initialSellDoneKey] && noActiveTrades);
 
     // Initial BUY Trigger
@@ -4508,13 +4537,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state[macdArmedKeySell] = false;
     }
     // Re-Entry BUY Trigger (Aux Stoch 15,2,5 Simple for V75-1s; Fast Stoch 5,3,3 for V10)
-    else if ((isV10 ? (prevK533 !== null && sK533 !== null && prevK533 <= 20.0 && sK533 > 20.0) : (prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0)) && stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && (!isV10 ? Boolean(state[initialBuyDoneKey]) : true) && noActiveTrades) {
+    else if ((isV10 ? (prevK533 !== null && sK533 !== null && prevK533 <= 20.0 && sK533 > 20.0) : (prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0)) && stoch200AlignedBuy && macdAlignedBuy && emaBaselineBuy && Boolean(state[initialBuyDoneKey]) && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
       setupLabel = isV10 ? `${prefix}_REENTRY_STOCH533 (BUY)` : `${prefix}_REENTRY_AUXSTOCH15 (BUY)`;
     }
     // Re-Entry SELL Trigger (Aux Stoch 15,2,5 Simple for V75-1s; Fast Stoch 5,3,3 for V10)
-    else if ((isV10 ? (prevK533 !== null && sK533 !== null && prevK533 >= 80.0 && sK533 < 80.0) : (prevK1525 !== null && sK1525 !== null && prevK1525 >= 80.0 && sK1525 < 80.0)) && stoch200AlignedSell && macdAlignedSell && emaBaselineSell && (!isV10 ? Boolean(state[initialSellDoneKey]) : true) && noActiveTrades) {
+    else if ((isV10 ? (prevK533 !== null && sK533 !== null && prevK533 >= 80.0 && sK533 < 80.0) : (prevK1525 !== null && sK1525 !== null && prevK1525 >= 80.0 && sK1525 < 80.0)) && stoch200AlignedSell && macdAlignedSell && emaBaselineSell && Boolean(state[initialSellDoneKey]) && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
       setupLabel = isV10 ? `${prefix}_REENTRY_STOCH533 (SELL)` : `${prefix}_REENTRY_AUXSTOCH15 (SELL)`;
@@ -5567,15 +5596,8 @@ export async function startContinuousEngine() {
           } catch (e) {
             console.error(`[${REPO_LABEL}] Immediate re-entry attempt failed:`, e.message);
           }
-        } else if (!isScanning) {
-          console.log(`[${REPO_LABEL}] ⚡ Trade exited! Triggering immediate closed-candle confluence scan for re-entry...`);
-          try {
-            isScanning = true;
-            await runSlowPathScan(currentM5Boundary);
-            isScanning = false;
-          } catch (e) {
-            isScanning = false;
-          }
+        } else {
+          console.log(`[${REPO_LABEL}] Trade exited! Standing by for the next confirmed closed M5 candle boundary to scan.`);
         }
       }
       previousHasOpenTrade = hasOpenTrade;

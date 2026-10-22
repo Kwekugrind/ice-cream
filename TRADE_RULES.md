@@ -9,12 +9,12 @@ All active trading bots operate on cTrader Open API execution, targeting a **$4.
 
 | Bot Label | PM2 Name | Server | Directory Path | Symbol | Symbol ID | Lot Size | Stake | Strategy Gate | Min TP Pts ($4 Net) | Max Hard SL Pts |
 |---|---|---|---|---|---|---|---|---|---|---|
-| **Lery's Alerts** | `lery-v75` | S1 | `~/trading-bots/Lery-s-Alerts` | Volatility 75 | `R_75` | 0.01 Lots | $5.00 | M5 EMA 100/200 2-Step Initial (80/20) & EMA 100 Touch Retracement (20/80) | 400.0 pts | 250.0 pts |
-| **Coffee Machine** | `coffee-v75-1s` | S1 | `~/trading-bots/coffee` | Volatility 75 (1s) | `1HZ75V` | 0.05 Lots | $5.00 | Sequential Stoch 200 -> MACD (25,75,1) + EMA 100 + Stoch (15,2,5) Re-Entry (20/80) | 80.0 pts | 50.0 pts |
-| **Milk Machine** | `milk-v100` | S1 | `~/trading-bots/milk` | Volatility 100 | `R_100` | 1.00 Lot | $5.00 | M5 Stoch 200 (48/52) Trend + M5 Stoch (15,2,5) 50 Cross & Extreme Re-Entry (20/80) | 4.00 pts | 2.50 pts |
+| **Lery's Alerts** | `lery-v75` | S1 | `~/trading-bots/Lery-s-Alerts` | Volatility 75 | `R_75` | 0.01 Lots | $5.00 | M5 EMA 100/200 2-Step Initial (50/50 Fresh Cross, Pre-Level Invalidation) & EMA 100 Touch Retracement (20/80) | 400.0 pts | 250.0 pts |
+| **Coffee Machine** | `coffee-v75-1s` | S1 | `~/trading-bots/coffee` | Volatility 75 (1s) | `1HZ75V` | 0.05 Lots | $5.00 | Sequential Stoch 200 -> MACD (25,75,1) + EMA 100 + Stoch (15,2,5) Re-Entry (20/80) & Stoch (25,2,5) Midline Exit | Dynamic ($20 Max) | 80.0 pts |
+| **Milk Machine** | `milk-v100` | S1 | `~/trading-bots/milk` | Volatility 100 | `R_100` | 1.00 Lot | $5.00 | M5 Stoch 200 (48/52) Trend + M5 Stoch (15,2,5) 50 Cross & Stoch (25,2,5) 65/35 Exit | Dynamic ($20 Max) | 4.00 pts |
 | **Tea Machine** | `tea-v25` | S1 | `~/trading-bots/tea` | Volatility 25 | `R_25` | 0.50 Lots | $5.00 | M5 Stoch (200,1,1) Trend + CCI 100 Zero Cross + Stoch (15,2,5) Re-Entry (25/75) | 8.00 pts | 5.00 pts |
-| **Ice Cream** | `ice-cream-100-1s` | S2 | `~/trading-bots/ice-cream` | Volatility 100 (1s) | `1HZ100V` | 1.00 Lot | $5.00 | M5 Stoch 200 + MACD (25,75,1) + EMA 100 + Stoch (5,3,3) Extreme Re-Entry (20/80) | 4.00 pts | 2.50 pts |
-| **OmniSight** | `omni-v50` | S2 | `~/trading-bots/OmniSight` | Volatility 50 | `R_50` | 4.00 Lots | $5.00 | M5 Stoch (200,1,1) Trend + M5 Stoch (15,2,5) 50 Cross & Re-Entry (25 Buy / 85 Sell) | 1.00 pt | 0.625 pts |
+| **Ice Cream** | `ice-cream-100-1s` | S2 | `~/trading-bots/ice-cream` | Volatility 25 (1s) | `1HZ25V` | 0.005 Lots | $5.00 | M5 Stoch 200 (45/55) + Stoch (15,2,5) (75/25) + EMA 100 Filter (Skip & Await Re-Entry) + Pullback Re-Entry (25/75) | Dynamic ($20 Max) | 600.0 pts |
+| **OmniSight** | `omni-v50` | S2 | `~/trading-bots/OmniSight` | Volatility 50 | `R_50` | 4.00 Lots | $5.00 | M5 Stoch (200,1,1) Trend + M5 Stoch (15,2,5) 50 Cross, Re-Entry (20/80) & Stoch (25,2,5) Midline Exit | Dynamic ($20 Max) | 1.00 pt |
 | **Test Bot** | `test-v10` | S2 | `~/trading-bots/Test-Bot` | Volatility 10 | `R_10` | 0.50 Lots | $5.00 | M5 Stoch 200 + MACD (25,75,1) + EMA 100 Any-Order + Stoch (5,3,3) Re-Entry (20/80) | 8.00 pts | 5.00 pts |
 
 ---
@@ -26,22 +26,23 @@ All active trading bots operate on cTrader Open API execution, targeting a **$4.
 
 ---
 
-## 3. FOUR-TIER DYNAMIC PROFIT RATCHET & RUNNER IMMUNITY ENGINE
+## 3. UNIFIED CENTRALIZED TRADE MANAGEMENT & CAPITAL PROTECTION ENGINE
 
-* **Software Stop Loss (-$2.50 / -$3.50 on `R_25`):** Hard software cap liquidates trade at -$2.50 unrealized PnL (-$3.50 on `R_25`).
-* **Hard Broker Stop Loss (-$5.00):** Broker-level safety order.
-* **Tier 1 Breakeven Shield (+$2.20 Floating Profit):** Locks in `+$1.00` net profit floor to guarantee positive trade and cover broker spread.
-* **Tier 2 Standard Runner Ratchet (+$4.00 to +$7.99 Peak Profit):** Locks in `+$2.50` base profit floor and trails tightly `$1.80` behind peak unrealized profit (`maxUnrealizedPnL`):
-  $$\text{lockedPnlFloor} = \max(+\$2.50, \text{maxUnrealizedPnL} - \$1.80)$$
-* **Tier 3 Advanced Runner Ratchet (+$8.00 to +$11.99 Peak Profit):** Locks in at least **70% of peak profit** (capping maximum giveback to `$2.20`):
-  $$\text{lockedPnlFloor} = \max(\text{lockedPnlFloor}, \text{maxUnrealizedPnL} \times 0.70, \text{maxUnrealizedPnL} - \$2.20)$$
-  *Example:* At +$10.00 peak $\rightarrow$ floor locked at `+$7.80`. At +$12.00 peak $\rightarrow$ floor locked at `+$9.50`.
-* **Tier 4 Super Runner Ratchet (+$12.00+ Peak Profit):** Locks in at least **80% of peak profit** (capping maximum giveback to `$2.50`):
-  $$\text{lockedPnlFloor} = \max(\text{lockedPnlFloor}, \text{maxUnrealizedPnL} \times 0.80, \text{maxUnrealizedPnL} - \$2.50)$$
-  *Example:* At +$15.00 peak $\rightarrow$ floor locked at `+$12.50`. At +$20.00 peak $\rightarrow$ floor locked at `+$16.00`.
+* **Software Stop Loss (-$2.50 / -$3.50 on `R_25` / -$4.00 on `R_100`, `R_50`, `1HZ75V`, and `1HZ25V`):** Hard software risk floor executed by the 2-second fast-path watchdog.
+* **Hard Broker Stop Loss (-$5.00):** cTrader broker-level safety order placed immediately upon execution.
+* **Tier 0 Breakeven Shield (Peak $\ge +\$1.00$):** The instant floating profit touches `+$1.00`, the software SL floor locks in at `+$0.50`. Guarantees that **no trade reaching +$1.00 can ever close in a loss**.
+* **The Breathing Zone (Peak $\$1.00$ to $\$2.99$):** The profit floor is held firmly at `+$0.50` throughout this entire zone. By not clamping floors too close to the price (e.g. leaving up to `$2.49` of retracement tolerance at `+$2.99` peak), normal M5 candle wicks will not choke out winning trades.
+* **Tier 1 Early Runner Ratchet (Peak $\$3.00$ to $\$4.99$):** Activates dynamic percentage trailing:
+  $\text{lockedPnlFloor} = \max(+\$1.20, \text{maxUnrealizedPnL} \times 0.60, \text{maxUnrealizedPnL} - \$1.80)$
+* **Tier 2 Mid-Stage Runner Ratchet (Peak $\$5.00$ to $\$7.99$):**
+  $\text{lockedPnlFloor} = \max(+\$2.50, \text{maxUnrealizedPnL} \times 0.65, \text{maxUnrealizedPnL} - \$2.00)$
+* **Tier 3 Advanced Runner Ratchet (Peak $\$8.00$ to $\$11.99$):** Locks in at least **75% of peak profit** (capping maximum giveback to `$2.50`):
+  $\text{lockedPnlFloor} = \max(+\$5.00, \text{maxUnrealizedPnL} \times 0.75, \text{maxUnrealizedPnL} - \$2.50)$
+* **Tier 4 Super Runner Ratchet (Peak $\ge \$12.00$):** Locks in at least **80% of peak profit** (capping maximum giveback to `$2.50`):
+  $\text{lockedPnlFloor} = \max(+\$7.50, \text{maxUnrealizedPnL} \times 0.80, \text{maxUnrealizedPnL} - \$2.50)$
 * **Hard Take Profit / Super Runner Cash-out Ceiling (+$20.00):** Instant market cash-out upon touching `+$20.00` floating profit.
-* **Runner Immunity Mandate:** 
-  Trades in profit ($\text{PnL} \ge +\$3.50$ or active Trend-Rider) receive **Runner Immunity**. Early loss-prevention exits (such as 3 consecutive M5 adverse candles, Stoch (15,2,5) %K crossing 35/65, or Stoch %K crossing 50) are **bypassed** to allow profitable runners to breathe through routine pullbacks without being killed prematurely. The position is managed strictly by the Tiered Dynamic Ratchet and macro trend invalidations (Stoch 200 / EMA 100).
+* **Runner Immunity & Oscillator Profit Exit Abolition:** 
+  Trades in profit are immune to mid-trend oscillator exits. Closed-M5 Stoch (15,2,5) or Stoch (25,2,5) crossing level 50 opposite are evaluated **STRICTLY as early loss invalidations when in adverse position ($\text{currentPnl} < 0$)**. Profitable positions are managed exclusively by the Tiered Dynamic Ratchet and macro trend invalidations (Stoch 200).
 
 ---
 
