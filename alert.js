@@ -105,7 +105,7 @@ export const INSTRUMENT_PROFILES = {
     commissionUsd: 0.15,
     strategyProfile: "PROFILE_V75_EMA_STOCH15",
     gateType: "EMA_STOCH15_RETRACEMENT",
-    stochParams: { k: 15, d: 2, slowing: 5, method: "Simple", levels: [20, 80] },
+    stochParams: { k: 15, d: 2, slowing: 5, method: "Simple", levels: [20, 50, 80] },
     emaPeriod: 100,
     minTakeProfitPoints: 400.0,
     minTakeProfitUsd: 4.00,
@@ -113,7 +113,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 3.00,
     maxHardStopPoints: 250.0,
     slType: "M15_FRACTAL",
-    notes: "Initial Entry: Condition 1 Price crosses above/below EMA 100 & EMA 200 -> Condition 2 Fresh M5 Stoch (15,2,5 Simple) %K cross > 80 (BUY) or < 20 (SELL). Retracement Entry: Condition 1 Price physically touches EMA 100 -> Condition 2 Fresh Stoch %K cross > 20 with close > EMA 100 (BUY) or < 80 with close < EMA 100 (SELL)."
+    notes: "Initial Entry: Condition 1 Price crosses above/below EMA 100 & EMA 200 -> Condition 2 Fresh M5 Stoch (15,2,5 Simple) %K cross > 50 (BUY) or < 50 (SELL); invalid if already beyond 50. Retracement Entry: Condition 1 Price physically touches EMA 100 -> Condition 2 Fresh Stoch %K cross > 20 with close > EMA 100 (BUY) or < 80 with close < EMA 100 (SELL)."
   },
   "1HZ75V": {
     symbol: "1HZ75V",
@@ -3618,12 +3618,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   // ── A. QUANTITATIVE STATE MACHINE & SIGNAL RESOLUTION ──
   if (STRATEGY_PROFILE === "PROFILE_V75_EMA_STOCH15") {
     /*
-     AUTHORITATIVE V75 TRADER SPECIFICATION (OCTOBER 17-18, 2026):
+     AUTHORITATIVE V75 TRADER SPECIFICATION (OCTOBER 17-22, 2026):
      - Hard Filters: Never BUY when price is below EMA 100; Never SELL when price is above EMA 100.
-     - Initial Entry (2-Step):
+     - Initial Entry (2-Step Breakout Wave):
        1. Condition 1 (Arming): Price crosses above both EMA 100 & EMA 200 (BUY) or below both EMA 100 & EMA 200 (SELL).
-       2. Condition 2 (Trigger): Fresh M5 Stoch (15,2,5 Simple) %K cross above 80 (BUY) or below 20 (SELL).
-     - Retracement Entry (2-Step):
+       2. Condition 2 (Trigger): Fresh M5 Stoch (15,2,5 Simple) %K cross above 50.0 (BUY) or below 50.0 (SELL).
+          Strict Invalidation: If M5 Stoch is already beyond 50.0 (>50 BUY / <50 SELL), the setup is invalid and will not trigger.
+     - Retracement Entry (2-Step Pullback Wave):
        1. Condition 1 (Arming): Price physically touches EMA 100 (Low <= EMA 100 && High >= EMA 100).
        2. Condition 2 (Trigger): Fresh M5 Stoch (15,2,5 Simple) %K cross above 20 with Close > EMA 100 (BUY), or below 80 with Close < EMA 100 (SELL).
     */
@@ -3785,11 +3786,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       if (state.v75_initialBuyArmed && isAboveBothEma) {
         state.armed = { dir: "BUY", lbl: "V75 Price > EMA 100 & 200 (Initial BUY Armed)", lvl: currentPrice };
         if (!state.armedEpoch) { state.armedEpoch = m5BoundaryEpoch; state.armedTime = new Date(m5BoundaryEpoch * 1000).toISOString().substring(11, 16) + " UTC"; }
-        state.nextPhase = `BUY Trend (Price > EMA 100 & 200) [Initial BUY Armed: Await %K > 80]`;
+        state.nextPhase = `BUY Trend (Price > EMA 100 & 200) [Initial BUY Armed: Await Fresh %K > 50 (Invalid if already > 50)]`;
       } else if (state.v75_initialSellArmed && isBelowBothEma) {
         state.armed = { dir: "SELL", lbl: "V75 Price < EMA 100 & 200 (Initial SELL Armed)", lvl: currentPrice };
         if (!state.armedEpoch) { state.armedEpoch = m5BoundaryEpoch; state.armedTime = new Date(m5BoundaryEpoch * 1000).toISOString().substring(11, 16) + " UTC"; }
-        state.nextPhase = `SELL Trend (Price < EMA 100 & 200) [Initial SELL Armed: Await %K < 20]`;
+        state.nextPhase = `SELL Trend (Price < EMA 100 & 200) [Initial SELL Armed: Await Fresh %K < 50 (Invalid if already < 50)]`;
       } else {
         state.armed = null;
         state.armedEpoch = null;
@@ -3851,29 +3852,46 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const isAboveBothEma = currentEma100 !== null && currentEma200 !== null && cClose > currentEma100 && cClose > currentEma200;
     const isBelowBothEma = currentEma100 !== null && currentEma200 !== null && cClose < currentEma100 && cClose < currentEma200;
 
-    // Strictly Fresh Stochastic (15,2,5 Simple) %K Level 20 / Level 80 Crossovers (No %K/%D substitute)
-    const stochFreshCrossUp80 = prevK !== null && sK !== null && prevK <= 80.0 && sK > 80.0;
-    const stochFreshCrossDown20 = prevK !== null && sK !== null && prevK >= 20.0 && sK < 20.0;
+    // Fresh Stochastic (15,2,5 Simple) %K Level 50 Crossover for Initial Entry; Level 20/80 for Retracement Entry
+    const stochFreshCrossUp50 = prevK !== null && sK !== null && prevK <= 50.0 && sK > 50.0;
+    const stochFreshCrossDown50 = prevK !== null && sK !== null && prevK >= 50.0 && sK < 50.0;
+    const stochAlreadyAbove50 = prevK !== null && sK !== null && prevK > 50.0 && sK > 50.0;
+    const stochAlreadyBelow50 = prevK !== null && sK !== null && prevK < 50.0 && sK < 50.0;
     const stochFreshCrossUp20 = prevK !== null && sK !== null && prevK <= 20.0 && sK > 20.0;
     const stochFreshCrossDown80 = prevK !== null && sK !== null && prevK >= 80.0 && sK < 80.0;
 
     const noActiveTrades = !trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending));
 
-    // Setup 1: Initial Entries (Price > EMA 100 & 200 + Fresh %K > 80 for BUY / Price < EMA 100 & 200 + Fresh %K < 20 for SELL)
+    // Setup 1: Initial Entries (Price > EMA 100 & 200 + Fresh %K > 50 for BUY / Price < EMA 100 & 200 + Fresh %K < 50 for SELL)
     // NOTE: Initial entries do NOT require EMA 100 vs EMA 200 alignment!
-    if (isAboveBothEma && state.v75_initialBuyArmed && !state.v75_initialBuyDone && stochFreshCrossUp80 && noActiveTrades) {
+    // INVALIDATION RULE: If M5 Stoch (15,2,5 Simple) %K is already beyond Level 50.0, the setup is invalid and will not trigger.
+    if (isAboveBothEma && state.v75_initialBuyArmed && !state.v75_initialBuyDone && stochFreshCrossUp50 && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
-      setupLabel = "V75_INITIAL_BREAKOUT_STOCH80 (BUY)";
+      setupLabel = "V75_INITIAL_BREAKOUT_STOCH50 (BUY)";
       state.v75_initialBuyDone = true;
       state.v75_initialBuyArmed = false;
       state.v75_emaTouched_BUY = false;
       state.ema100BuyArmed = false;
-    } else if (isBelowBothEma && state.v75_initialSellArmed && !state.v75_initialSellDone && stochFreshCrossDown20 && noActiveTrades) {
+    } else if (isAboveBothEma && state.v75_initialBuyArmed && !state.v75_initialBuyDone && stochAlreadyAbove50) {
+      // Invalidation: Stoch %K is already above 50.0 -> do not trigger trade. Skip initial breakout to await EMA 100 pullback retracement
+      dbg(`[V75 INITIAL] BUY Setup Invalid: Stoch %K (${sK.toFixed(1)}) already above 50.0 without fresh cross. Skipping initial trade -> awaiting Retracement.`);
+      state.v75_initialBuyDone = true; // Mark initial wave passed so bot can watch for EMA 100 pullback
+      state.v75_initialBuyArmed = false;
+      state.v75_emaTouched_BUY = false;
+      state.ema100BuyArmed = false;
+    } else if (isBelowBothEma && state.v75_initialSellArmed && !state.v75_initialSellDone && stochFreshCrossDown50 && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
-      setupLabel = "V75_INITIAL_BREAKOUT_STOCH20 (SELL)";
+      setupLabel = "V75_INITIAL_BREAKOUT_STOCH50 (SELL)";
       state.v75_initialSellDone = true;
+      state.v75_initialSellArmed = false;
+      state.v75_emaTouched_SELL = false;
+      state.ema100SellArmed = false;
+    } else if (isBelowBothEma && state.v75_initialSellArmed && !state.v75_initialSellDone && stochAlreadyBelow50) {
+      // Invalidation: Stoch %K is already below 50.0 -> do not trigger trade. Skip initial breakout to await EMA 100 pullback retracement
+      dbg(`[V75 INITIAL] SELL Setup Invalid: Stoch %K (${sK.toFixed(1)}) already below 50.0 without fresh cross. Skipping initial trade -> awaiting Retracement.`);
+      state.v75_initialSellDone = true; // Mark initial wave passed so bot can watch for EMA 100 pullback
       state.v75_initialSellArmed = false;
       state.v75_emaTouched_SELL = false;
       state.ema100SellArmed = false;
@@ -5302,10 +5320,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const priceBelowBoth = currentEma100 !== null && currentEma200 !== null && currentPrice < currentEma100 && currentPrice < currentEma200;
       if (priceAboveBoth) {
         blockerReason = `Price (${currentPrice.toFixed(2)}) > EMA 100/200. Bullish Trend Active. SELL trades strictly forbidden by EMA 100 filter`;
-        nextTrigger = `Awaiting Stoch (15,2,5) %K (${(sK !== null ? sK.toFixed(1) : "N/A")}) cross > 80 for Initial BUY, or EMA 100 pullback touch`;
+        nextTrigger = `Awaiting Fresh Stoch (15,2,5) %K (${(sK !== null ? sK.toFixed(1) : "N/A")}) cross > 50 for Initial BUY (invalid if already > 50), or EMA 100 pullback touch`;
       } else if (priceBelowBoth) {
         blockerReason = `Price (${currentPrice.toFixed(2)}) < EMA 100/200. Bearish Trend Active. BUY trades strictly forbidden by EMA 100 filter`;
-        nextTrigger = `Awaiting Stoch (15,2,5) %K (${(sK !== null ? sK.toFixed(1) : "N/A")}) cross < 20 for Initial SELL, or EMA 100 pullback touch`;
+        nextTrigger = `Awaiting Fresh Stoch (15,2,5) %K (${(sK !== null ? sK.toFixed(1) : "N/A")}) cross < 50 for Initial SELL (invalid if already < 50), or EMA 100 pullback touch`;
       } else if (state.v75_emaTouched_BUY) {
         blockerReason = "EMA 100 Pullback Touched (BUY Armed)";
         nextTrigger = `Awaiting Stoch (15,2,5) %K (${(sK !== null ? sK.toFixed(1) : "N/A")}) cross > 20 with candle close > EMA 100 (${currentEma100.toFixed(2)})`;
