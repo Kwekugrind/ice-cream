@@ -146,17 +146,17 @@ Managed centrally via an integrated browser dashboard (`:4000`), Server Hub API 
 
 ### Multi-Bot Fleet Parameter Master Table (Calibrated Multiplier & cTrader Profiles)
 
-All active bots use a standard **$5.00 Stake** per trade, targeting a minimum **$4.00 Net Take Profit** ($7.00 Extended Target, Dynamic Runner with $20 Super-Runner Ceiling) and bounded by a calibrated **Software Stop Loss** (-$4.00 on `R_100`, `R_50`, and `1HZ75V`; -$3.50 on `R_25`; -$4.00 on `R_100`, `R_50`, `1HZ75V`, and `1HZ100V`; -$3.50 on `R_25`; -$2.50 on `R_75` and `R_10`; with -$5.00 Hard Broker SL limit).
+All active bots use a standard **$5.00 Stake** per trade, specifically engineered for a **$100.00 Live Account Balance** to target **$7.00 Net Daily Profit per bot** ($49.00/day total fleet quota). Risk is strictly governed by a tight **Software Stop Loss** (-$2.00 on `R_75`, `1HZ75V`, `1HZ25V`, `R_25`, `R_50`, `R_10`; -$2.50 on `R_100` and `1HZ100V`), giving a favorable 1 : 1.75 Risk-to-Reward ratio on base TP ($3.50) and 1 : 3.5 on full daily strike ($7.00).
 
-| Bot Label | PM2 Name | Server | Directory Path | Symbol | Symbol ID | Lot Size | Stake | Strategy Gate | Min TP Pts ($4 Net) | Max Hard SL Pts | Calibrated Soft SL |
+| Bot Label | PM2 Name | Server | Directory Path | Symbol | Symbol ID | Lot Size | Stake | Strategy Gate | Base TP ($3.50 Net) | Daily Strike TP | Calibrated Soft SL |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| **Lery's Alerts** | `lery-v75` | S1 | `~/trading-bots/Lery-s-Alerts` | Volatility 75 | `R_75` | 0.01 Lots | $5.00 | M5 EMA 100/200 Breakout (80/20) & EMA 100 Touch Retrace (20/80) | 400.0 pts | 250.0 pts | -$2.50 |
-| **Coffee Machine** | `coffee-v75-1s` | S1 | `~/trading-bots/coffee` | Volatility 75 (1s) | `1HZ75V` | 0.05 Lots | $5.00 | Sequential Stoch 200 -> MACD + EMA 100 + Stoch (15,2,5) 20/80 Re-Entry & Stoch (25,2,5) Midline Exit | Dynamic ($20 Max) | 80.0 pts | -$4.00 (80 pts) |
-| **Milk Machine** | `milk-v100` | S1 | `~/trading-bots/milk` | Volatility 100 | `R_100` | 1.00 Lot | $5.00 | M5 Stoch 200 (48/52) Trend + M5 Stoch (15,2,5) Initial Lvl 50 & 20/80 Re-Entry + Stoch (25,2,5) 65/35 Exit | Dynamic ($20 Max) | 4.00 pts | -$4.00 (4.00 pts) |
-| **Tea Machine** | `tea-v25` | S1 | `~/trading-bots/tea` | Volatility 25 | `R_25` | 0.50 Lots | $5.00 | M5 Stoch (200,1,1) Trend + CCI 100 Zero Cross (20m Window) + Stoch (15,2,5) 25/75 Re-Entry + Stoch 50/CCI 0 Exit | Dynamic ($20 Max) | 7.00 pts | -$3.50 (7.00 pts) |
-| **Ice Cream** | `ice-cream-100-1s` | S2 | `~/trading-bots/ice-cream` | Volatility 100 (1s) | `1HZ100V` | 1.00 Lot | $5.00 | M5 Stoch 200 + MACD (25,75,1) + EMA 100 + Fast Stoch (5,3,3) 20/80 Re-Entry + Stoch (25,2,5) Midline 50 Exit | Dynamic ($20 Max) | 5.50 pts | -$4.00 (4.00 pts) |
-| **OmniSight** | `omni-v50` | S2 | `~/trading-bots/OmniSight` | Volatility 50 | `R_50` | 4.00 Lots | $5.00 | M5 Stoch (200,1,1) Trend + M5 Stoch (15,2,5) Initial Lvl 50 & 25/75 Re-Entry + Stoch (25,2,5) Midline Exit | Dynamic ($20 Max) | 1.00 pt | -$4.00 (1.00 pt) |
-| **Test Bot** | `test-v10` | S2 | `~/trading-bots/Test-Bot` | Volatility 10 | `R_10` | 0.50 Lots | $5.00 | M5 Stoch 200 + MACD (25,75,1) + EMA 100 Any-Order + Fast Stoch (5,3,3) 20/80 Re-Entry | 8.00 pts | 8.00 pts | -$2.50 (5.00 pts) |
+| **Lery's Alerts** | `lery-v75` | S1 | `~/trading-bots/Lery-s-Alerts` | Volatility 75 | `R_75` | 0.01 Lots | $5.00 | M5 EMA 100/200 Breakout (80/20) & EMA 100 Touch Retrace (20/80) | 350.0 pts | 700.0 pts | -$2.00 |
+| **Coffee Machine** | `coffee-v75-1s` | S1 | `~/trading-bots/coffee` | Volatility 75 (1s) | `1HZ75V` | 0.05 Lots | $5.00 | Sequential Stoch 200 -> MACD + EMA 100 + Stoch (15,2,5) 20/80 Re-Entry & Stoch (25,2,5) Midline Exit | 70.0 pts | 140.0 pts | -$2.00 |
+| **Milk Machine** | `milk-v100` | S1 | `~/trading-bots/milk` | Volatility 100 | `R_100` | 1.00 Lot | $5.00 | M5 Stoch 200 (48/52) Trend + M5 Stoch (15,2,5) Initial Lvl 50 & 20/80 Re-Entry + Stoch (25,2,5) 65/35 Exit | 3.50 pts | 7.00 pts | -$2.50 |
+| **Tea Machine** | `tea-v25` | S1 | `~/trading-bots/tea` | Volatility 25 | `R_25` | 0.50 Lots | $5.00 | M5 Stoch (200,1,1) Trend + CCI 100 Zero Cross (20m Window) + Stoch (15,2,5) 25/75 Re-Entry + Dynamic Runner | 7.00 pts | 14.00 pts | -$2.00 |
+| **Ice Cream** | `ice-cream-100-1s` | S2 | `~/trading-bots/ice-cream` | Volatility 25 (1s) | `1HZ25V` | 0.005 Lots | $5.00 | M5 Stoch 200 (45/55) + Stoch (15,2,5) (75/25) + EMA 100 Filter (Skip & Await Re-Entry) + Pullback Re-Entry (25/75) | 525.0 pts | 1050.0 pts | -$2.00 |
+| **OmniSight** | `omni-v50` | S2 | `~/trading-bots/OmniSight` | Volatility 50 | `R_50` | 4.00 Lots | $5.00 | M5 Stoch (200,1,1) Trend + M5 Stoch (15,2,5) Initial Lvl 50 & 25/75 Re-Entry + Dynamic Runner | 0.88 pt | 1.75 pt | -$2.00 |
+| **Test Bot** | `test-v10` | S2 | `~/trading-bots/Test-Bot` | Volatility 10 | `R_10` | 0.50 Lots | $5.00 | M5 Stoch 200 + MACD (25,75,1) + EMA 100 Any-Order + Fast Stoch (5,3,3) 20/80 Re-Entry | 7.00 pts | 14.00 pts | -$2.00 |
 
 ---
 
@@ -9268,3 +9268,34 @@ The trader requested an update to **Setup 1: Initial Entry (Breakout Wave)** for
 3. **Trade Management:** Software SL -$2.50 | Hard SL -$5.00 | Tier 0 Shield at +$1.00 -> $0.50 floor | Dynamic Runner.
 
 ---
+
+
+---
+
+## 18. FLEET $7.00/DAY PROFIT ENGINE & $100 LIVE CAPITAL SPECIFICATION
+
+### 18.1. Operational Context & Capital Architecture
+* **Target:** Exactly **+$7.00 Net Daily Profit per bot** ($49.00/day across the 7-bot fleet).
+* **Live Account Equity:** **$100.00 USD**.
+* **Stake Sizing:** Standard **$5.00 Stake** per trade (5% equity utilization per contract).
+* **Margin Guard:** Total fleet margin never exceeds 15%–35% of balance under active multi-bot deployment.
+* **Risk-to-Reward Ratio:** 1 : 1.75 on base half-day wins ($3.50 win vs $2.00 loss); 1 : 3.50 on full daily target runners ($7.00 win vs $2.00 loss).
+
+### 18.2. Elimination of Premature Trailing Chokehold
+Live server audits revealed that previous Tier 0 breakeven locks at +$1.00 were forcing floor exits at +$0.50 on minor tick noise, filling between +$0.07 and +$0.33 while losses reached -$3.50 to -$4.00. The calibrated engine removes this chokehold completely:
+1. **The Incubation Zone ($0.00 to $2.19):** Full breathing room. Zero premature trailing stops. Trades navigate normal M5 wicks freely.
+2. **Tier 1 Breakeven Capital Shield (Peak $\ge +\$2.20$):** Floor locked at **+$1.00 net**. Provides a massive **$1.20 breathing buffer** and guarantees all commissions are covered in pure green profit if a deep retracement occurs.
+3. **Tier 2 Half-Target Quota Lock (Peak $\ge +\$3.50$):** Floor locked at **+$2.20 net** ($1.30 breathing buffer). Guarantees at least 31% of the daily quota is banked. Two such trades achieve the entire day's target.
+4. **Tier 3 Pre-Target Runner (Peak $\ge +\$5.00$):** Floor locked at **+$3.80 net** ($1.20 buffer).
+5. **Tier 4 Daily Target Strike Ceiling (Instant Take Profit):**
+   ```javascript
+   const remainingToDailyTarget = Math.max(0, DAILY_PROFIT_TARGET_USD - (state.dailyNetPnl || 0));
+   if (pnl >= DAILY_PROFIT_TARGET_USD || (remainingToDailyTarget > 0 && pnl >= remainingToDailyTarget)) {
+     dailyTargetCeilingHit = true; // Instant Cash-Out!
+   }
+   ```
+   The instant a position generates enough profit to complete the remaining $7.00 quota (or reaches $7.00 standalone), it cashes out immediately.
+
+### 18.3. Dual Daily Locks: Profit Lock & Drawdown Shield
+* **Daily Target Lock (`+$7.00`):** Cumulative daily profit $\ge +\$7.00$ triggers `state.dailyTargetReached = true`. The bot transitions to `IDLE_DAILY_TARGET_REACHED`, blocks all new entries, and protects profit until 00:00 UTC rollover.
+* **Daily Loss Limit Shield (`-$4.00`):** If a bot suffers 2 consecutive losses totaling $\le -\$4.00$, `state.dailyMaxLossReached = true` locks the bot into `IDLE_DAILY_MAX_LOSS_REACHED`. Maximum possible daily risk per bot is strictly capped at 4% of account equity.

@@ -108,9 +108,9 @@ export const INSTRUMENT_PROFILES = {
     stochParams: { k: 15, d: 2, slowing: 5, method: "Simple", levels: [20, 50, 80] },
     emaPeriod: 100,
     minTakeProfitPoints: 400.0,
-    minTakeProfitUsd: 4.00,
-    softwareSlUsd: 2.50,
-    trailActivationUsd: 3.00,
+    minTakeProfitUsd: 3.50,
+    softwareSlUsd: 2.00,
+    trailActivationUsd: 2.20,
     maxHardStopPoints: 250.0,
     slType: "M15_FRACTAL",
     notes: "Initial Entry: Condition 1 Price crosses above/below EMA 100 & EMA 200 -> Condition 2 Fresh M5 Stoch (15,2,5 Simple) %K cross > 50 (BUY) or < 50 (SELL); invalid if already beyond 50. Retracement Entry: Condition 1 Price physically touches EMA 100 -> Condition 2 Fresh Stoch %K cross > 20 with close > EMA 100 (BUY) or < 80 with close < EMA 100 (SELL)."
@@ -131,8 +131,8 @@ export const INSTRUMENT_PROFILES = {
     emaPeriod: 100,
     auxStochParams: { k: 15, d: 2, slowing: 5, method: "Simple", levels: [20, 80] },
     minTakeProfitPoints: 80.0,
-    minTakeProfitUsd: 4.00,
-    softwareSlUsd: 4.00,
+    minTakeProfitUsd: 3.50,
+    softwareSlUsd: 2.00,
     trailActivationUsd: 2.20,
     trailBufferUsd: 1.80,
     maxHardStopPoints: 80.0,
@@ -154,8 +154,8 @@ export const INSTRUMENT_PROFILES = {
     stoch15Params: { k: 15, d: 2, slowing: 5 },
     stoch25Params: { k: 25, d: 2, slowing: 5 },
     minTakeProfitPoints: 4.00,
-    minTakeProfitUsd: 4.00,
-    softwareSlUsd: 4.00,
+    minTakeProfitUsd: 3.50,
+    softwareSlUsd: 2.50,
     trailActivationUsd: 2.20,
     maxHardStopPoints: 4.00,
     slType: "M15_FRACTAL",
@@ -177,8 +177,8 @@ export const INSTRUMENT_PROFILES = {
     stoch533Params: { k: 5, d: 3, slowing: 3 },
     emaPeriod: 100, // M5 EMA 100
     minTakeProfitPoints: 4.00,
-    minTakeProfitUsd: 4.00,
-    softwareSlUsd: 4.00,
+    minTakeProfitUsd: 3.50,
+    softwareSlUsd: 2.50,
     trailActivationUsd: 2.20,
     maxHardStopPoints: 5.50,
     slType: "M15_FRACTAL",
@@ -200,8 +200,8 @@ export const INSTRUMENT_PROFILES = {
     stoch25Params: { k: 25, d: 2, slowing: 5 },
     emaPeriod: 100,
     minTakeProfitPoints: 600.0,
-    minTakeProfitUsd: 4.00,
-    softwareSlUsd: 4.00,
+    minTakeProfitUsd: 3.50,
+    softwareSlUsd: 2.00,
     trailActivationUsd: 2.20,
     maxHardStopPoints: 800.0,
     slType: "M15_FRACTAL",
@@ -222,8 +222,8 @@ export const INSTRUMENT_PROFILES = {
     stoch15Params: { k: 15, d: 2, slowing: 5 },
     stoch25Params: { k: 25, d: 2, slowing: 5 },
     minTakeProfitPoints: 8.00,
-    minTakeProfitUsd: 4.00,
-    softwareSlUsd: 4.00,
+    minTakeProfitUsd: 3.50,
+    softwareSlUsd: 2.00,
     trailActivationUsd: 2.20,
     maxHardStopPoints: 10.00,
     slType: "M5_FRACTAL",
@@ -244,8 +244,8 @@ export const INSTRUMENT_PROFILES = {
     stoch15Params: { k: 15, d: 2, slowing: 5 },
     stoch25Params: { k: 25, d: 2, slowing: 5 },
     minTakeProfitPoints: 1.00,
-    minTakeProfitUsd: 4.00,
-    softwareSlUsd: 4.00,
+    minTakeProfitUsd: 3.50,
+    softwareSlUsd: 2.00,
     trailActivationUsd: 2.20,
     maxHardStopPoints: 1.25,
     slType: "M5_FRACTAL",
@@ -267,9 +267,9 @@ export const INSTRUMENT_PROFILES = {
     emaPeriod: 100,
     stoch533Params: { k: 5, d: 3, slowing: 3 },
     minTakeProfitPoints: 8.00,
-    minTakeProfitUsd: 4.00,
-    softwareSlUsd: 2.50,
-    trailActivationUsd: 3.00,
+    minTakeProfitUsd: 3.50,
+    softwareSlUsd: 2.00,
+    trailActivationUsd: 2.20,
     maxHardStopPoints: 5.00,
     slType: "M15_FRACTAL",
     notes: "400x multiplier (0.50 lots); Initial Entry: Triggered immediately when all 3 conditions are met in any order — 1) M5 Stoch (200,1,1) %K >= 50.0 (BUY) / <= 50.0 (SELL), 2) M5 MACD (25,75,1) >= 0.0 (BUY) / <= 0.0 (SELL), 3) Price > M5 EMA 100 (BUY) / < M5 EMA 100 (SELL); Re-Entry: M5 Fast Stoch (5,3,3) 20/80 Cross while all 3 conditions remain aligned; Early Exits: 1) 3 Consecutive Adverse M5 Candles, 2) Stoch 200 Adverse Cross, 3) M5 Stoch (15,2,5) Level 50 Loss Exit, 4) Entry-Hour H1 Adverse Close Exit."
@@ -325,33 +325,34 @@ const CTRADER_LOT_SIZE = Math.max(isNaN(_rawLotSize) ? 0.01 : _rawLotSize, CTRAD
 
 // ── Configurable Software Stop Loss per Instrument Profile ──
 const INSTRUMENT_SOFTWARE_SL_MAP = {
-  "R_25": -4.00,     // Tea Machine (V25, 400x) — Calibrated software SL ($4.00, mapped to V100 standard)
-  "1HZ75V": -4.00,   // Coffee (V75-1s, 0.05 lots)
-  "R_75": -2.50,     // Lery's Alerts (V75, 50x)
-  "R_100": -4.00,    // Milk (V100, 40x) — Calibrated breathing room ($4.00 custom SL)    // Milk (V100, 40x)
-  "1HZ100V": -4.00,  // Ice Cream Legacy (V100-1s, 40x)
-  "1HZ25V": -4.00,   // Ice Cream Machine (V25-1s, 400x) — Calibrated software SL ($4.00)
-  "R_50": -4.00,     // OmniSight (V50, 4.00 lots)
-  "R_10": -2.50      // Test Bot (V10, 400x)
+  "R_25": -2.00,     // Tea Machine (V25, 400x) — Max 2% loss risk ($2.00)
+  "1HZ75V": -2.00,   // Coffee (V75-1s, 0.05 lots) — Max 2% loss risk ($2.00)
+  "R_75": -2.00,     // Lery's Alerts (V75, 50x) — Max 2% loss risk ($2.00)
+  "R_100": -2.50,    // Milk (V100, 40x) — Calibrated breathing room ($2.50 SL)
+  "1HZ100V": -2.50,  // Ice Cream Legacy (V100-1s, 40x) ($2.50 SL)
+  "1HZ25V": -2.00,   // Ice Cream Machine (V25-1s, 400x) ($2.00 SL)
+  "R_50": -2.00,     // OmniSight (V50, 4.00 lots) ($2.00 SL)
+  "R_10": -2.00      // Test Bot (V10, 400x) ($2.00 SL)
 };
 
-const DEFAULT_SOFTWARE_SL_USD = -2.50;
+const DEFAULT_SOFTWARE_SL_USD = -2.00;
+const DAILY_MAX_LOSS_USD = -4.00; // Stop bot trading if down -$4.00 in a day to safeguard $100 capital
 const rawEnvSl = process.env.SOFTWARE_SL_USD ? parseFloat(process.env.SOFTWARE_SL_USD) : null;
 const SOFTWARE_SL_USD = rawEnvSl !== null
   ? (rawEnvSl > 0 ? -rawEnvSl : rawEnvSl)
   : (typeof PROFILE.softwareSlUsd === "number" ? -Math.abs(PROFILE.softwareSlUsd) : (INSTRUMENT_SOFTWARE_SL_MAP[SYMBOL] ?? DEFAULT_SOFTWARE_SL_USD));
 
-const SERVER_TP_USD = 10.00;
-const CATASTROPHIC_PNL_FLOOR = -5.50;
+const SERVER_TP_USD = 7.00;
+const CATASTROPHIC_PNL_FLOOR = -5.00;
 const DAILY_PROFIT_TARGET_USD = 7.00;
 const rawAppId = String(process.env.DERIV_APP_ID || process.env.APP_ID || "1089").trim();
 const MARKET_DATA_APP_ID = /^\d+$/.test(rawAppId) ? rawAppId : "1089";
-const TARGET_MIN_PROFIT = PROFILE.minTakeProfitUsd || 4.00;
+const TARGET_MIN_PROFIT = PROFILE.minTakeProfitUsd || 3.50;
 
 // Continuous Dollar Trailing Stop Settings (High Activation + Wide Buffer Calibration)
-const TRAIL_ACTIVATION_USD = PROFILE.trailActivationUsd || 3.00; // Activated once profit reaches +$3.00 net
-const TRAIL_BUFFER_USD = 1.50;     // Trail $1.50 behind peak unrealized profit
-const TRAIL_INITIAL_FLOOR_USD = 1.50; // Initial guaranteed lock at activation (+$3.00 peak - $1.50 buffer = +$1.50)
+const TRAIL_ACTIVATION_USD = PROFILE.trailActivationUsd || 2.20; // Activated once profit reaches +$3.00 net
+const TRAIL_BUFFER_USD = 1.20;     // Trail $1.50 behind peak unrealized profit
+const TRAIL_INITIAL_FLOOR_USD = 1.00; // Initial guaranteed lock at activation (+$3.00 peak - $1.50 buffer = +$1.50)
 
 const STOCH_MIDLINE_FALLBACK_SYMBOLS = ["R_50"];
 
@@ -1245,6 +1246,8 @@ let state = {
   dailyNetPnl: 0,
   dailyTargetReached: false,
   dailyTargetDate: null,
+  dailyMaxLossReached: false,
+  dailyMaxLossDate: null,
   // Persistent directional state tracking
   stochState: null,
   stochSeparation: null,
@@ -1317,7 +1320,7 @@ const ALLOWED_STATE_KEYS = new Set([
   "engineVersion", "codeTimestamp", "symbol", "strategyProfile", "currentPrice",
   "lastPriceUpdate", "openTrade", "lastProcessedEpoch", "lastTgUpdateId", "armed", "armedEpoch",
   "armedTime", "confirm", "dailyBiasPrice", "last50Origin", "lastTriggeredSetup",
-  "lastTriggeredEpoch", "dailyNetPnl", "dailyTargetReached", "dailyTargetDate",
+  "lastTriggeredEpoch", "dailyNetPnl", "dailyTargetReached", "dailyTargetDate", "dailyMaxLossReached", "dailyMaxLossDate",
   "currentDayDate", "dailyKeyLevelTouchedToday", "keyLevelTouched", "levelTouched",
   "cciAligned", "stochAligned", "envAligned", "emaAligned", "emaAlignedDir",
   "h1TdiDir", "stochVal", "stochSignal", "stoch200Val", "stoch1525Val", "stoch533Val",
@@ -1598,82 +1601,64 @@ async function manageOpenTradesFastPath() {
     openTrade.unrealizedPnl = pnl;
 
     // =========================================================================
-    // 🛡️ TIERED DYNAMIC PROFIT RATCHET & SUPER-RUNNER ENGINE
+    // 🎯 TARGET $7.00/DAY CAPITAL PROTECTION & DYNAMIC RUNNER ENGINE
     // =========================================================================
     openTrade.maxUnrealizedPnL = Math.max(openTrade.maxUnrealizedPnL || 0, pnl);
     const peak = openTrade.maxUnrealizedPnL;
 
-    // Hard Take Profit / Cash-out Ceiling: Cash out full super runner at +$20.00
+    // Daily Target Strike Ceiling: Cash out full position when trade hits $7.00 target
+    // or when this trade's profit completes the remaining daily quota for the bot!
+    let dailyTargetCeilingHit = false;
     let superRunnerCeilingHit = false;
-    if (pnl >= 20.00) {
+    const remainingToDailyTarget = Math.max(0, DAILY_PROFIT_TARGET_USD - (state.dailyNetPnl || 0));
+    if (pnl >= DAILY_PROFIT_TARGET_USD || (remainingToDailyTarget > 0 && pnl >= remainingToDailyTarget)) {
+      dailyTargetCeilingHit = true;
+    } else if (pnl >= 12.00) {
       superRunnerCeilingHit = true;
     }
 
     // =========================================================================
-    // UNIFIED CENTRALIZED TRADE MANAGEMENT & CAPITAL PROTECTION
-    // Rule 1: Breakeven Shield at +$1.00 -> Locks +$0.50 minimum profit floor
-    // Rule 2: Breathing Zone (Peak $1.00 - $2.99) -> Floor held firmly at +$0.50 (allows up to $2.49 wick retracement)
-    // Rule 3: Dynamic Trailing Ratchet (Peak >= $3.00) -> Percentage trailing with generous buffer
+    // UNIFIED PROFIT RATCHET & BREATHING ROOM ARCHITECTURE
+    // Rule 1: Breathing Zone ($0.00 to $2.19) -> Zero premature exit. Full room for M5 candle wicks.
+    // Rule 2: Breakeven Shield (Peak >= $2.20) -> Locks +$1.00 net floor ($1.20 wick buffer).
+    // Rule 3: Half-Target Lock (Peak >= $3.50) -> Locks +$2.20 net floor ($1.30 wick buffer).
+    // Rule 4: Pre-Target Runner (Peak >= $5.00) -> Locks +$3.80 net floor ($1.20 wick buffer).
+    // Rule 5: Daily Target Strike (pnl >= remainingToDailyTarget or >= $7.00) -> Instant Cash-Out!
     // =========================================================================
-    if (peak >= 12.00) {
-      // Tier 4: Super Runner (Peak >= $12.00)
-      openTrade.trendRidingActive = true;
-      const tier4Floor = Math.max(
-        parseFloat((peak * 0.80).toFixed(2)),
-        parseFloat((peak - 2.50).toFixed(2))
-      );
-      if (!openTrade.lockedPnlFloor || tier4Floor > openTrade.lockedPnlFloor) {
-        openTrade.lockedPnlFloor = tier4Floor;
-        saveTrades(trades);
-        console.log(`[TIER 4 SUPER RUNNER RATCHET] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Floor locked at +${openTrade.lockedPnlFloor.toFixed(2)} (80% / $2.50 max giveback).`);
-      }
-    } else if (peak >= 8.00) {
-      // Tier 3: Advanced Runner (Peak $8.00 - $11.99)
+    if (peak >= 5.00) {
+      // Tier 3: Pre-Target Runner (Peak >= $5.00)
       openTrade.trendRidingActive = true;
       const tier3Floor = Math.max(
-        5.00,
+        3.80,
         parseFloat((peak * 0.75).toFixed(2)),
-        parseFloat((peak - 2.50).toFixed(2))
+        parseFloat((peak - 1.50).toFixed(2))
       );
       if (!openTrade.lockedPnlFloor || tier3Floor > openTrade.lockedPnlFloor) {
         openTrade.lockedPnlFloor = tier3Floor;
         saveTrades(trades);
-        console.log(`[TIER 3 RUNNER RATCHET] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Floor expanded to +${openTrade.lockedPnlFloor.toFixed(2)} (75% / $2.50 max giveback).`);
+        console.log(`[TIER 3 PRE-TARGET RUNNER] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Floor secured at +${openTrade.lockedPnlFloor.toFixed(2)}.`);
       }
-    } else if (peak >= 5.00) {
-      // Tier 2: Mid-Stage Runner (Peak $5.00 - $7.99)
+    } else if (peak >= 3.50) {
+      // Tier 2: Half-Target Quota Lock (Peak >= $3.50)
       openTrade.trendRidingActive = true;
       const tier2Floor = Math.max(
-        2.50,
+        2.20,
         parseFloat((peak * 0.65).toFixed(2)),
-        parseFloat((peak - 2.00).toFixed(2))
+        parseFloat((peak - 1.30).toFixed(2))
       );
       if (!openTrade.lockedPnlFloor || tier2Floor > openTrade.lockedPnlFloor) {
         openTrade.lockedPnlFloor = tier2Floor;
         saveTrades(trades);
-        console.log(`[TIER 2 MID RUNNER RATCHET] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Base floor expanded to +${openTrade.lockedPnlFloor.toFixed(2)} ($2.00 trailing interval).`);
+        console.log(`[TIER 2 HALF-TARGET LOCK] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Base floor locked at +${openTrade.lockedPnlFloor.toFixed(2)} (Guarantees >= $2.20 win).`);
       }
-    } else if (peak >= 3.00) {
-      // Tier 1: Early Runner (Peak $3.00 - $4.99)
-      openTrade.trendRidingActive = true;
-      const tier1Floor = Math.max(
-        1.20,
-        parseFloat((peak * 0.60).toFixed(2)),
-        parseFloat((peak - 1.80).toFixed(2))
-      );
+    } else if (peak >= 2.20) {
+      // Tier 1: Breakeven Capital Shield (Peak >= $2.20)
+      // Locks +$1.00 net floor: Guarantees trade never turns into a loss while giving $1.20 of breathing room for M5 wicks
+      const tier1Floor = 1.00;
       if (!openTrade.lockedPnlFloor || tier1Floor > openTrade.lockedPnlFloor) {
         openTrade.lockedPnlFloor = tier1Floor;
         saveTrades(trades);
-        console.log(`[TIER 1 EARLY RUNNER RATCHET] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Floor set to +${openTrade.lockedPnlFloor.toFixed(2)} ($1.80 trailing interval).`);
-      }
-    } else if (peak >= 1.00 && !openTrade.trendRidingActive) {
-      // Tier 0: Breakeven Shield & Early Profit Lock (Peak $1.00 - $2.99)
-      // Locks +$0.50 net profit floor: Guarantees trade never runs into loss, while giving up to $2.49 of breathing room for M5 wicks
-      const targetFloor = 0.50;
-      if (!openTrade.lockedPnlFloor || targetFloor > openTrade.lockedPnlFloor) {
-        openTrade.lockedPnlFloor = targetFloor;
-        saveTrades(trades);
-        console.log(`[TIER 0 BREAKEVEN SHIELD] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Guaranteed profit floor locked at +${openTrade.lockedPnlFloor.toFixed(2)} (Breathing room active).`);
+        console.log(`[TIER 1 BREAKEVEN SHIELD] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Guaranteed profit floor locked at +${openTrade.lockedPnlFloor.toFixed(2)} ($1.20 breathing buffer active).`);
       }
     }
     // =========================================================================
@@ -1719,11 +1704,14 @@ async function manageOpenTradesFastPath() {
     // to prevent premature 3-second exits on trades entered near levels 20 or 80.
 
     let reason = null;
-    if (superRunnerCeilingHit) {
-      reason = `Super Runner TP Ceiling reached at ${currentPrice.toFixed(4)} (+ $${pnl.toFixed(2)})`;
+    if (dailyTargetCeilingHit) {
+      reason = "Daily Target TP Hit (+ $" + pnl.toFixed(2) + ") — Secured 100% of Daily $" + DAILY_PROFIT_TARGET_USD.toFixed(2) + " Target!";
+    }
+    else if (superRunnerCeilingHit) {
+      reason = "Super Runner TP Ceiling reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ")";
     }
     else if (tpHit) { 
-      reason = `Take Profit Target reached at ${currentPrice.toFixed(4)} (+ ${pnl.toFixed(2)})`; 
+      reason = "Take Profit Target reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ")"; 
     } 
     else if (rescueBreakevenHit) {
       reason = `Rescue Retracement Target hit — Old position closed at +$${pnl.toFixed(2)} (>= +$0.20 profit) while rescue contract ${activeRescueTrade.contractId} runs to TP`;
@@ -1810,6 +1798,11 @@ async function manageOpenTradesFastPath() {
         state.dailyTargetDate = new Date().toISOString().split("T")[0];
         console.log(`[DAILY TARGET] +$${DAILY_PROFIT_TARGET_USD.toFixed(2)} Daily Goal Achieved ($${state.dailyNetPnl.toFixed(2)}). Switching to IDLE_DAILY_TARGET_REACHED.`);
         await sendTelegram(`🎯 *${REPO_LABEL} — DAILY TARGET ACHIEVED!* 🎯\n\nDaily Net Profit: *+$${state.dailyNetPnl.toFixed(2)}*\nBot is now locked in profit protection until 00:00 UTC rollover.`);
+      } else if (typeof DAILY_MAX_LOSS_USD === "number" && state.dailyNetPnl <= DAILY_MAX_LOSS_USD) {
+        state.dailyMaxLossReached = true;
+        state.dailyMaxLossDate = new Date().toISOString().split("T")[0];
+        console.log(`[DAILY LOSS LIMIT] $${state.dailyNetPnl.toFixed(2)} Daily Loss Limit reached. Locking bot to protect $100 account until 00:00 UTC rollover.`);
+        await sendTelegram(`🛡️ *${REPO_LABEL} — CAPITAL PROTECTION LIMIT REACHED* 🛡️\n\nDaily Net PnL reached -$4.00 ($${state.dailyNetPnl.toFixed(2)}).\nTrading paused until 00:00 UTC to protect account capital.`);
       }
 
       // Disarm setup upon trade exit to require a fresh key level re-test or fresh indicator reset
@@ -2321,6 +2314,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.currentDayDate = todayStr;
     state.dailyTargetDate = todayStr;
     state.dailyTargetReached = false;
+    state.dailyMaxLossReached = false;
     state.dailyNetPnl = 0;
     state.dailyKeyLevelTouchedToday = false;
     // Disarm previous calendar day setups to eliminate outdated or irrelevant signals
@@ -3627,9 +3621,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   // Evaluate Loss Recovery / Rescue Entry if parent trade is active and floating in loss
   await checkAndExecuteRescueEntry(candles, currentPrice, m5BoundaryEpoch);
 
-  // Protect profits: If daily target reached, do NOT evaluate new trade entries!
+  // Protect profits: If daily target or daily max loss limit reached, do NOT evaluate new trade entries!
   if (state.dailyTargetReached) {
     console.log(`[${REPO_LABEL}] 🎯 Daily target (+$7.00) already secured today. Idling until 00:00 UTC rollover.`);
+    state.lastProcessedEpoch = m5BoundaryEpoch;
+    saveState();
+    return;
+  }
+  if (state.dailyMaxLossReached) {
+    console.log(`[${REPO_LABEL}] 🛡️ Daily max loss limit (-$4.00) reached. Idling until 00:00 UTC rollover to protect capital.`);
     state.lastProcessedEpoch = m5BoundaryEpoch;
     saveState();
     return;
@@ -5364,6 +5364,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     healthStatus = "FUNCTIONING";
     blockerReason = `Daily Net Target (+${DAILY_PROFIT_TARGET_USD.toFixed(2)}) Secured Today (${(state.dailyNetPnl || 0).toFixed(2)})`;
     nextTrigger = "Idling until 00:00 UTC daily rollover";
+  } else if (state.dailyMaxLossReached) {
+    state.openTrade = null;
+    healthStatus = "FUNCTIONING";
+    blockerReason = `Daily Loss Limit (-$4.00) Reached (${(state.dailyNetPnl || 0).toFixed(2)})`;
+    nextTrigger = "Capital protection active. Idling until 00:00 UTC daily rollover";
   } else {
     state.openTrade = null;
     if (STRATEGY_PROFILE === "PROFILE_V75_EMA_STOCH15") {
