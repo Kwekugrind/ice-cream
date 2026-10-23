@@ -12,9 +12,9 @@ All active trading bots operate on cTrader Open API execution, targeting a **$4.
 | **Lery's Alerts** | `lery-v75` | S1 | `~/trading-bots/Lery-s-Alerts` | Volatility 75 | `R_75` | 0.01 Lots | $5.00 | M5 EMA 100/200 2-Step Initial (50/50 Fresh Cross, Pre-Level Invalidation) & EMA 100 Touch Retracement (20/80) | 400.0 pts | 250.0 pts |
 | **Coffee Machine** | `coffee-v75-1s` | S1 | `~/trading-bots/coffee` | Volatility 75 (1s) | `1HZ75V` | 0.05 Lots | $5.00 | Sequential Stoch 200 -> MACD (25,75,1) + EMA 100 + Stoch (15,2,5) Re-Entry (20/80) & Stoch (25,2,5) Midline Exit | Dynamic ($20 Max) | 80.0 pts |
 | **Milk Machine** | `milk-v100` | S1 | `~/trading-bots/milk` | Volatility 100 | `R_100` | 1.00 Lot | $5.00 | M5 Stoch 200 (48/52) Trend + M5 Stoch (15,2,5) 50 Cross & Stoch (25,2,5) 65/35 Exit | Dynamic ($20 Max) | 4.00 pts |
-| **Tea Machine** | `tea-v25` | S1 | `~/trading-bots/tea` | Volatility 25 | `R_25` | 0.50 Lots | $5.00 | M5 Stoch (200,1,1) Trend + CCI 100 Zero Cross + Stoch (15,2,5) Re-Entry (25/75) | 8.00 pts | 5.00 pts |
+| **Tea Machine** | `tea-v25` | S1 | `~/trading-bots/tea` | Volatility 25 | `R_25` | 0.50 Lots | $5.00 | M5 Stoch 200 (48/52) Trend + M5 Stoch (15,2,5) 50 Initial & 20/80 Re-Entry + Dynamic Runner | 8.00 pts | 10.00 pts |
 | **Ice Cream** | `ice-cream-100-1s` | S2 | `~/trading-bots/ice-cream` | Volatility 25 (1s) | `1HZ25V` | 0.005 Lots | $5.00 | M5 Stoch 200 (45/55) + Stoch (15,2,5) (75/25) + EMA 100 Filter (Skip & Await Re-Entry) + Pullback Re-Entry (25/75) | Dynamic ($20 Max) | 600.0 pts |
-| **OmniSight** | `omni-v50` | S2 | `~/trading-bots/OmniSight` | Volatility 50 | `R_50` | 4.00 Lots | $5.00 | M5 Stoch (200,1,1) Trend + M5 Stoch (15,2,5) 50 Cross, Re-Entry (20/80) & Stoch (25,2,5) Midline Exit | Dynamic ($20 Max) | 1.00 pt |
+| **OmniSight** | `omni-v50` | S2 | `~/trading-bots/OmniSight` | Volatility 50 | `R_50` | 4.00 Lots | $5.00 | M5 Stoch 200 (48/52) Trend + M5 Stoch (15,2,5) 50 Initial & 20/80 Re-Entry + Dynamic Runner | 1.00 pt | 1.25 pts |
 | **Test Bot** | `test-v10` | S2 | `~/trading-bots/Test-Bot` | Volatility 10 | `R_10` | 0.50 Lots | $5.00 | M5 Stoch 200 + MACD (25,75,1) + EMA 100 Any-Order + Stoch (5,3,3) Re-Entry (20/80) | 8.00 pts | 5.00 pts |
 
 ---
@@ -28,7 +28,7 @@ All active trading bots operate on cTrader Open API execution, targeting a **$4.
 
 ## 3. UNIFIED CENTRALIZED TRADE MANAGEMENT & CAPITAL PROTECTION ENGINE
 
-* **Software Stop Loss (-$2.50 / -$3.50 on `R_25` / -$4.00 on `R_100`, `R_50`, `1HZ75V`, and `1HZ25V`):** Hard software risk floor executed by the 2-second fast-path watchdog.
+* **Software Stop Loss (-$2.50 on `R_75`, `R_10` / -$4.00 on `R_100`, `R_25`, `R_50`, `1HZ75V`, and `1HZ25V`):** Hard software risk floor executed by the 2-second fast-path watchdog.
 * **Hard Broker Stop Loss (-$5.00):** cTrader broker-level safety order placed immediately upon execution.
 * **Tier 0 Breakeven Shield (Peak $\ge +\$1.00$):** The instant floating profit touches `+$1.00`, the software SL floor locks in at `+$0.50`. Guarantees that **no trade reaching +$1.00 can ever close in a loss**.
 * **The Breathing Zone (Peak $\$1.00$ to $\$2.99$):** The profit floor is held firmly at `+$0.50` throughout this entire zone. By not clamping floors too close to the price (e.g. leaving up to `$2.49` of retracement tolerance at `+$2.99` peak), normal M5 candle wicks will not choke out winning trades.

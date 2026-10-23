@@ -1496,7 +1496,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 3.00,
     maxHardStopPoints: 3.00,
     slType: "M15_FRACTAL",
-    notes: "40x multiplier; Condition 1: M5 Stoch 200 (48/52) Main Trend Identifier; Condition 2: M5 Stoch (15,2,5) Initial (Lvl 50 +/-2 bars) & Re-Entry (Lvl 20/80); Early Exits: Opposite M5 Fractal Break & Entry-Hour H1 Adverse Close; Min $4.00 TP & Trailing ($3.00 act / $1.50 buffer)."
+    notes: "40x multiplier; Condition 1: M5 Stoch 200 (48/52) Main Trend Identifier; Condition 2: M5 Stoch (15,2,5) Initial (Lvl 50 Unbounded) & Re-Entry (Lvl 20/80); Early Exits: Opposite M5 Fractal Break & Entry-Hour H1 Adverse Close; Min $4.00 TP & Trailing ($3.00 act / $1.50 buffer)."
   },
   "1HZ100V": {
     symbol: "1HZ100V",
@@ -8886,3 +8886,385 @@ The trader requested an update to **Setup 1: Initial Entry (Breakout Wave)** for
 3. **Preserved Retracement & Trade Management Protocols:**
    * Setup 2 Retracement Entry remains active on EMA 100 physical touch + fresh Stoch %K cross > 20 (BUY) or < 80 (SELL) with EMA 100/200 trend alignment.
    * Universal -$2.50 Software SL, -$5.00 Hard Broker SL, Breakeven Shield at +$1.50/+$2.20, and 4-Tier Trailing Runner Ratchet remain 100% intact.
+
+---
+
+### REVISION LOG ENTRY — OCTOBER 23, 2026 @ 07:45 UTC
+
+**Trader Name:** Ebenezer Johnson  
+**Timestamp:** `2026-10-23 07:45:00 UTC`  
+**Target Instrument:** Volatility 100 Index (`R_100` — Milk Machine)  
+**Status:** AUTHORITATIVE & RESOLVED  
+
+#### Verbatim Trader Instruction:
+> "for initial entry,
+> 4. Setup 2: Pullback Re-Entry (V100_REENTRY_STOCH15_20 / 80)
+> 
+> After the initial trade has completed and while Stoch (200) and EMA 100 remain aligned in the macro trend:
+> 
+> BUY Re-Entry:
+> Stoch (200, 1, 1) remains in BUY trend (sK200 >= 48.0) and Price > EMA 100.
+> Trigger: M5 Stoch (15, 2, 5) %K freshly crosses above Level 20.0 (prevK <= 20.0 && sK > 20.0).
+> SELL Re-Entry:
+> Stoch (200, 1, 1) remains in SELL trend (sK200 <= 52.0) and Price < EMA 100.
+> Trigger: M5 Stoch (15, 2, 5) %K freshly crosses below Level 80.0 (prevK >= 80.0 && sK < 80.0).
+> 
+> i did not add any entry timer window to the rules but you added in in the implementation. why did you do that?
+> 
+> 'When Stoch 200 first crosses, enter when Stoch (15,2,5) freshly crosses Level 50 in same direction (within 2 bars).'
+> 
+> this is there in the rules on the dashboard. can you correct it?"
+
+#### Authoritative Resolution:
+1. **Total Removal of 2-Bar / Timer Window from Dashboard UI & Confluence Displays:**
+   * Scrubbed all rogue references to `(within 2 bars)` and `(+/- 2 bars)` across `TradingViewHub.tsx`, `ConfluenceRadar.tsx`, `confluenceProfiles.ts`, and `HANDBOOK.md`.
+   * Replaced with the trader's exact unbounded rule: **Initial Entry is 100% unbounded** as long as Stoch (200, 1, 1) and M5 EMA 100 remain armed and aligned without dealignment.
+2. **Re-Verified `alert.js` Production Engine:** Confirmed that the backend execution loop has zero timer restrictions or bar limits for `R_100` (`isInitialBuy` / `isInitialSell` wait indefinitely for confirmation until dealignment).
+3. **Rebuilt & Deployed:** Recompiled production bundle with Vite (`npm run build`) and pushed updated `index.html` live to Server 2 (`http://79.76.120.30:4000`).
+
+
+## 17. COMPENDIUM OF TRADER DIRECTIVES & STRATEGY RULES IN THE TRADER'S OWN WORDS (VERBATIM AUDIT ARCHIVE)
+
+> **AUTHORITATIVE GOVERNANCE MANDATE:**  
+> This compendium constitutes the permanent, unalterable master log of all strategy rules, trading directives, parameter modifications, and structural updates provided by the trader (**Ebenezer Johnson / Lery**) in his **exact, verbatim words** across the entire project trajectory.  
+> Whenever an audit is conducted or code behavior is questioned, this section serves as the **Supreme Audit Standard** to verify that the implementation adheres 100% to the trader's explicit mandates with zero unauthorized assumptions, time limits, or indicator drift.
+
+---
+
+### 17.1. UNIVERSAL FLEET DIRECTIVES & CENTRALIZED TRADE MANAGEMENT (VERBATIM)
+
+#### Directive U1 — Universal M5 EMA 100 Directional Filter
+* **Date / Step:** `2026-10-20 00:00:22 UTC` (Step 1477 / Directive #17)
+* **Verbatim Trader Instruction:**
+  > "1. do you remember the rule that EMA 100 is a filter. that the bot buys only when M5 price is above EMA 100 or only sell if M5 price is above EMA 100? lets apply it to all the bots as an addition. some have it already."
+* **Consolidated Executable Specification:**
+  * **BUY Orders (Initial & Re-Entry):** Permitted **ONLY** when current M5 candle price is **ABOVE** M5 EMA 100 (`currentPrice > currentEma100`).
+  * **SELL Orders (Initial & Re-Entry):** Permitted **ONLY** when current M5 candle price is **BELOW** M5 EMA 100 (`currentPrice < currentEma100`).
+  * Applied unconditionally across all 7 bots in the fleet.
+
+---
+
+#### Directive U2 — Continuous Background Signal Scanning While in Trade
+* **Date / Step:** `2026-10-20 00:00:22 UTC` (Step 1477 / Directive #17) & `2026-10-20 23:14:15 UTC` (Step 2904 / Directive #21)
+* **Verbatim Trader Instruction:**
+  > "3. also anytime a trade has been executed, the bot should still keep actively searching for entry signals so that anytime the current trade closes and there is an opportunity(fresh re entry conditions are met) the bot can enter the trade immediately."
+  > 
+  > "that is why i said the bots should still be actively be searching for potential entries so that any time the current trade closes and there is an opportunity to enter a trade, the bot can take it(because it is always actively scanning and serching for trades.) also please check if there is a delay in entry or trades are ctually executed immediately the M5 candle that confirms the signal closes?"
+* **Consolidated Executable Specification:**
+  * While a position is active, the M5 candle scanner never sleeps. It continuously evaluates confluence and latches valid re-entry setups into `state.activeReentryOpportunity`.
+  * The very instant an open trade closes, the latched opportunity executes immediately without waiting for the next M5 bar.
+
+---
+
+#### Directive U3 — Order-Independent Confluence & Unbounded Signal Window
+* **Date / Step:** `2026-10-18 22:38:39 UTC` (Step 507), `2026-10-22 07:30:35 UTC` (Step 5485), `2026-10-23 07:43:12 UTC` (Step 8270), `2026-10-23 07:55:45 UTC` (Step 8338)
+* **Verbatim Trader Instructions:**
+  > "NB: trigger initial entry when all these conditions are met. they can happen in any order." (Step 507)
+  > 
+  > "NB condition 1 may happen before 2 or 2 may happen before 1" (Step 5485)
+  > 
+  > "i did not add any entry timer window to the rules but you added in in the implementation. why did you do that?
+  > 'When Stoch 200 first crosses, enter when Stoch (15,2,5) freshly crosses Level 50 in same direction (within 2 bars).'
+  > this is there in the rules on the dashboard. can you correct it?" (Step 8270)
+  > 
+  > "'Once one of them crosses, it waits for the next indicator to cross unless there is a dealignment'" (Step 8338)
+* **Consolidated Executable Specification:**
+  * Strict prohibition against artificial timer bars or expiration windows (e.g., "(within 2 bars)" is 100% banned).
+  * Once an indicator crosses or arms, the engine waits indefinitely for the remaining indicators to align, **unless a genuine dealignment occurs**.
+
+---
+
+#### Directive U4 — Centralized Capital Protection & The $1.00 Breakeven Shield
+* **Date / Step:** `2026-10-22 19:32:50 UTC` (Step 6189 / Directive #40)
+* **Verbatim Trader Instruction:**
+  > "maybe we need to centralize the trade manage ment rules. if a trade reaches $1 profit, it should never run to loss. to the software SL move to $0.5. now about how far the trade can go without being cut off early. we have still not solved that problem. look at vix 75. the reason why the 12:55 trade closed was profit lock hit peak $2.69. even if the trade closed at 2.69 its would have been better. but notice after the trade closed it went all the way up. what can we do to make the most out of this thing? its frautrating. can we solve that probblem once and for all for all the instruments? investigate in bring some data proven options. i am loosing more that making profits. not because i have a bad strategy but be cause the trades are not managed well."
+* **Consolidated Executable Specification:**
+  * **Tier 0 Breakeven Shield:** The moment unrealized profit reaches **+$1.00**, the software SL floor locks at **+$0.50**. A trade that reaches $1.00 profit **can never close in a loss**.
+  * **The Breathing Zone ($1.00 to $2.99):** Floor is held firmly at **+$0.50**, providing up to $2.49 of breathing room for natural M5 candle wicks without choking winning trades.
+
+---
+
+#### Directive U5 — Dynamic Runner Engine & Removal of Static TP Caps
+* **Date / Step:** `2026-10-20 23:23:30 UTC` (Step 2944 / Directive #22)
+* **Verbatim Trader Instruction:**
+  > "Remove the static $4.00 hard TP cap so winning trades are never closed by a fixed take-profit target. Instead, winning trades run freely under:
+  > 1Tier 1 Breakeven Shield: Locks +$1.00 at +$2.20.
+  > Tier 2/3/4 Trailing Ratchet: Trails behind peak profit (locking up to 70% of gains).
+  > Closed-M5 Stoch (25,2,5) Midline (50) Cross Exit: Liquidates with secured profit when momentum genuinely exhausts on a closed candle.
+  > Super-Runner Cashout Ceiling: +$20.00 hard profit ceiling."
+* **Consolidated Executable Specification:**
+  * Winning trades have no fixed TP cap and run dynamically under a 4-Tier Trailing Ratchet up to a **+$20.00 cashout ceiling**.
+  * **Runner Immunity:** When in profit (pnl >= $3.50 or active ratchet), trades are immune to sensitive indicator stops.
+
+---
+
+### 17.2. VOLATILITY 100 INDEX (`R_100` — MILK MACHINE)
+
+#### Chronological Verbatim Directives:
+* **Step 227 (`2026-10-18 20:47:31 UTC`):**
+  > "Lets proceed with Volatility 100. what are the entry rules"
+* **Step 241 (`2026-10-18 21:00:02 UTC`):**
+  > "yes these are my rules. please check if they have been well implemented. just a little update. because vix 100 makes a lot of profit in a short period of time, i want to update the early exit rule.
+  > Early Exit 1 — M5 Stoch (15, 2, 5)
+  > BUY: Closes immediately on a closed M5 candle if %K crosses below 65
+  > SELL: Closes immediately on a closed M5 candle if %K crosses above 35"
+* **Step 989 (`2026-10-19 23:08:33 UTC`):**
+  > "Thanks but we need to add a mechanism to gain more for every trade. the vix 100 trade that went to 12 dollars profit closed at 6 dollars profit. what can we do for all the bots to ensure we are maximizing profits and not killing the trades early"
+* **Step 3182 (`2026-10-20 23:51:55 UTC`):**
+  > "Now you see how i am thinkin based on the 2 bots we just reviewed. lets move to Vix 100. analyze why the trades keep closing prmaturely. i mostly saw the trades closed due to thight software SL and this instrument is very volatile so that was bad plan. Lets move it to $4. also all the potential trades that could actually give us masive profits were cut short, please investigate all the tradesand lets come up with a fix. also check if there were any errors in implenting the trading rules accurately."
+* **Step 3300 (`2026-10-21 00:08:12 UTC`):**
+  > "please proceed just a little update.
+  > 1. Move Software SL to -$4.00
+  > 2. Remove Static $4.00 TP Cap (Dynamic Runner)
+  > 3. Upgrade Early Exit 1 to Closed-M5 Stoch (25,2,5) 65/35 Profit Exit
+  > 4. Fix Initial vs Re-Entry State Gate:"
+* **Step 8250 & Step 8270 (`2026-10-23 07:38:34 & 07:43:12 UTC`):**
+  > "But were are the entry rules for vix 100?"
+  > 
+  > "for initial entry,
+  > 4. Setup 2: Pullback Re-Entry (V100_REENTRY_STOCH15_20 / 80)
+  > 
+  > After the initial trade has completed and while Stoch (200) and EMA 100 remain aligned in the macro trend:
+  > 
+  > BUY Re-Entry:
+  > Stoch (200, 1, 1) remains in BUY trend (sK200 >= 48.0) and Price > EMA 100.
+  > Trigger: M5 Stoch (15, 2, 5) %K freshly crosses above Level 20.0 (prevK <= 20.0 && sK > 20.0).
+  > SELL Re-Entry:
+  > Stoch (200, 1, 1) remains in SELL trend (sK200 <= 52.0) and Price < EMA 100.
+  > Trigger: M5 Stoch (15, 2, 5) %K freshly crosses below Level 80.0 (prevK >= 80.0 && sK < 80.0).
+  > 
+  > i did not add any entry timer window to the rules but you added in in the implementation. why did you do that?
+  > 'When Stoch 200 first crosses, enter when Stoch (15,2,5) freshly crosses Level 50 in same direction (within 2 bars).'
+  > this is there in the rules on the dashboard. can you correct it?"
+* **Step 8338 (`2026-10-23 07:55:45 UTC`):**
+  > "'Once one of them crosses, it waits for the next indicator to cross unless there is a dealignment'"
+
+#### Consolidated Authoritative Rules for Volatility 100 (`R_100`):
+1. **Macro Trend Identifier (M5 Stoch 200, 1, 1 with 48/52 Hysteresis):**
+   * **BUY Arming:** Closed M5 %K crosses strictly **above 52.0**. Stays armed BUY while `sK200 >= 48.0`.
+   * **SELL Arming:** Closed M5 %K crosses strictly **below 48.0**. Stays armed SELL while `sK200 <= 52.0`.
+2. **Baseline Filter (M5 EMA 100):**
+   * BUY: `Price > EMA 100`
+   * SELL: `Price < EMA 100`
+3. **Setup 1: Initial Breakout Entry (Unbounded, Order-Independent):**
+   * Once Stoch 200 arms, enter when M5 Stoch (15, 2, 5 Simple) freshly crosses Level 50.0 (`> 50.0` for BUY / `< 50.0` for SELL).
+   * Either indicator may cross first. If Stoch 15 crosses Level 50 first, it waits for Stoch 200 to arm unless dealigned. Price must confirm EMA 100.
+4. **Setup 2: Pullback Re-Entry (After Initial Entry Complete):**
+   * **BUY Re-Entry:** While Stoch 200 remains aligned (`>= 48.0`) and `Price > EMA 100`, trigger when M5 Stoch (15, 2, 5) %K freshly crosses **above Level 20.0** (`prevK <= 20.0 && sK > 20.0`).
+   * **SELL Re-Entry:** While Stoch 200 remains aligned (`<= 52.0`) and `Price < EMA 100`, trigger when M5 Stoch (15, 2, 5) %K freshly crosses **below Level 80.0** (`prevK >= 80.0 && sK < 80.0`).
+5. **Trade Management & Exits:**
+   * Software SL: **-$4.00** (4.00 pts) | Hard SL: **-$5.00** (5.00 pts)
+   * Tier 0 Breakeven Shield at **+$1.00** peak -> locks **+$0.50** floor. Breathing Zone $1.00-$2.99.
+   * Dynamic Trailing Ratchet for peak >= $3.00 up to **$20.00 cashout ceiling**.
+   * Early Profit Exit: Closed-M5 Stoch (25, 2, 5) %K **< 65.0** (BUY) or **> 35.0** (SELL) when profit >= $0.50.
+   * Early Loss Exits (inLoss only): Opposite M5 Fractal break in loss, Entry-Hour H1 Adverse Close in loss.
+
+---
+
+### 17.3. VOLATILITY 25 INDEX (`R_25` — TEA MACHINE)
+
+#### Chronological Verbatim Directives:
+* **Step 354 & Step 363 (`2026-10-18 21:48:14 & 21:58:12 UTC`):**
+  > "lets proceed to Volatility 25. what are the rules"
+  > 
+  > "the rules arew correct but please check to see if they have been accurately implemented.
+  > i want to add a re entry condition
+  > While M5 Stoch (200, 1, 1) and M5 CCI 100 remains aligned and no trade is open,
+  > BUY Re-Entry: Fresh Stoch (15, 2, 5) %K cross above 25
+  > SELL Re-Entry: Fresh Stoch (15, 2, 5) %K cross below 75
+  > and add the below erly exit rule
+  > Early Exit: Closed-M5 Stoch (15,2,5) Level 50 Cross in Opposite Direction
+  > also add the below Profit Protection & Trailing Engine:
+  > Closed-M5 Stoch (15, 2, 5) Midline Profit Exit when trade is in profit"
+* **Step 2904 & Step 2944 (`2026-10-20 23:14:15 & 23:23:30 UTC`):**
+  > "Now lets analyze vix 25. analyzing the trades that actually had to yield some prifit were cut short. first one is 5:35. exit reason was TP target reached. @3.8 dollars mean while i could have made more profit is the trade run with the the stoch profit 50 level cross early exit rule. we need to do something about that so that we don't set profit levels that will kill the trade premature. the losss management rules are on point and saved me a lot of bad trades."
+  > 
+  > "Execute the below updated fixes for vix 25: Remove the static $4.00 hard TP cap so winning trades are never closed by a fixed take-profit target..."
+* **Step 3023 & Step 3024 (`2026-10-20 23:32:54 & 23:34:48 UTC`):**
+  > "insead of 'Update V25 Initial Entry so that either sequence triggers the trade the moment all 3 align',"
+  > "instead of 'V25 Initial Entry to trigger the trade the moment all 3 align', rather put a 20 minutes execution window waiting for Stoch 200 to cross. hope you undersatand?"
+* **Step 5384 (`2026-10-22 01:08:54 UTC`):**
+  > "2. Harden Tea (R_25) Fractal SL Buffer"
+* **Step 7831 (`2026-10-23 06:57:16 UTC`):**
+  > "how are there still errors in the code? how can trades still be placed when conditions are not satisfied. i thought we fixed all that. please investigate today's trades for vix 25"
+* **Step 8338 (`2026-10-23 07:55:45 UTC` — MASTER REVISION & UNIFICATION):**
+  > **"2. map the entry and trade management rules exactly of vix 100 to vix 25 and vix 50. update the dashboard as well. no erros."**
+
+#### Consolidated Authoritative Rules for Volatility 25 (`R_25`):
+> **EXACT CLONE OF VOLATILITY 100 QUANTITATIVE ARCHITECTURE:**  
+> In direct accordance with Directive #52 (Step 8338), all legacy CCI 100 indicators and timer windows are 100% abolished. Volatility 25 runs the exact V100 quantitative state machine:
+1. **Macro Trend Identifier:** M5 Stoch 200 (48/52 Hysteresis Band: `> 52.0` arms BUY, held `>= 48.0`; `< 48.0` arms SELL, held `<= 52.0`).
+2. **Baseline Filter:** M5 EMA 100 (`Price > EMA 100` for BUY / `Price < EMA 100` for SELL).
+3. **Setup 1 (Initial Entry):** Unbounded fresh M5 Stoch (15, 2, 5 Simple) %K cross of **Level 50.0** in trend direction. Either indicator may cross first.
+4. **Setup 2 (Re-Entry):** Fresh M5 Stoch (15, 2, 5) %K cross **above Level 20.0** (BUY) / **below Level 80.0** (SELL) while Stoch 200 and EMA 100 remain aligned.
+5. **Trade Management & Exits:**
+   * Software SL: **-$4.00** (8.00 pts on 0.50 lots) | Hard SL: **-$5.00** (10.00 pts)
+   * Tier 0 Breakeven Shield at **+$1.00** peak -> locks **+$0.50** floor. Breathing Zone $1.00-$2.99.
+   * Dynamic Trailing Ratchet for peak >= $3.00 up to **$20.00 ceiling**.
+   * Early Profit Exit: Closed-M5 Stoch (25, 2, 5) %K **< 65.0** (BUY) / **> 35.0** (SELL).
+   * Early Loss Exits: Opposite M5 Fractal break in loss, Entry-Hour H1 Adverse Close in loss.
+
+---
+
+### 17.4. VOLATILITY 50 INDEX (`R_50` — OMNISIGHT)
+
+#### Chronological Verbatim Directives:
+* **Step 400 & Step 407 (`2026-10-18 22:06:52 & 22:18:27 UTC`):**
+  > "lets proceed to Volatility 50. what are the rules"
+  > 
+  > "we need to revice the rules.
+  > Condition 1 — Macro Trend Arming (M5 Stoch 200, 1, 1) remains thesame.
+  > remove Condition 2 — Execution Trigger & Pullback Re-Entry (M5 CCI 150 Zero-Line Cross)
+  > 
+  > Initial entry rule:
+  > Stoch (15, 2, 5) freshly crosses level 50 after condition 1 is already armed.
+  > 
+  > Re entry rule: Stoch (15, 2, 5) freshly croses level 25 for buy and level 85 for sell while Condition 1 is still valid after the initialtrade has been taken and closed.
+  > 
+  > New Early Exit Rule (Closed-M5 Stoch (15, 2, 5) Level 50.0 Opposite Cross"
+* **Step 3419 & Step 3553 (`2026-10-21 00:18:19 & 00:35:08 UTC`):**
+  > "now lets proceed to vix 50"
+  > 
+  > "please proceed with the below Proposed Fixes & Strategic Realignment
+  > 1. Move Software SL to -$3.50 (or -$4.00)
+  > 2. Remove Static $4.00 TP Cap (Dynamic Runner)
+  > 3. Calibrate Re-Entry Thresholds (80 / 20) 
+  > 4. Upgrade Early Profit Exit to Closed-M5 Stoch (25,2,5) Midline (50) 
+  > 5. Fix Initial vs Re-Entry State Gate"
+* **Step 4727 & Step 5015 (`2026-10-21 21:26:10 & 22:01:08 UTC`):**
+  > "There are majorerrors in vix 50 as well. bot missed several trades. other trades that would have made good profits were cut early even though not conditions to warrant the close were met.. please investigate and lets fix it"
+  > 
+  > "But vix 50 does not use Stoch (5,3,3) for re entry. we updated it to Fresh Stoch (15,2,5) %K cross > 25.0 (BUY) / < 85.0 (SELL). so there is still an error there"
+* **Step 8338 (`2026-10-23 07:55:45 UTC` — MASTER REVISION & UNIFICATION):**
+  > **"2. map the entry and trade management rules exactly of vix 100 to vix 25 and vix 50. update the dashboard as well. no erros."**
+
+#### Consolidated Authoritative Rules for Volatility 50 (`R_50`):
+> **EXACT CLONE OF VOLATILITY 100 QUANTITATIVE ARCHITECTURE:**  
+> In direct accordance with Directive #52 (Step 8338), Volatility 50 is mapped 100% to the V100 rules:
+1. **Macro Trend Identifier:** M5 Stoch 200 (48/52 Hysteresis Band: `> 52.0` arms BUY, held `>= 48.0`; `< 48.0` arms SELL, held `<= 52.0`).
+2. **Baseline Filter:** M5 EMA 100 (`Price > EMA 100` for BUY / `Price < EMA 100` for SELL).
+3. **Setup 1 (Initial Entry):** Unbounded fresh M5 Stoch (15, 2, 5 Simple) %K cross of **Level 50.0** in trend direction. Either indicator may cross first.
+4. **Setup 2 (Re-Entry):** Fresh M5 Stoch (15, 2, 5) %K cross **above Level 20.0** (BUY) / **below Level 80.0** (SELL) while Stoch 200 and EMA 100 remain aligned.
+5. **Trade Management & Exits:**
+   * Software SL: **-$4.00** (1.00 pt on 4.00 lots) | Hard SL: **-$5.00** (1.25 pts)
+   * Tier 0 Breakeven Shield at **+$1.00** peak -> locks **+$0.50** floor. Breathing Zone $1.00-$2.99.
+   * Dynamic Trailing Ratchet for peak >= $3.00 up to **$20.00 ceiling**.
+   * Early Profit Exit: Closed-M5 Stoch (25, 2, 5) %K **< 65.0** (BUY) or **> 35.0** (SELL).
+   * Early Loss Exits: Opposite M5 Fractal break in loss, Entry-Hour H1 Adverse Close in loss.
+
+---
+
+### 17.5. VOLATILITY 75 INDEX (`R_75` — LERY'S ALERTS)
+
+#### Chronological Verbatim Directives:
+* **Step 44 & Step 64 (`2026-10-18 19:11:49 & 19:55:07 UTC`):**
+  > "Thanks its working. i want to analyze vix 75. what are the entry rules?"
+  > 
+  > "Thanks. there seems to be a error somewhere. 
+  > i noticed the trades open and cose very close to the entry point. what is causing that? 
+  > also for the rules, for initial entry, price must first cross above or below EMA 100 and EMA 200 as the first condition. the second conditions is a fresh stoch cross. %k must cross above level 80 for buy or below level 20 for a sell. 
+  > for Retracement Entry, for buy, Arming: Price retraces to physically touch EMA 100. the second condition is Trigger: Stochastic %K freshly crosses above Level 20 for buy or level 80 for sell.
+  > please check if this is what has been implemented."
+* **Step 2386 & Step 2760 (`2026-10-20 22:16:14 & 22:45:31 UTC`):**
+  > "I was going through the trades and noticed a bug. the vix 75 sell trade at 15 should never have triggerd. because after the initialtrade that opens the trnd, the re entry( subsequest trades require a fresh retrace EMA touch and a fresh Stoch cross from overbought level. but that did not happen which means there is a bug in the code... because all the reentries require EMA 100 to be above EMA 200 for a buy and EMA 100 to be below EMA 200 for a sell. but the initial entries do not require this condition. they require Price above/below EMA 100 & 200 and Fresh Stoch (15,2,5) %K cross > 80 (BUY) / < 20 (SELL)."
+* **Step 5990 & Step 6032 (`2026-10-22 08:09:10 & 08:17:37 UTC` — Initial Entry Level 50 Calibration):**
+  > "lets do a little update to the rules for vix 75. what are the current rules?"
+  > 
+  > "lets make changes to this
+  > B. Setup 1: Initial Entry (Breakout Wave)
+  > Condition 1 (Arming): Closed M5 candle closes above both M5 EMA 100 and EMA 200 for BUY (Close > EMA 100 && Close > EMA 200), or below both for SELL. (Does not require EMA 100/200 cross, only price beyond both).
+  > Condition 2 (Execution Trigger): Fresh M5 Stoch (15, 2, 5 Simple) %K crosses above Level 50.0 for BUY, or crosses below Level 50.0 for SELL. if M5 Stoch (15, 2, 5 Simple) is already below or above level 50, the setup is invalid. there for do not trigger the trade"
+
+#### Consolidated Authoritative Rules for Volatility 75 (`R_75`):
+1. **Setup 1: Initial Breakout Entry:**
+   * Condition 1 (Arming): Closed M5 candle closes above both EMA 100 and EMA 200 for BUY (`Close > EMA 100 && Close > EMA 200`), or below both for SELL.
+   * Condition 2 (Execution Trigger): Fresh M5 Stoch (15, 2, 5 Simple) %K crosses **above Level 50.0** for BUY (`prevK <= 50.0 && sK > 50.0`), or **below Level 50.0** for SELL (`prevK >= 50.0 && sK < 50.0`).
+   * **Pre-Level Invalidation Clause:** If Stoch (15, 2, 5) is already beyond Level 50.0, the setup is invalid and skipped.
+2. **Setup 2: Retracement / EMA 100 Pullback Entry:**
+   * Condition 1 (Retrace Touch): Price retraces to physically touch EMA 100 (`Low <= EMA 100` for BUY / `High >= EMA 100` for SELL).
+   * Condition 2 (Trigger): Fresh Stoch (15, 2, 5) %K cross **above Level 20.0** for BUY / **below Level 80.0** for SELL, with candle close confirming beyond EMA 100.
+3. **Trade Management:** Software SL -$2.50 | Hard SL -$5.00 | Tier 0 Shield at +$1.00 -> $0.50 floor | Dynamic Runner.
+
+---
+
+### 17.6. VOLATILITY 75 (1s) INDEX (`1HZ75V` — COFFEE MACHINE)
+
+#### Chronological Verbatim Directives:
+* **Step 180 (`2026-10-18 20:30:54 UTC`):**
+  > "lets proceed with vix 75 1s. what are the rules"
+* **Step 270 & Step 277 (`2026-10-18 21:06:21 & 21:17:23 UTC`):**
+  > "The rules are accurate but i think there are errors in the implementation... also remove the following early exit rules: 1. Early Loss Exit 3 — M5 Fast Stoch, 2. Entry-Hour H1 Adverse Close Exit, and introduce the below early exit rule: Closed-M5 Stoch (15, 2, 5) level 50 cross in opposite direction early exit"
+
+#### Consolidated Authoritative Rules for Volatility 75 (1s) (`1HZ75V`):
+1. **Initial Entry Engine:**
+   * Sequential Arming: Closed M5 Stoch (200, 1, 1) crosses Level 50 (`> 50.0` BUY / `< 50.0` SELL) to arm the trend.
+   * Trigger: M5 MACD (25, 75, 1) crossing zero line (`> 0.0` BUY / `< 0.0` SELL).
+   * Baseline Filter: M5 Price must be > EMA 100 for BUY / < EMA 100 for SELL.
+2. **Re-Entry Engine:**
+   * Trend Alignment: Stoch 200 and MACD remain aligned.
+   * Trigger: Fresh M5 Stoch (15, 2, 5 Simple) %K cross **above Level 20.0** (BUY) or **below Level 80.0** (SELL).
+   * Baseline Filter: Price confirms EMA 100.
+3. **Trade Management:** Software SL -$4.00 | Hard SL -$5.00 | Tier 0 Shield at +$1.00 -> $0.50 floor | Dynamic Runner.
+
+---
+
+### 17.7. VOLATILITY 25 (1s) INDEX (`1HZ25V` — ICE CREAM MACHINE)
+
+#### Chronological Verbatim Directives:
+* **Step 5485 (`2026-10-22 07:30:35 UTC` — Instrument Migration & Rule Specification):**
+  > "i still have the same challenge. vix 100 1s trades are still closing as soon as they open. i thing we have to switch to another instrument. map the strategy to vix 25 1s. we will change the rules slightly
+  > 
+  > For initial entry,
+  > 1. stoch 200 cross level 45/55 for buy or sell to sel the main trend
+  > 2. Stoch (15,2,5) cross above level 75 for buy and below level 25 for sell
+  > 3. EMA 100 is a filter at the time condition 1 and 2 are met, M5 price must be above EMA 100 for buy or below EMA 100 for sell. If EMA is not aligned, skip the trade and wait for a re entry signal
+  > 
+  > NB condition 1 may happen before 2 or 2 may happen before 1
+  > 
+  > re entry condition: after initial entry has been taken
+  > 1. Stoch 200 still in the right direction
+  > 2. Stoch (15,2,5) freshly crosses above level 25 for buy or level 75 for sell
+  > 3. EMA 100 is a filter. at the time condition 1 and 2 are met, M5 price must be above EMA 100 for buy or below EMA 100 for sell.
+  > 
+  > we can maintain the current trade management rules."
+
+#### Consolidated Authoritative Rules for Volatility 25 (1s) (`1HZ25V`):
+1. **Condition 1 (Macro Trend Identifier):** M5 Stoch (200, 1, 1) %K cross **above 55.0** for BUY, **below 45.0** for SELL (Hysteresis holds trend until reverse threshold cross).
+2. **Condition 2 (Trigger Oscillator):** M5 Stoch (15, 2, 5) cross **above 75.0** for BUY, **below 25.0** for SELL.
+3. **Any-Order Confluence Mandate:** Condition 1 may precede Condition 2, or Condition 2 may precede Condition 1.
+4. **Condition 3 (M5 EMA 100 Filter):** Price must be > EMA 100 for BUY or < EMA 100 for SELL. **If not aligned, skip the initial trade and transition immediately to await re-entry.**
+5. **Re-Entry Engine:** Stoch 200 aligned + fresh Stoch (15, 2, 5) cross **above 25.0** (BUY) / **below 75.0** (SELL) + Price vs EMA 100 aligned.
+6. **Trade Management:** Software SL -$4.00 | Hard SL -$5.00 | Tier 0 Shield at +$1.00 -> $0.50 floor | Dynamic Runner to $20 ceiling.
+
+---
+
+### 17.8. VOLATILITY 10 INDEX (`R_10` — STAR MACHINE)
+
+#### Chronological Verbatim Directives:
+* **Step 476 & Step 507 (`2026-10-18 22:28:47 & 22:38:39 UTC`):**
+  > "lets proceed to Volatility 10. what are the rules"
+  > 
+  > "the initial entry condtions seems wrong.
+  > 
+  > Initial BUY (isInitialBuyTrigger):
+  > 1. Stoch (200, 1, 1) %K >= 50.0 (stoch200AlignedBuy)
+  > 2. MACD (25, 75, 1) >= 0.0 (macdAlignedBuy)
+  > 2. Price > M5 EMA 100 (emaBaselineBuy)
+  > 
+  > Initial SELL (isInitialSellTrigger):
+  > 1. Stoch (200, 1, 1) %K <= 50.0 (stoch200AlignedSell)
+  > 2. MACD (25, 75, 1) <= 0.0 (macdAlignedSell)
+  > 3. Price < M5 EMA 100 (emaBaselineSell)
+  > 
+  > NB: trigger initial entry when all these conditions are met. they can happen in any order.
+  > 
+  > also change Early Loss Exit 3 — M5 Stoch settings from (5, 3, 3) to (15, 2, 5)"
+
+#### Consolidated Authoritative Rules for Volatility 10 (`R_10`):
+1. **Initial Entry Trigger (Any-Order Confluence):**
+   * **BUY:** Stoch (200, 1, 1) %K `>= 50.0` AND MACD (25, 75, 1) `>= 0.0` AND Price `> M5 EMA 100`. Triggers immediately when the last condition aligns in any sequence.
+   * **SELL:** Stoch (200, 1, 1) %K `<= 50.0` AND MACD (25, 75, 1) `<= 0.0` AND Price `< M5 EMA 100`. Triggers immediately when the last condition aligns in any sequence.
+2. **Re-Entry Engine:** Fast Stoch (5, 3, 3) %K freshly crosses Level 20.0 (BUY) / Level 80.0 (SELL) while all 3 macro conditions remain aligned.
+3. **Trade Management:** Software SL -$2.50 | Hard SL -$5.00 | Tier 0 Shield at +$1.00 -> $0.50 floor | Dynamic Runner.
+
+---
