@@ -153,7 +153,7 @@ All active bots use a standard **$5.00 Stake** per trade, specifically engineere
 | **Lery's Alerts** | `lery-v75` | S1 | `~/trading-bots/Lery-s-Alerts` | Volatility 75 | `R_75` | 0.01 Lots | $5.00 | M5 EMA 100/200 Breakout (80/20) & EMA 100 Touch Retrace (20/80) | 350.0 pts | 700.0 pts | -$2.00 |
 | **Coffee Machine** | `coffee-v75-1s` | S1 | `~/trading-bots/coffee` | Volatility 75 (1s) | `1HZ75V` | 0.05 Lots | $5.00 | M5 Stoch 100 Trend + Stoch (30,2,5) Level 50 Cross (±3 candles) + EMA 100 Filter + Stoch (15,2,5) 20/80 Re-Entry | 70.0 pts | 140.0 pts | -$2.00 |
 | **Milk Machine** | `milk-v100` | S1 | `~/trading-bots/milk` | Volatility 100 | `R_100` | 1.00 Lot | $5.00 | M5 Stoch 200 (48/52) Trend + M5 Stoch (15,2,5) Initial Lvl 50 & 20/80 Re-Entry + Stoch (25,2,5) 65/35 Exit | 3.50 pts | 7.00 pts | -$2.50 |
-| **Tea Machine** | `tea-v25` | S1 | `~/trading-bots/tea` | Volatility 25 | `R_25` | 0.50 Lots | $5.00 | M5 Stoch (200,1,1) Trend + CCI 100 Zero Cross (20m Window) + Stoch (15,2,5) 25/75 Re-Entry + Dynamic Runner | 7.00 pts | 14.00 pts | -$2.00 |
+| **Tea Machine** | `tea-v25` | S1 | `~/trading-bots/tea` | Volatility 25 | `R_25` | 0.50 Lots | $5.00 | M5 Stoch 100 Trend + Stoch (30,2,5) Level 50 Cross (±3 candles) + EMA 100 Filter + Stoch (30,25,15) Re-Entry | 7.00 pts | 14.00 pts | -$2.00 |
 | **Ice Cream** | `ice-cream-100-1s` | S2 | `~/trading-bots/ice-cream` | Volatility 25 (1s) | `1HZ25V` | 0.005 Lots | $5.00 | M5 Stoch 200 (45/55) + Stoch (15,2,5) (75/25) + EMA 100 Filter (Skip & Await Re-Entry) + Pullback Re-Entry (25/75) | 525.0 pts | 1050.0 pts | -$2.00 |
 | **OmniSight** | `omni-v50` | S2 | `~/trading-bots/OmniSight` | Volatility 50 | `R_50` | 4.00 Lots | $5.00 | M5 Stoch (200,1,1) Trend + M5 Stoch (15,2,5) Initial Lvl 50 & 25/75 Re-Entry + Dynamic Runner | 0.88 pt | 1.75 pt | -$2.00 |
 | **Test Bot** | `test-v10` | S2 | `~/trading-bots/Test-Bot` | Volatility 10 | `R_10` | 0.50 Lots | $5.00 | M5 Stoch 200 + MACD (25,75,1) + EMA 100 Any-Order + Fast Stoch (5,3,3) 20/80 Re-Entry | 7.00 pts | 14.00 pts | -$2.00 |
@@ -9090,19 +9090,48 @@ The trader requested an update to **Setup 1: Initial Entry (Breakout Wave)** for
 * **Step 8338 (`2026-10-23 07:55:45 UTC` — MASTER REVISION & UNIFICATION):**
   > **"2. map the entry and trade management rules exactly of vix 100 to vix 25 and vix 50. update the dashboard as well. no erros."**
 
-#### Consolidated Authoritative Rules for Volatility 25 (`R_25`):
-> **EXACT CLONE OF VOLATILITY 100 QUANTITATIVE ARCHITECTURE:**  
-> In direct accordance with Directive #52 (Step 8338), all legacy CCI 100 indicators and timer windows are 100% abolished. Volatility 25 runs the exact V100 quantitative state machine:
-1. **Macro Trend Identifier:** M5 Stoch 200 (48/52 Hysteresis Band: `> 52.0` arms BUY, held `>= 48.0`; `< 48.0` arms SELL, held `<= 52.0`).
-2. **Baseline Filter:** M5 EMA 100 (`Price > EMA 100` for BUY / `Price < EMA 100` for SELL).
-3. **Setup 1 (Initial Entry):** Unbounded fresh M5 Stoch (15, 2, 5 Simple) %K cross of **Level 50.0** in trend direction. Either indicator may cross first.
-4. **Setup 2 (Re-Entry):** Fresh M5 Stoch (15, 2, 5) %K cross **above Level 20.0** (BUY) / **below Level 80.0** (SELL) while Stoch 200 and EMA 100 remain aligned.
-5. **Trade Management & Exits:**
-   * Software SL: **-$4.00** (8.00 pts on 0.50 lots) | Hard SL: **-$5.00** (10.00 pts)
-   * Tier 0 Breakeven Shield at **+$1.00** peak -> locks **+$0.50** floor. Breathing Zone $1.00-$2.99.
-   * Dynamic Trailing Ratchet for peak >= $3.00 up to **$20.00 ceiling**.
-   * Early Profit Exit: Closed-M5 Stoch (25, 2, 5) %K **< 65.0** (BUY) / **> 35.0** (SELL).
-   * Early Loss Exits: Opposite M5 Fractal break in loss, Entry-Hour H1 Adverse Close in loss.
+* **Step 9425 (`2026-10-24 00:16:24 UTC` — Authoritative Indicator & Entry Upgrade):**
+  > "Thank you. we will do a similar update for vix 25. please see the rules below.
+  > 
+  > Please see the updates below.
+  > 
+  > A. Indicators
+  > 1. Macro Trend Identifier: Stochastic (100, 1, 1)
+  > 2. Trigger Indicator: Stochastic (30, 2, 5 Simple) level 50
+  > 3. re entry indicator:  Stochastic (30, 25, 15 Simple) %K must first touch or cross level 50 and then cross %d freshly
+  > 
+  > B. Initial Entry Rules (Buy/Sell)
+  > 1. Condition 1 (Macro Trend Arming): Closed M5 Stochastic (100, 1, 1) %K crosses above/below  Level 50.0. It stays armed as long as it remains above/below 50.
+  > 2. Condition 2 (Baseline Filter): Price must be above/below M5 EMA 100
+  > 3. Condition 3 (Execution Trigger): Stochastic (30, 2, 5 Simple) freshly crosses above/below level 50. the cross can happen 3 candles before Stoch 100 crosses level 50, 3 candles after Stoch 100 crosses level 50, or simultaneiously.
+  > 
+  > C. Re-Entry Rules (After Initial Trade Has Closed)
+  > 1. While the Macro Trend remains valid (Stoch 100 aligned)
+  > 2. Stochastic (30, 25, 15 Simple) %K must first touch or cross level 50 and then cross %d freshly.  for buy, %k fresh touch level 50 then crosss %d up. for sell, %k fresh touch level 50 then crosss %d down. 
+  > 
+  > Hope its clear"
+
+#### Consolidated Authoritative Rules for Volatility 25 (`R_25` — Tea Machine):
+1. **A. Indicators:**
+   * **Macro Trend Identifier:** Closed M5 Stochastic `(100, 1, 1)` Level 50.0.
+   * **Trigger Indicator:** Closed M5 Stochastic `(30, 2, 5 Simple)` Level 50.0.
+   * **Baseline Filter:** M5 EMA 100 (`Price > EMA 100` for BUY / `Price < EMA 100` for SELL).
+   * **Re-Entry Indicator:** Closed M5 Stochastic `(30, 25, 15 Simple)` (%K touches/crosses Level 50, then freshly crosses %D).
+2. **B. Initial Entry Rules (Buy/Sell):**
+   * **Condition 1 (Macro Trend Arming):** Closed M5 Stochastic (100, 1, 1) %K crosses above/below Level 50.0. Stays armed as long as it remains above/below 50.0.
+   * **Condition 2 (Baseline Filter):** Price must be above M5 EMA 100 for BUY or below M5 EMA 100 for SELL.
+   * **Condition 3 (Execution Trigger):** Stochastic (30, 2, 5 Simple) freshly crosses above/below Level 50.0. The cross can occur up to 3 candles (900s) before Stoch 100 crosses Level 50, up to 3 candles after, or simultaneously.
+   * *Baseline Filter Enforcement:* If timing confluence is met but Price is not on the correct side of EMA 100, the initial trade is skipped and the bot unlocks re-entry mode.
+3. **C. Re-Entry Rules (After Initial Trade Has Closed):**
+   * **Condition 1:** While Macro Trend remains valid (Stoch 100 aligned above 50.0 for BUY / below 50.0 for SELL) and Price is beyond M5 EMA 100.
+   * **Condition 2:** Stochastic (30, 25, 15 Simple) %K must first touch or cross Level 50 (pullback: `%K <= 50.0` for BUY / `%K >= 50.0` for SELL), and then freshly cross %D (BUY: %K crosses above %D; SELL: %K crosses below %D).
+4. **D. Trade Management & Capital Calibration:**
+   * **Account Model:** Standard $5.00 Stake calibrated for $7.00/day profit goal on $100 starting equity.
+   * **Software SL:** -$2.00 (4.00 pts on 0.50 lots) | Hard Broker SL: -$5.00.
+   * **Target:** Base Take Profit +$3.50 net (7.00 pts) / Full Daily Strike +$7.00 net (14.00 pts).
+   * **Dynamic Trailing Ratchet:** Incubation zone ($0.00-$2.19) -> Tier 1 Breakeven Shield at +$2.20 (locks +$1.00, $1.20 breathing buffer) -> Tier 2 Quota Lock at +$3.50 (locks +$2.20) -> Tier 3 Runner at +$5.00 (locks +$3.80).
+   * **Macro Trend Invalidation Exit:** Evaluated on closed M5 candle strictly when in loss (`pnl < 0`). If Stochastic (100, 1, 1) crosses adverse to position through Level 50.0, the trade is liquidated immediately.
+   * **Circuit Breakers:** Daily Profit Lock at +$7.00; Daily Drawdown Shield at -$4.00.
 
 ---
 

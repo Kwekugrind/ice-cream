@@ -216,18 +216,20 @@ export const INSTRUMENT_PROFILES = {
     lotSize: 0.50,
     stakeUsd: 5.0,
     commissionUsd: 0.32,
-    strategyProfile: "PROFILE_V100_STOCH200_STOCH15",
-    gateType: "STOCH200_STOCH15",
-    stoch200Params: { k: 200, d: 1, slowing: 1 },
-    stoch15Params: { k: 15, d: 2, slowing: 5 },
-    stoch25Params: { k: 25, d: 2, slowing: 5 },
+    strategyProfile: "PROFILE_V25_STOCH100_STOCH30",
+    gateType: "STOCH100_STOCH30_EMA100_STOCH302515",
+    stoch100Params: { k: 100, d: 1, slowing: 1 },
+    stoch30Params: { k: 30, d: 2, slowing: 5, method: "Simple", level: 50 },
+    emaPeriod: 100,
+    auxStochParams: { k: 30, d: 25, slowing: 15, method: "Simple", level: 50 },
     minTakeProfitPoints: 8.00,
     minTakeProfitUsd: 3.50,
     softwareSlUsd: 2.00,
     trailActivationUsd: 2.20,
+    trailBufferUsd: 1.20,
     maxHardStopPoints: 10.00,
     slType: "M5_FRACTAL",
-    notes: "400x multiplier (0.50 lots); V100 Standardized Engine; Condition 1: M5 Stoch 200 (48/52) Main Trend Identifier; Baseline: M5 EMA 100 filter; Condition 2: M5 Stoch (15,2,5) Initial (Lvl 50) & Re-Entry (Lvl 20/80); Trade Management: -$4.00 Software SL, Tier 0 Breakeven Shield at +$1.00 -> $0.50 floor, Dynamic Runner (Tiered Ratchet & $20 Super-Runner Ceiling); Early Loss Exits: Opposite M5 Fractal & H1 Adverse Close in loss."
+    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Baseline Price vs M5 EMA 100; Condition 3: Trigger M5 Stoch (30,2,5 Simple) %K cross Level 50 (±3 candles tolerance from Stoch 100 cross or simultaneous); Re-Entry: Stoch 100 aligned + fresh M5 Stoch (30,25,15 Simple) %K touches/crosses Level 50 then crosses %D with Price beyond EMA 100."
   },
   "R_50": {
     symbol: "R_50",
@@ -2457,6 +2459,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const stoch3025 = calculateStoch(candles, 30, 2, 5, "Simple");
   const sK3025 = stoch3025.k[si], sD3025 = stoch3025.d[si], prevK3025 = stoch3025.k[si - 1], prevD3025 = stoch3025.d[si - 1];
 
+  // Stoch (30,25,15 Simple) for V25 Tea Re-Entry Engine
+  const stoch302515 = calculateStoch(candles, 30, 25, 15, "Simple");
+  const sK302515 = stoch302515.k[si], sD302515 = stoch302515.d[si], prevK302515 = stoch302515.k[si - 1], prevD302515 = stoch302515.d[si - 1];
+
   const sK200 = stoch200.k[si], prevK200 = stoch200.k[si - 1];
   const macdVal = macd2575.macd[si], prevMacdVal = macd2575.macd[si - 1];
   const sK15 = stoch1558.k[si], prevK15 = stoch1558.k[si - 1];
@@ -2477,7 +2483,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const eUp = env.upper[si], eLo = env.lower[si];
   const sK = stoch.k[si], sD = stoch.d[si], prevK = stoch.k[si - 1], prevD = stoch.d[si - 1];
 
-  if (STRATEGY_PROFILE === "PROFILE_V75_1S_STOCH100_STOCH30" || STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || SYMBOL === "1HZ75V") {
+  if (STRATEGY_PROFILE === "PROFILE_V25_STOCH100_STOCH30" || SYMBOL === "R_25") {
+    if (sK100 === null || prevK100 === null || sK3025 === null || prevK3025 === null || sK302515 === null || prevK302515 === null || sD302515 === null || prevD302515 === null || currentEma100 === null) {
+      state.lastProcessedEpoch = m5BoundaryEpoch;
+      saveState();
+      return;
+    }
+  } else if (STRATEGY_PROFILE === "PROFILE_V75_1S_STOCH100_STOCH30" || STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || SYMBOL === "1HZ75V") {
     if (sK100 === null || prevK100 === null || sK3025 === null || prevK3025 === null || sK1525 === null || prevK1525 === null || currentEma100 === null) {
       state.lastProcessedEpoch = m5BoundaryEpoch;
       saveState();
@@ -2501,7 +2513,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       saveState();
       return;
     }
-  } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || SYMBOL === "R_25" || SYMBOL === "R_50" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
+  } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || SYMBOL === "R_50" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
     if (sK200 === null || prevK200 === null || sK1525 === null || prevK1525 === null || currentEma100 === null) {
       state.lastProcessedEpoch = m5BoundaryEpoch;
       saveState();
@@ -2574,7 +2586,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           trendExhausted = true;
           exhaustionDetail = `M5 CCI (${cVal !== null ? cVal.toFixed(1) : 0}, prev: ${prevCci !== null ? prevCci.toFixed(1) : 0}) crossed ${isBuy ? "<= 0.0 baseline" : ">= 0.0 baseline"}`;
         }
-      } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || SYMBOL === "R_25" || SYMBOL === "R_50" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
+      } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || SYMBOL === "R_50" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
         // Volatility 100 (R_100) Closed-M5 Stoch (25,2,5) 65/35 Profit Exit (when in profit >= $1.00):
         // BUY: Closes on a closed M5 candle if Stoch (25,2,5) %K crosses below 65.0
         // SELL: Closes on a closed M5 candle if Stoch (25,2,5) %K crosses above 35.0
@@ -2706,7 +2718,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
 
     // Active Trade Exits for PROFILE_V100_STOCH200_STOCH15 (Standardized: V100 Milk, V25 Tea, V50 OmniSight)
-    if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || SYMBOL === "R_25" || SYMBOL === "R_50" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
+    if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || SYMBOL === "R_50" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
       const isBuy = t.direction === "BUY";
       const m5Close = parseFloat(candles[si].close);
       const isPostEntryCandle = !t.entryEpoch || candles[si].epoch > t.entryEpoch;
@@ -3146,8 +3158,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
       // Invalidation 2: Macro Trend Stoch (100 for 1HZ75V, 200 for others) Crosses Adverse to Position on M5 Close
       const isPostEntryCandle = !t.entryEpoch || candles[si].epoch > t.entryEpoch;
-      const macroTrendStochVal = (SYMBOL === "1HZ75V" || STRATEGY_PROFILE === "PROFILE_V75_1S_STOCH100_STOCH30") ? sK100 : sK200;
-      const macroTrendStochLabel = (SYMBOL === "1HZ75V" || STRATEGY_PROFILE === "PROFILE_V75_1S_STOCH100_STOCH30") ? "Stoch 100" : "Stoch 200";
+      const macroTrendStochVal = (SYMBOL === "1HZ75V" || STRATEGY_PROFILE === "PROFILE_V75_1S_STOCH100_STOCH30" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V25_STOCH100_STOCH30") ? sK100 : sK200;
+      const macroTrendStochLabel = (SYMBOL === "1HZ75V" || STRATEGY_PROFILE === "PROFILE_V75_1S_STOCH100_STOCH30" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V25_STOCH100_STOCH30") ? "Stoch 100" : "Stoch 200";
       if (!isRunner && pnl < 0 && isPostEntryCandle && macroTrendStochVal !== null) {
         const macroTrendAdverse = isBuy ? (macroTrendStochVal < 50.0) : (macroTrendStochVal > 50.0);
         if (macroTrendAdverse) {
@@ -3467,6 +3479,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   state.stoch200Val = sK200;
   state.stoch1525Val = sK1525;
   state.stoch1525Signal = sD1525;
+  state.stoch100Val = sK100;
+  state.stoch3025Val = sK3025;
+  state.stoch3025Signal = sD3025;
+  state.stoch302515Val = sK302515;
+  state.stoch302515Signal = sD302515;
 
   // Stoch 50 cross & status (Current cross OR 8-Hour Rolling Lookback OR Position Relative to 50)
   const stoch50CrossUpLookback = (prevK <= 50.0 && sK > 50.0) || checkStochastic8HrLookback(candles, stoch, "BUY", "MIDLINE");
@@ -3964,9 +3981,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       };
     }
   }
-  // 2. STANDARDIZED M5 STOCH 200 (48/52) & M5 STOCH (15,2,5) ENGINE (V100, V25, V50)
-  else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || SYMBOL === "R_25" || SYMBOL === "R_50" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
-    const botPrefix = SYMBOL === "R_25" ? "V25" : SYMBOL === "R_50" ? "V50" : "V100";
+  // 2. STANDARDIZED M5 STOCH 200 (48/52) & M5 STOCH (15,2,5) ENGINE (V100, V50)
+  else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || SYMBOL === "R_50" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
+    const botPrefix = SYMBOL === "R_50" ? "V50" : "V100";
     const pfx = botPrefix.toLowerCase();
     const trendDirKey = pfx + "_trendDir";
     const stoch200CrossEpochKey = pfx + "_stoch200CrossEpoch";
@@ -4860,184 +4877,192 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
   }
-  // 4. VOLATILITY 25 (R_25) M5 STOCH (200,1,1) MAIN TREND + M5 CCI 100 EXECUTION ENGINE
-  else if (STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || STRATEGY_PROFILE === "PROFILE_V25_STOCH45_VALIDATOR" || STRATEGY_PROFILE === "PROFILE_V25_EMA_STOCH15") {
-    // Condition 1: M5 Stoch (200,1,1) Level 50 Gate (Unbounded Trend Identifier)
-    const stoch200CrossUp50 = prevK !== null && prevK <= 50.0 && sK > 50.0;
-    const stoch200CrossDown50 = prevK !== null && prevK >= 50.0 && sK < 50.0;
-    const stoch200AlignedBuy = sK !== null && sK >= 50.0;
-    const stoch200AlignedSell = sK !== null && sK <= 50.0;
+  // 4. VOLATILITY 25 (R_25 TEA MACHINE) — STOCH 100, STOCH 30 (±3 CANDLES), EMA 100 & STOCH (30,25,15) RE-ENTRY
+  else if (STRATEGY_PROFILE === "PROFILE_V25_STOCH100_STOCH30" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || STRATEGY_PROFILE === "PROFILE_V25_STOCH45_VALIDATOR" || STRATEGY_PROFILE === "PROFILE_V25_EMA_STOCH15") {
+    const prefix = "V25";
 
-    // Condition 2: M5 CCI 100 Zero-Line Cross Trigger
-    const cciCrossUpZero = prevCci !== null && prevCci <= 0.0 && cVal > 0.0;
-    const cciCrossDownZero = prevCci !== null && prevCci >= 0.0 && cVal < 0.0;
-    const cciAlignedBuy = cVal !== null && cVal >= 0.0;
-    const cciAlignedSell = cVal !== null && cVal <= 0.0;
-
-    // 20-Minute Execution Window Tracking:
-    // When CCI 100 crosses zero first (leading breakout), open a strict 20-minute execution window (1200 seconds / 4 M5 candles)
-    // waiting for Stoch 200 to confirm by crossing level 50.
-    if (cciCrossUpZero && !state.v25_initialBuyDone) {
-      state.v25_cciCrossEpochBuy = m5BoundaryEpoch;
-    }
-    if (cciCrossDownZero && !state.v25_initialSellDone) {
-      state.v25_cciCrossEpochSell = m5BoundaryEpoch;
-    }
-
-    // Active 20-minute window evaluation:
-    // Expires if > 1200 seconds elapse, or invalidates if CCI breaks adverse across the zero line
-    const buyWindowActive = !state.v25_initialBuyDone && !!state.v25_cciCrossEpochBuy && ((m5BoundaryEpoch - state.v25_cciCrossEpochBuy) <= 1200) && cciAlignedBuy;
-    if (state.v25_cciCrossEpochBuy && (!buyWindowActive || !cciAlignedBuy)) {
-      state.v25_cciCrossEpochBuy = null;
-    }
-
-    const sellWindowActive = !state.v25_initialSellDone && !!state.v25_cciCrossEpochSell && ((m5BoundaryEpoch - state.v25_cciCrossEpochSell) <= 1200) && cciAlignedSell;
-    if (state.v25_cciCrossEpochSell && (!sellWindowActive || !cciAlignedSell)) {
-      state.v25_cciCrossEpochSell = null;
-    }
-
-    // State Tracking & Arming
-    if (stoch200CrossUp50) state.v25_stochArmedBuy = true;
-    if (stoch200CrossDown50) state.v25_stochArmedSell = true;
-    if (cciCrossUpZero) state.v25_cciArmedBuy = true;
-    if (cciCrossDownZero) state.v25_cciArmedSell = true;
-
-    // Dealignment checks: if an indicator breaks its threshold, immediately disarm and reset
-    if (!stoch200AlignedBuy) { state.v25_stochArmedBuy = false; state.v25_initialBuyDone = false; }
-    if (!stoch200AlignedSell) { state.v25_stochArmedSell = false; state.v25_initialSellDone = false; }
-    if (!cciAlignedBuy) { state.v25_cciArmedBuy = false; state.v25_cciCrossEpochBuy = null; }
-    if (!cciAlignedSell) { state.v25_cciArmedSell = false; state.v25_cciCrossEpochSell = null; }
-
-    const noActiveTrades = !trades.some(t => !t.result && !t.pending);
-
-    // Universal EMA 100 Filter: BUY only if Price > EMA 100; SELL only if Price < EMA 100
+    // 1. Trend & Baseline Alignments
+    const stoch100AlignedBuy = sK100 !== null && sK100 >= 50.0;
+    const stoch100AlignedSell = sK100 !== null && sK100 <= 50.0;
     const emaBaselineBuy = currentEma100 !== null && currentPrice > currentEma100;
     const emaBaselineSell = currentEma100 !== null && currentPrice < currentEma100;
+    const stoch30AlignedBuy = sK3025 !== null && sK3025 >= 50.0;
+    const stoch30AlignedSell = sK3025 !== null && sK3025 <= 50.0;
 
-    // 1. V25 Initial Trigger:
-    // (a) Standard Sequence: Stoch 200 is >= 50, and CCI 100 freshly crosses > 0 (or simultaneous cross)
-    // (b) 20-Minute Window Sequence: CCI 100 crossed > 0 first, and Stoch 200 freshly crosses > 50 within the 20-minute execution window (<= 1200s)
-    const isV25StandardBuy = stoch200AlignedBuy && cciCrossUpZero && emaBaselineBuy && noActiveTrades;
-    const isV25WindowBuy = buyWindowActive && stoch200CrossUp50 && emaBaselineBuy && noActiveTrades;
-    const isV25BuyTrigger = (isV25StandardBuy || isV25WindowBuy) && !state.v25_initialBuyDone;
+    // Cross events
+    const stoch100CrossUp50 = prevK100 !== null && sK100 !== null && prevK100 <= 50.0 && sK100 > 50.0;
+    const stoch100CrossDown50 = prevK100 !== null && sK100 !== null && prevK100 >= 50.0 && sK100 < 50.0;
+    const stoch30CrossUp50 = prevK3025 !== null && sK3025 !== null && prevK3025 <= 50.0 && sK3025 > 50.0;
+    const stoch30CrossDown50 = prevK3025 !== null && sK3025 !== null && prevK3025 >= 50.0 && sK3025 < 50.0;
 
-    const isV25StandardSell = stoch200AlignedSell && cciCrossDownZero && emaBaselineSell && noActiveTrades;
-    const isV25WindowSell = sellWindowActive && stoch200CrossDown50 && emaBaselineSell && noActiveTrades;
-    const isV25SellTrigger = (isV25StandardSell || isV25WindowSell) && !state.v25_initialSellDone;
+    // Track cross epochs for 3-candle tolerance window
+    if (stoch100CrossUp50) state.v25_stoch100CrossEpochBuy = m5BoundaryEpoch;
+    if (stoch100CrossDown50) state.v25_stoch100CrossEpochSell = m5BoundaryEpoch;
+    if (stoch30CrossUp50) state.v25_stoch30CrossEpochBuy = m5BoundaryEpoch;
+    if (stoch30CrossDown50) state.v25_stoch30CrossEpochSell = m5BoundaryEpoch;
 
-    // 2. V25 Re-Entry Trigger: While M5 Stoch (200,1,1) and M5 CCI 100 remain aligned and Price conforms to EMA 100,
-    // BUY Re-Entry: Fresh Stoch (15,2,5) %K cross above 25 (with Price > EMA 100)
-    // SELL Re-Entry: Fresh Stoch (15,2,5) %K cross below 75 (with Price < EMA 100)
-    const stoch15FreshCross25Buy = prevK1525 !== null && sK1525 !== null && prevK1525 <= 25.0 && sK1525 > 25.0;
-    const stoch15FreshCross75Sell = prevK1525 !== null && sK1525 !== null && prevK1525 >= 75.0 && sK1525 < 75.0;
-    const isV25ReentryBuy = state.v25_initialBuyDone && stoch200AlignedBuy && emaBaselineBuy && cciAlignedBuy && stoch15FreshCross25Buy && noActiveTrades;
-    const isV25ReentrySell = state.v25_initialSellDone && stoch200AlignedSell && emaBaselineSell && cciAlignedSell && stoch15FreshCross75Sell && noActiveTrades;
-
-    // Latch Re-Entry Opportunity while trade is running (for immediate entry upon trade close)
-    if (state.v25_initialBuyDone && stoch200AlignedBuy && emaBaselineBuy && cciAlignedBuy && stoch15FreshCross25Buy) {
-      state.activeReentryOpportunity = {
-        direction: "BUY",
-        setupLabel: "V25_REENTRY_STOCH15_25 (BUY)",
-        detectedEpoch: m5BoundaryEpoch,
-        expiresEpoch: m5BoundaryEpoch + 300,
-        currentEma100
-      };
-    } else if (state.v25_initialSellDone && stoch200AlignedSell && emaBaselineSell && cciAlignedSell && stoch15FreshCross75Sell) {
-      state.activeReentryOpportunity = {
-        direction: "SELL",
-        setupLabel: "V25_REENTRY_STOCH15_75 (SELL)",
-        detectedEpoch: m5BoundaryEpoch,
-        expiresEpoch: m5BoundaryEpoch + 300,
-        currentEma100
-      };
+    // Startup recovery: If Stoch 100 is already aligned > 50 (or < 50) and no epoch is recorded, latch current epoch so bot is ready
+    if (stoch100AlignedBuy && !state.v25_stoch100CrossEpochBuy && !state.v25_initialBuyDone) {
+      state.v25_stoch100CrossEpochBuy = m5BoundaryEpoch;
+    }
+    if (stoch100AlignedSell && !state.v25_stoch100CrossEpochSell && !state.v25_initialSellDone) {
+      state.v25_stoch100CrossEpochSell = m5BoundaryEpoch;
+    }
+    if (stoch30AlignedBuy && !state.v25_stoch30CrossEpochBuy) {
+      state.v25_stoch30CrossEpochBuy = m5BoundaryEpoch;
+    }
+    if (stoch30AlignedSell && !state.v25_stoch30CrossEpochSell) {
+      state.v25_stoch30CrossEpochSell = m5BoundaryEpoch;
     }
 
-    // Populate Dashboard Arming State for V25 (Distinguish 20m Window vs Standard Initial Arming vs Re-Entry Waiting)
-    if (buyWindowActive) {
-      const remainingMin = Math.max(1, Math.ceil((1200 - (m5BoundaryEpoch - state.v25_cciCrossEpochBuy)) / 60));
-      state.armed = { dir: "BUY", lbl: `V25 Initial BUY Window (${remainingMin}m left: Await Stoch 200 > 50)`, lvl: currentPrice };
-      if (!state.armedEpoch) { state.armedEpoch = state.v25_cciCrossEpochBuy; state.armedTime = new Date(state.v25_cciCrossEpochBuy * 1000).toISOString().substring(11, 16) + " UTC"; }
-      state.nextPhase = `V25 Initial BUY Window Active (${remainingMin}m left) — CCI 100 > 0 (${cVal.toFixed(1)}). Awaiting Stoch 200 cross > 50 (Current: ${sK !== null ? sK.toFixed(1) : "N/A"})`;
-    } else if (sellWindowActive) {
-      const remainingMin = Math.max(1, Math.ceil((1200 - (m5BoundaryEpoch - state.v25_cciCrossEpochSell)) / 60));
-      state.armed = { dir: "SELL", lbl: `V25 Initial SELL Window (${remainingMin}m left: Await Stoch 200 < 50)`, lvl: currentPrice };
-      if (!state.armedEpoch) { state.armedEpoch = state.v25_cciCrossEpochSell; state.armedTime = new Date(state.v25_cciCrossEpochSell * 1000).toISOString().substring(11, 16) + " UTC"; }
-      state.nextPhase = `V25 Initial SELL Window Active (${remainingMin}m left) — CCI 100 < 0 (${cVal.toFixed(1)}). Awaiting Stoch 200 cross < 50 (Current: ${sK !== null ? sK.toFixed(1) : "N/A"})`;
-    } else if (stoch200AlignedBuy) {
-      if (!state.v25_initialBuyDone) {
-        state.armed = { dir: "BUY", lbl: `V25 Initial BUY Armed (Await CCI > 0${emaBaselineBuy ? "" : " & Price > EMA100"})`, lvl: currentPrice };
-        if (!state.armedEpoch) { state.armedEpoch = m5BoundaryEpoch; state.armedTime = new Date(m5BoundaryEpoch * 1000).toISOString().substring(11, 16) + " UTC"; }
-        state.nextPhase = `V25 Initial BUY Armed — Stoch 200 (${sK.toFixed(1)} >= 50). Awaiting CCI 100 > 0 (EMA100 Filter: ${emaBaselineBuy ? "PASS" : "BLOCK"})`;
-      } else {
-        state.isReentryMode = true;
-        const inPullback = sK1525 !== null && sK1525 <= 25.0;
-        if (inPullback && emaBaselineBuy && cciAlignedBuy) {
-          state.armed = { dir: "BUY", lbl: `V25 BUY Pullback Armed (%K: ${sK1525.toFixed(1)} <= 25)`, type: "RE_ENTRY", lvl: currentPrice };
-          state.nextPhase = `V25 BUY Re-Entry Armed — In Pullback Zone (%K: ${sK1525.toFixed(1)}). Awaiting Cross > 25`;
-        } else {
-          state.armed = null;
-          state.armedEpoch = null;
-          state.armedTime = null;
-          state.nextPhase = `V25 Awaiting BUY Re-Entry — Awaiting Stoch (15,2,5) %K cross > 25 (Current %K: ${sK1525 !== null ? sK1525.toFixed(1) : "N/A"})`;
-        }
-      }
-    } else if (stoch200AlignedSell) {
-      if (!state.v25_initialSellDone) {
-        state.armed = { dir: "SELL", lbl: `V25 Initial SELL Armed (Await CCI < 0${emaBaselineSell ? "" : " & Price < EMA100"})`, lvl: currentPrice };
-        if (!state.armedEpoch) { state.armedEpoch = m5BoundaryEpoch; state.armedTime = new Date(m5BoundaryEpoch * 1000).toISOString().substring(11, 16) + " UTC"; }
-        state.nextPhase = `V25 Initial SELL Armed — Stoch 200 (${sK.toFixed(1)} <= 50). Awaiting CCI 100 < 0 (EMA100 Filter: ${emaBaselineSell ? "PASS" : "BLOCK"})`;
-      } else {
-        state.isReentryMode = true;
-        const inRally = sK1525 !== null && sK1525 >= 75.0;
-        if (inRally && emaBaselineSell && cciAlignedSell) {
-          state.armed = { dir: "SELL", lbl: `V25 SELL Pullback Armed (%K: ${sK1525.toFixed(1)} >= 75)`, type: "RE_ENTRY", lvl: currentPrice };
-          state.nextPhase = `V25 SELL Re-Entry Armed — In Overbought Zone (%K: ${sK1525.toFixed(1)}). Awaiting Cross < 75`;
-        } else {
-          state.armed = null;
-          state.armedEpoch = null;
-          state.armedTime = null;
-          state.nextPhase = `V25 Awaiting SELL Re-Entry — Awaiting Stoch (15,2,5) %K cross < 75 (Current %K: ${sK1525 !== null ? sK1525.toFixed(1) : "N/A"})`;
-        }
-      }
-    } else {
-      state.armed = null; state.armedEpoch = null; state.armedTime = null;
-      state.nextPhase = "Monitoring V25 Confluence";
+    // Reset cross epochs and initial flags upon indicator dealignment
+    if (!stoch100AlignedBuy) {
+      state.v25_stoch100CrossEpochBuy = null;
+      state.v25_initialBuyDone = false;
+      state.v25_stoch302515_touched_50_BUY = false;
+    }
+    if (!stoch100AlignedSell) {
+      state.v25_stoch100CrossEpochSell = null;
+      state.v25_initialSellDone = false;
+      state.v25_stoch302515_touched_50_SELL = false;
+    }
+    if (!stoch30AlignedBuy) {
+      state.v25_stoch30CrossEpochBuy = null;
+    }
+    if (!stoch30AlignedSell) {
+      state.v25_stoch30CrossEpochSell = null;
     }
 
-    if (isV25BuyTrigger || isV25ReentryBuy) {
+    const noActiveTrades = !trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending));
+
+    // Timing check: cross can happen 3 candles before, 3 candles after, or simultaneously (900 seconds)
+    const buyWithin3Candles = Boolean(
+      state.v25_stoch100CrossEpochBuy &&
+      state.v25_stoch30CrossEpochBuy &&
+      Math.abs(state.v25_stoch100CrossEpochBuy - state.v25_stoch30CrossEpochBuy) <= 900
+    );
+
+    const sellWithin3Candles = Boolean(
+      state.v25_stoch100CrossEpochSell &&
+      state.v25_stoch30CrossEpochSell &&
+      Math.abs(state.v25_stoch100CrossEpochSell - state.v25_stoch30CrossEpochSell) <= 900
+    );
+
+    const freshBuyTrigger = (stoch100CrossUp50 && stoch30AlignedBuy) || (stoch30CrossUp50 && stoch100AlignedBuy);
+    const freshSellTrigger = (stoch100CrossDown50 && stoch30AlignedSell) || (stoch30CrossDown50 && stoch100AlignedSell);
+
+    // Skip to re-entry if timing window was met but Price failed EMA 100 baseline
+    if (!state.v25_initialBuyDone && buyWithin3Candles && !emaBaselineBuy && freshBuyTrigger) {
+      console.log(`[${REPO_LABEL}] Initial BUY confluence met, but Price (${currentPrice.toFixed(4)}) is NOT above EMA 100 (${currentEma100?.toFixed(4)}). Skipping initial trade & unlocking re-entry.`);
+      state.v25_initialBuyDone = true;
+    }
+    if (!state.v25_initialSellDone && sellWithin3Candles && !emaBaselineSell && freshSellTrigger) {
+      console.log(`[${REPO_LABEL}] Initial SELL confluence met, but Price (${currentPrice.toFixed(4)}) is NOT below EMA 100 (${currentEma100?.toFixed(4)}). Skipping initial trade & unlocking re-entry.`);
+      state.v25_initialSellDone = true;
+    }
+
+    const isInitialBuyTrigger = stoch100AlignedBuy && stoch30AlignedBuy && emaBaselineBuy && buyWithin3Candles && freshBuyTrigger && !state.v25_initialBuyDone && noActiveTrades;
+    const isInitialSellTrigger = stoch100AlignedSell && stoch30AlignedSell && emaBaselineSell && sellWithin3Candles && freshSellTrigger && !state.v25_initialSellDone && noActiveTrades;
+
+    // Track Re-Entry Stoch (30,25,15 Simple) Level 50 Touch / Cross
+    // For Buy: %K touches or crosses <= 50.0
+    // For Sell: %K touches or crosses >= 50.0
+    if (stoch100AlignedBuy && Boolean(state.v25_initialBuyDone)) {
+      if (sK302515 !== null && sK302515 <= 50.0) {
+        state.v25_stoch302515_touched_50_BUY = true;
+      }
+    }
+    if (stoch100AlignedSell && Boolean(state.v25_initialSellDone)) {
+      if (sK302515 !== null && sK302515 >= 50.0) {
+        state.v25_stoch302515_touched_50_SELL = true;
+      }
+    }
+
+    // Fresh %K cross %D
+    const kCrossUpD = prevK302515 !== null && prevD302515 !== null && sK302515 !== null && sD302515 !== null && prevK302515 <= prevD302515 && sK302515 > sD302515;
+    const kCrossDownD = prevK302515 !== null && prevD302515 !== null && sK302515 !== null && sD302515 !== null && prevK302515 >= prevD302515 && sK302515 < sD302515;
+
+    const touched50Buy = Boolean(state.v25_stoch302515_touched_50_BUY || (sK302515 !== null && sK302515 <= 50.0) || (prevK302515 !== null && prevK302515 <= 50.0));
+    const touched50Sell = Boolean(state.v25_stoch302515_touched_50_SELL || (sK302515 !== null && sK302515 >= 50.0) || (prevK302515 !== null && prevK302515 >= 50.0));
+
+    // Initial BUY Trigger
+    if (isInitialBuyTrigger) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
-      if (isV25WindowBuy) {
-        const minElapsed = Math.round((m5BoundaryEpoch - (state.v25_cciCrossEpochBuy || m5BoundaryEpoch)) / 60);
-        setupLabel = `V25_CCI_STOCH200_WINDOW_${minElapsed}M (BUY)`;
-      } else if (stoch200CrossUp50 && cciCrossUpZero) {
-        setupLabel = "V25_STOCH200_CCI100_SIMULTANEOUS (BUY)";
-      } else if (isV25BuyTrigger) {
-        setupLabel = "V25_STOCH200_CCI100 (BUY)";
-      } else {
-        setupLabel = "V25_REENTRY_STOCH15_25 (BUY)";
-      }
+      setupLabel = (stoch100CrossUp50 && stoch30CrossUp50)
+        ? `${prefix}_INITIAL_STOCH100_STOCH30_SIMULTANEOUS (BUY)`
+        : `${prefix}_INITIAL_STOCH100_STOCH30 (BUY)`;
       state.v25_initialBuyDone = true;
-      state.v25_cciCrossEpochBuy = null;
-      state.v25_cciArmedBuy = false;
-    } else if (isV25SellTrigger || isV25ReentrySell) {
+    }
+    // Initial SELL Trigger
+    else if (isInitialSellTrigger) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
-      if (isV25WindowSell) {
-        const minElapsed = Math.round((m5BoundaryEpoch - (state.v25_cciCrossEpochSell || m5BoundaryEpoch)) / 60);
-        setupLabel = `V25_CCI_STOCH200_WINDOW_${minElapsed}M (SELL)`;
-      } else if (stoch200CrossDown50 && cciCrossDownZero) {
-        setupLabel = "V25_STOCH200_CCI100_SIMULTANEOUS (SELL)";
-      } else if (isV25SellTrigger) {
-        setupLabel = "V25_STOCH200_CCI100 (SELL)";
-      } else {
-        setupLabel = "V25_REENTRY_STOCH15_75 (SELL)";
-      }
+      setupLabel = (stoch100CrossDown50 && stoch30CrossDown50)
+        ? `${prefix}_INITIAL_STOCH100_STOCH30_SIMULTANEOUS (SELL)`
+        : `${prefix}_INITIAL_STOCH100_STOCH30 (SELL)`;
       state.v25_initialSellDone = true;
-      state.v25_cciCrossEpochSell = null;
-      state.v25_cciArmedSell = false;
+    }
+    // Re-Entry BUY Trigger: While Stoch 100 aligned > 50, Price > EMA 100, initialBuyDone, %K touched/crossed <= 50, fresh %K cross %D up
+    else if (stoch100AlignedBuy && emaBaselineBuy && Boolean(state.v25_initialBuyDone) && touched50Buy && kCrossUpD && noActiveTrades) {
+      indicatorsSatisfied = true;
+      signalDirection = "BUY";
+      setupLabel = `${prefix}_REENTRY_STOCH302515_TOUCH50_CROSS_D (BUY)`;
+      state.v25_stoch302515_touched_50_BUY = false;
+    }
+    // Re-Entry SELL Trigger: While Stoch 100 aligned < 50, Price < EMA 100, initialSellDone, %K touched/crossed >= 50, fresh %K cross %D down
+    else if (stoch100AlignedSell && emaBaselineSell && Boolean(state.v25_initialSellDone) && touched50Sell && kCrossDownD && noActiveTrades) {
+      indicatorsSatisfied = true;
+      signalDirection = "SELL";
+      setupLabel = `${prefix}_REENTRY_STOCH302515_TOUCH50_CROSS_D (SELL)`;
+      state.v25_stoch302515_touched_50_SELL = false;
     }
 
+    // Latch Re-Entry Opportunity while trade is running (for immediate entry upon trade close)
+    const hasReentryBuyOpp = stoch100AlignedBuy && emaBaselineBuy && Boolean(state.v25_initialBuyDone) && touched50Buy && kCrossUpD;
+    const hasReentrySellOpp = stoch100AlignedSell && emaBaselineSell && Boolean(state.v25_initialSellDone) && touched50Sell && kCrossDownD;
+    if (hasReentryBuyOpp) {
+      state.activeReentryOpportunity = {
+        direction: "BUY",
+        setupLabel: `${prefix}_REENTRY_STOCH302515_TOUCH50_CROSS_D (BUY)`,
+        detectedEpoch: m5BoundaryEpoch,
+        expiresEpoch: m5BoundaryEpoch + 300,
+        currentEma100
+      };
+      state.v25_stoch302515_touched_50_BUY = false;
+    } else if (hasReentrySellOpp) {
+      state.activeReentryOpportunity = {
+        direction: "SELL",
+        setupLabel: `${prefix}_REENTRY_STOCH302515_TOUCH50_CROSS_D (SELL)`,
+        detectedEpoch: m5BoundaryEpoch,
+        expiresEpoch: m5BoundaryEpoch + 300,
+        currentEma100
+      };
+      state.v25_stoch302515_touched_50_SELL = false;
+    }
+
+    // Telemetry updates for dashboard
+    if (stoch100AlignedBuy) {
+      if (!state.v25_initialBuyDone) {
+        state.armed = { dir: "BUY", lbl: `V25 Initial BUY Armed (Stoch 100: ${sK100.toFixed(1)} > 50)`, lvl: currentPrice };
+        state.nextPhase = `V25 Initial BUY Armed — Awaiting Stoch (30,2,5) %K (${sK3025.toFixed(1)}) cross > 50 (within 3 candles of Stoch 100 cross)`;
+      } else {
+        state.nextPhase = touched50Buy
+          ? `V25 Awaiting BUY Re-Entry — Stoch (30,25,15) touched <= 50 (%K: ${sK302515?.toFixed(1)}). Awaiting %K cross above %D (${sD302515?.toFixed(1)})`
+          : `V25 Awaiting BUY Re-Entry — Await Stoch (30,25,15) %K (${sK302515?.toFixed(1)}) pullback to touch/cross <= 50`;
+      }
+    } else if (stoch100AlignedSell) {
+      if (!state.v25_initialSellDone) {
+        state.armed = { dir: "SELL", lbl: `V25 Initial SELL Armed (Stoch 100: ${sK100.toFixed(1)} < 50)`, lvl: currentPrice };
+        state.nextPhase = `V25 Initial SELL Armed — Awaiting Stoch (30,2,5) %K (${sK3025.toFixed(1)}) cross < 50 (within 3 candles of Stoch 100 cross)`;
+      } else {
+        state.nextPhase = touched50Sell
+          ? `V25 Awaiting SELL Re-Entry — Stoch (30,25,15) touched >= 50 (%K: ${sK302515?.toFixed(1)}). Awaiting %K cross below %D (${sD302515?.toFixed(1)})`
+          : `V25 Awaiting SELL Re-Entry — Await Stoch (30,25,15) %K (${sK302515?.toFixed(1)}) pullback to touch/cross >= 50`;
+      }
+    }
+
+    // Determine Fib TP target from Daily Fibonacci Grid
     if (indicatorsSatisfied) {
       const sortedLevels = Array.from(new Set(keyLevels.map(k => k.lvl).filter(v => typeof v === "number" && !isNaN(v)))).sort((a, b) => a - b);
       if (signalDirection === "BUY") {
@@ -5354,6 +5379,21 @@ async function runSlowPathScan(m5BoundaryEpoch) {
                          `• M5 Stoch (15,2,5 Simple): *%K ${(sK !== null ? sK.toFixed(1) : "N/A")} (prev: ${(prevK !== null ? prevK.toFixed(1) : "N/A")})* | *%D ${(sD !== null ? sD.toFixed(1) : "N/A")}* [FRESH LEVEL CROSS TRIGGERED]\n` +
                          `• Take Profit Target: *${tpPrice ? tpPrice.toFixed(2) : "Dynamic Runner"}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Stop)\n` +
                          `• Early Exit Engine: *Loss Protection (%K/%D Cross) / Closed-M5 Stoch 50 Cross / Entry-Hour H1 Adverse Close*\n`;
+    } else if (STRATEGY_PROFILE === "PROFILE_V25_STOCH100_STOCH30" || SYMBOL === "R_25") {
+      confluenceLines += `• M5 Stoch 100: *${(sK100 !== null ? sK100.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [BULLISH TREND]" : "<50 [BEARISH TREND]"})
+` +
+                         `• M5 Stoch (30,2,5 Simple): *${(sK3025 !== null ? sK3025.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [TRIGGER ARMED]" : "<50 [TRIGGER ARMED]"})
+` +
+                         `• M5 EMA 100: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > EMA 100" : "Price < EMA 100"})
+` +
+                         `• M5 Re-Entry Stoch (30,25,15 Simple): *%K ${(sK302515 !== null ? sK302515.toFixed(1) : "N/A")}* | *%D ${(sD302515 !== null ? sD302515.toFixed(1) : "N/A")}*
+` +
+                         `• Trigger Type: *${setupLabel}*
+` +
+                         `• Take Profit Target: *${tpPrice ? tpPrice.toFixed(4) : "Dynamic Runner"}* (Min ${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)
+` +
+                         `• Early Invalidation: *3 Consecutive Adverse M5 Closes / Stoch 100 Invalidation Exit / Entry-Hour H1 Adverse Close*
+`;
     } else if (STRATEGY_PROFILE === "PROFILE_V75_1S_STOCH100_STOCH30" || ((STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15") && SYMBOL === "1HZ75V")) {
       confluenceLines += `• M5 Stoch 100: *${(sK100 !== null ? sK100.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [BULLISH TREND]" : "<50 [BEARISH TREND]"})\n` +
                          `• M5 Stoch (30,2,5 Simple): *${(sK3025 !== null ? sK3025.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [TRIGGER ARMED]" : "<50 [TRIGGER ARMED]"})\n` +
@@ -5529,6 +5569,38 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         blockerReason = `Consolidation between EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"}) and EMA 200 (${currentEma200 ? currentEma200.toFixed(2) : "N/A"})`;
         nextTrigger = "Awaiting breakout above both EMAs or pullback touch to EMA 100";
       }
+    } else if (STRATEGY_PROFILE === "PROFILE_V25_STOCH100_STOCH30" || SYMBOL === "R_25") {
+      const stoch100Buy = sK100 !== null && sK100 >= 50.0;
+      const stoch100Sell = sK100 !== null && sK100 <= 50.0;
+      const emaBuy = currentEma100 !== null && currentPrice > currentEma100;
+      const emaSell = currentEma100 !== null && currentPrice < currentEma100;
+
+      if (stoch100Buy) {
+        if (!state.v25_initialBuyDone) {
+          blockerReason = `Macro Trend Bullish (Stoch 100: ${sK100.toFixed(1)} > 50, Price vs EMA100: ${emaBuy ? "ABOVE" : "BELOW"})`;
+          nextTrigger = `Awaiting Stoch (30,2,5) %K (${sK3025 !== null ? sK3025.toFixed(1) : "N/A"}) cross > 50 (within 3 candles of Stoch 100 cross) for Initial BUY`;
+        } else {
+          const touched50 = Boolean(state.v25_stoch302515_touched_50_BUY || (sK302515 !== null && sK302515 <= 50.0));
+          blockerReason = `BUY Trend Active (Stoch 100: ${sK100.toFixed(1)} > 50). Initial BUY already taken.`;
+          nextTrigger = touched50
+            ? `Stoch (30,25,15) touched <= 50 (%K: ${sK302515?.toFixed(1)}). Awaiting fresh %K cross above %D (${sD302515?.toFixed(1)}) for BUY Re-Entry`
+            : `Awaiting Stoch (30,25,15 Simple) %K (${sK302515 !== null ? sK302515.toFixed(1) : "N/A"}) pullback to touch/cross <= 50 for BUY Re-Entry`;
+        }
+      } else if (stoch100Sell) {
+        if (!state.v25_initialSellDone) {
+          blockerReason = `Macro Trend Bearish (Stoch 100: ${sK100.toFixed(1)} < 50, Price vs EMA100: ${emaSell ? "BELOW" : "ABOVE"})`;
+          nextTrigger = `Awaiting Stoch (30,2,5) %K (${sK3025 !== null ? sK3025.toFixed(1) : "N/A"}) cross < 50 (within 3 candles of Stoch 100 cross) for Initial SELL`;
+        } else {
+          const touched50 = Boolean(state.v25_stoch302515_touched_50_SELL || (sK302515 !== null && sK302515 >= 50.0));
+          blockerReason = `SELL Trend Active (Stoch 100: ${sK100.toFixed(1)} < 50). Initial SELL already taken.`;
+          nextTrigger = touched50
+            ? `Stoch (30,25,15) touched >= 50 (%K: ${sK302515?.toFixed(1)}). Awaiting fresh %K cross below %D (${sD302515?.toFixed(1)}) for SELL Re-Entry`
+            : `Awaiting Stoch (30,25,15 Simple) %K (${sK302515 !== null ? sK302515.toFixed(1) : "N/A"}) pullback to touch/cross >= 50 for SELL Re-Entry`;
+        }
+      } else {
+        blockerReason = "Awaiting Stoch 100 trend definition";
+        nextTrigger = "Awaiting Stoch 100 cross 50.0";
+      }
     } else if (STRATEGY_PROFILE === "PROFILE_V75_1S_STOCH100_STOCH30" || ((STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15") && SYMBOL === "1HZ75V")) {
       const stoch100Buy = sK100 !== null && sK100 >= 50.0;
       const stoch100Sell = sK100 !== null && sK100 <= 50.0;
@@ -5557,7 +5629,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         blockerReason = "Awaiting Stoch 100 trend definition";
         nextTrigger = "Awaiting Stoch 100 cross 50.0";
       }
-    } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || SYMBOL === "R_25" || SYMBOL === "R_50") {
+    } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || SYMBOL === "R_50") {
       const botPrefix = SYMBOL === "R_25" ? "V25" : SYMBOL === "R_50" ? "V50" : "V100";
       const pfx = botPrefix.toLowerCase();
       const trend = state[pfx + "_trendDir"] || (sK200 >= 50 ? "BUY" : "SELL");
