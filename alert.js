@@ -3120,6 +3120,101 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
 
+    // =========================================================================
+    // 🛡️ STOP & REVERSAL / INVALIDATION ENGINE (STOCH 100 / STOCH 30 FLEET)
+    // Applies to: 1HZ75V (Coffee) & R_25 (Tea) under PROFILE_V75_1S_STOCH100_STOCH30 / PROFILE_V25_STOCH100_STOCH30
+    // If market immediately reverses on a closed M5 candle:
+    // 1) Stoch (100, 1, 1) crosses opposite side (< 50 for BUY / > 50 for SELL)
+    // 2) Stoch (30, 2, 5) %K crosses %D (%K < %D for BUY / %K > %D for SELL)
+    // Position liquidates immediately on confirmed closed candle to cut losses.
+    // If Stoch (30, 2, 5) %K crosses Level 50 and fulfills opposite trade criteria,
+    // the bot is flat and will execute the opposite trade immediately.
+    // =========================================================================
+    if (STRATEGY_PROFILE === "PROFILE_V75_1S_STOCH100_STOCH30" || STRATEGY_PROFILE === "PROFILE_V25_STOCH100_STOCH30" || SYMBOL === "1HZ75V" || (SYMBOL === "R_25" && STRATEGY_PROFILE === "PROFILE_V25_STOCH100_STOCH30")) {
+      const isBuy = t.direction === "BUY";
+      const isPostEntryCandle = Boolean(!t.entryEpoch || m5BoundaryEpoch > t.entryEpoch);
+      const currentPnl = calcUnrealizedPnL(t, currentPrice);
+      const isRunner = Boolean(t.trendRidingActive || currentPnl >= 3.50 || (t.maxUnrealizedPnL && t.maxUnrealizedPnL >= 4.00));
+
+      // Invalidation 1: Immediate drop/reversal where Stoch 100 crosses opposite (< 50 BUY / > 50 SELL)
+      // AND Stoch (30, 2, 5) %K crosses %D (%K < %D BUY / %K > %D SELL)
+      const stoch100Opposite = isBuy ? (sK100 !== null && sK100 < 50.0) : (sK100 !== null && sK100 > 50.0);
+      const stoch30KdCrossOpposite = isBuy
+        ? (sK3025 !== null && sD3025 !== null && (sK3025 < sD3025 || (prevK3025 !== null && prevD3025 !== null && prevK3025 >= prevD3025 && sK3025 < sD3025)))
+        : (sK3025 !== null && sD3025 !== null && (sK3025 > sD3025 || (prevK3025 !== null && prevD3025 !== null && prevK3025 <= prevD3025 && sK3025 > sD3025)));
+      const stochReversalInvalidation = !isRunner && isPostEntryCandle && stoch100Opposite && stoch30KdCrossOpposite;
+
+      // Invalidation 2: 3 Consecutive M5 Candles Closed Against Position (strictly in loss)
+      let adverseCandleCount = 0;
+      for (let ci = si; ci >= 0; ci--) {
+        const cEpoch = candles[ci].epoch;
+        if (t.entryEpoch && cEpoch < t.entryEpoch) break;
+        const cOpen = parseFloat(candles[ci].open);
+        const cClose = parseFloat(candles[ci].close);
+        const isAdverse = isBuy ? (cClose < cOpen) : (cClose > cOpen);
+        if (isAdverse) adverseCandleCount++;
+        else break;
+      }
+      const threeAdverseCandles = !isRunner && currentPnl < 0 && adverseCandleCount >= 3;
+
+      // Invalidation 3: Entry-Hour H1 Adverse Close Exit (strictly in loss)
+      const h1Eval = evaluateH1AdverseClose(t, candles, si);
+      const h1ClosedAgainst = !isRunner && currentPnl < 0 && h1Eval.triggered;
+
+      if (stochReversalInvalidation || threeAdverseCandles || h1ClosedAgainst) {
+        closingContracts.add(t.contractId);
+        const exitLabel = stochReversalInvalidation 
+          ? "Stoch 100 Adverse & Stoch (30,2,5) %K/%D Cross Invalidation"
+          : (threeAdverseCandles ? "3 Adverse M5 Candles Invalidation" : "Entry-Hour H1 Adverse Close Exit");
+        console.log(`[EARLY EXIT] ${exitLabel} triggered for ${t.direction} position on ${SYMBOL} (${t.contractId}). Stoch 100: ${sK100?.toFixed(1)}, Stoch 30 %K: ${sK3025?.toFixed(1)}, %D: ${sD3025?.toFixed(1)}, PnL: ${currentPnl.toFixed(2)}. Liquidating immediately.`);
+
+        try {
+          const closeRes = await closeContract(t.contractId);
+          if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+            console.error(`[EARLY EXIT ERROR] Broker sell failed for ${t.contractId}:`, closeRes.error.message || JSON.stringify(closeRes.error));
+            closingContracts.delete(t.contractId);
+            continue;
+          }
+          const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
+          t.serverPnl = (closeRes && closeRes.sell?.profit) ?? (settled !== null ? settled.profit : parseFloat(currentPnl.toFixed(2)));
+          t.resultSource = (closeRes && closeRes.sell?.profit !== undefined) ? "server_close_confirmed" : (settled !== null ? "deriv_settled_official" : "estimated_fallback");
+          t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
+          t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+          state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+          state.openTrade = null;
+          onTradeClosedCleanup(candles[si].epoch);
+          if (SYMBOL === "1HZ75V") {
+            state.v75_1s_initialBuyDone = false;
+            state.v75_1s_initialSellDone = false;
+          } else if (SYMBOL === "R_25") {
+            state.v25_initialBuyDone = false;
+            state.v25_initialSellDone = false;
+            state.v25_stoch302515_touched_50_BUY = false;
+            state.v25_stoch302515_touched_50_SELL = false;
+          }
+          saveTrades(trades);
+          saveState();
+
+          const icon = t.result === "WIN" ? "✅" : "❌";
+          const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
+          await sendTelegram(
+            `${icon} *${REPO_LABEL} — ${exitLabel}*\n\n` +
+            `Active *${t.direction}* position liquidated immediately on confirmed closed M5 candle.\n` +
+            `• Stoch 100: *${sK100?.toFixed(1)}* (${isBuy ? "< 50.0" : "> 50.0"})\n` +
+            `• Stoch (30,2,5): *%K ${sK3025?.toFixed(1)} vs %D ${sD3025?.toFixed(1)}*\n` +
+            `💵 P&L: *${pnlStr}*\n` +
+            `Contract: \`${t.contractId}\` closed to protect capital.`
+          );
+        } catch (e) {
+          console.error(`[EARLY EXIT] Failed to close contract ${t.contractId}:`, e.message);
+          closingContracts.delete(t.contractId);
+          continue;
+        }
+        closingContracts.delete(t.contractId);
+        continue;
+      }
+    }
+
     // Active Trade Exits for PROFILE_V75_1S_TREND_MACD_STOCH533, PROFILE_V10_TREND_MACD_STOCH533 (and PROFILE_V75_1S_EMA_STOCH15)
     if (STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
       const isBuy = t.direction === "BUY";

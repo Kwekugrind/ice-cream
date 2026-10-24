@@ -8923,6 +8923,38 @@ The trader requested an update to **Setup 1: Initial Entry (Breakout Wave)** for
 3. **Rebuilt & Deployed:** Recompiled production bundle with Vite (`npm run build`) and pushed updated `index.html` live to Server 2 (`http://79.76.120.30:4000`).
 
 
+### Diagnostic Scenario 55: Volatility 75 (1s) & Volatility 25 Adverse Trend & Stoch %K/%D Cross Invalidation + Immediate Opposite Execution
+
+* **Timestamp:** `2026-10-24 10:20:00 UTC`
+* **Target Bots:** `Coffee Machine` (`coffee-v75-1s` / `1HZ75V`) & `Tea Machine` (`tea-v25` / `R_25`)
+* **Strategy Profiles:** `PROFILE_V75_1S_STOCH100_STOCH30` & `PROFILE_V25_STOCH100_STOCH30`
+* **Target Servers:** Server 1 (`138.2.169.72`)
+
+#### Trader Mandate & Empirical Forensic Audit:
+At `06:00:00 UTC` on October 24, 2026, `1HZ75V` entered a BUY trade at `4,980.20`.
+- At entry, Stoch 100 was 56.12 (> 50.0) and Stoch (30,2,5) %K was 56.48 (> %D 53.24).
+- On the very next M5 candle (`06:00 - 06:05 UTC`), price aggressively plunged to `4,940.00`, causing Stoch 100 to cross down to 40.79 (< 50.0) and Stoch 30 %K to cross below %D (55.35 < 55.91).
+- On the subsequent candle (`06:05 - 06:10 UTC`), Stoch 30 %K crossed below Level 50 (45.93), fulfilling an entire fresh SELL entry setup while price was well below EMA 100.
+- However, because the BUY position was not exited until hitting the -$2.00 software stop loss at 06:14:36 UTC, the bot was locked out of taking the highly profitable SELL trade.
+
+The trader instructed:
+> "Can we update the logic. notice that that immediate drop on the next candle was actually a sell signal but the bot missed it. we have to updade the code such that if there is an immediate drop in the price and stock 100 crosses the oppostite side. and %k of Stoch (30, 2, 5) crosses %d. that trade will close immediately on the closed candle that confirms it. and if Stoch (30, 2, 5) %k then crosses the 50 and satisfies the condition for a trade in the opposite direction like in our case, the bot will takethe trade."
+
+#### Quantitative Architectural Implementation:
+1. **Dedicated Invalidation Early Exit Engine:**
+   * Runs on every confirmed closed M5 candle (`m5BoundaryEpoch > t.entryEpoch`) while trade is not an active runner (`!isRunner`).
+   * Evaluates adverse macro trend shift + oscillator reversal:
+     - BUY Position: `sK100 < 50.0` **AND** `sK3025 < sD3025`
+     - SELL Position: `sK100 > 50.0` **AND** `sK3025 > sD3025`
+   * Instantly executes broker-side market liquidation (`closeContract()`).
+2. **Flag Decoupling & Reversal Unblocking:**
+   * Upon exit, cleans up state and resets initial trade flags:
+     - `1HZ75V`: `state.v75_1s_initialBuyDone = false; state.v75_1s_initialSellDone = false;`
+     - `R_25`: `state.v25_initialBuyDone = false; state.v25_initialSellDone = false; state.v25_stoch302515_touched_50_BUY = false; state.v25_stoch302515_touched_50_SELL = false;`
+   * Permits the opposite trade setup to be recognized on the same candle or any candle within the 3-candle tolerance window (`<= 900s`), allowing the bot to pivot seamlessly from a cut loss into a winning trend runner.
+
+---
+
 ## 17. COMPENDIUM OF TRADER DIRECTIVES & STRATEGY RULES IN THE TRADER'S OWN WORDS (VERBATIM AUDIT ARCHIVE)
 
 > **AUTHORITATIVE GOVERNANCE MANDATE:**  
@@ -9090,6 +9122,9 @@ The trader requested an update to **Setup 1: Initial Entry (Breakout Wave)** for
 * **Step 8338 (`2026-10-23 07:55:45 UTC` — MASTER REVISION & UNIFICATION):**
   > **"2. map the entry and trade management rules exactly of vix 100 to vix 25 and vix 50. update the dashboard as well. no erros."**
 
+* **Step 9440 (`2026-10-24 10:20:00 UTC` — Adverse Trend & Stoch %K/%D Cross Invalidation + Immediate Opposite Execution):**
+  > "Can we update the logic. notice that that immediate drop on the next candle was actually a sell signal but the bot missed it. we have to updade the code such that if there is an immediate drop in the price and stock 100 crosses the oppostite side. and %k of Stoch (30, 2, 5) crosses %d. that trade will close immediately on the closed candle that confirms it. and if Stoch (30, 2, 5) %k then crosses the 50 and satisfies the condition for a trade in the opposite direction like in our case, the bot will takethe trade."
+
 * **Step 9425 (`2026-10-24 00:16:24 UTC` — Authoritative Indicator & Entry Upgrade):**
   > "Thank you. we will do a similar update for vix 25. please see the rules below.
   > 
@@ -9255,7 +9290,12 @@ The trader requested an update to **Setup 1: Initial Entry (Breakout Wave)** for
    * **Trend Alignment:** Macro Trend remains valid (Stoch 100 %K `>= 50.0` for BUY / `<= 50.0` for SELL) + Price confirmed beyond EMA 100.
    * **BUY Trigger:** Fresh M5 Stochastic (15, 2, 5 Simple) %K cross **above Level 20.0** (`prevK <= 20.0 && sK > 20.0`).
    * **SELL Trigger:** Fresh M5 Stochastic (15, 2, 5 Simple) %K cross **below Level 80.0** (`prevK >= 80.0 && sK < 80.0`).
-4. **Trade Management:** Software SL -$2.00 | Hard SL -$5.00 | Base TP +$3.50 | Daily Target Strike TP +$7.00 | Invalidation: 3 Consecutive Adverse M5 Closes / Stoch 100 Adverse Reversal.
+4. **Trade Management & Early Reversal Pivot Engine:**
+   * **Software SL:** -$2.00 (40.0 pts on 0.05 lots) | Hard Broker SL: -$5.00 (100.0 pts).
+   * **Base TP:** +$3.50 net (70.0 pts) | **Daily Strike TP:** +$7.00 net (140.0 pts).
+   * **Stoch 100 & Stoch (30,2,5) %K/%D Adverse Invalidation Exit:** Evaluated on every post-entry confirmed closed M5 candle while not an active runner. If `Stoch (100, 1, 1) %K` crosses to the opposite side of Level 50 (`< 50.0` for BUY / `> 50.0` for SELL) **AND** `Stoch (30, 2, 5 Simple) %K` crosses `%D` in the opposite direction (`%K < %D` for BUY / `%K > %D` for SELL), the position is liquidated immediately on that confirmed closed candle to cut losses and protect capital.
+   * **Immediate Opposite Direction Execution:** Upon invalidation liquidation, all directional flags (`state.v75_1s_initialBuyDone`, `state.v75_1s_initialSellDone`) are immediately reset to `false`. If on that candle or subsequent candles, `Stoch (30, 2, 5 Simple) %K` crosses Level 50 and satisfies all conditions for an opposite trade (within the 3-candle tolerance window of the Stoch 100 cross and confirmed beyond M5 EMA 100), the bot takes the opposite trade immediately.
+   * **Additional Invalidation Guards:** 3 Consecutive Adverse M5 Closes (in loss) and Entry-Hour H1 Adverse Close Exit.
 
 ---
 

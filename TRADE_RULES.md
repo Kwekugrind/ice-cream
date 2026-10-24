@@ -78,3 +78,19 @@ All active trading bots operate with a standard **$5.00 Stake**, engineered for 
 > 1. **Zero Assumptions Policy:** The AI engineering engine must **NEVER make assumptions, extrapolate, or guess user intent** regarding trading rules, indicators, target engines, or strategy profiles. If any instruction is underspecified, ambiguous, or unclear, the AI MUST HALT execution and ask the trader for explicit clarification.
 > 2. **Strict Instruction Adherence:** The AI must adhere 100% strictly to explicit user instructions. Do NOT add, remove, "optimize", or strip strategy components or target engines beyond what was explicitly requested.
 > 3. **Real Capital Responsibility:** Acknowledging that live financial capital is at stake, all code modifications, indicator gates, and execution logic must undergo mandatory verification and strictly preserve system stability and capital safety.
+
+---
+
+## 7. STOCH 100 & STOCH 30 EARLY INVALIDATION EXIT & REVERSAL PIVOT ENGINE
+### Authoritative Specification for Coffee Machine (`1HZ75V`) and Tea Machine (`R_25`)
+
+1. **Adverse Trend & Stoch %K/%D Cross Invalidation:**
+   * Evaluated on every confirmed closed M5 candle following entry, provided the position is not an active runner (`!isRunner`).
+   * **BUY Trade Early Exit:** Triggered when closed M5 `Stoch (100, 1, 1) %K < 50.0` **AND** closed M5 `Stoch (30, 2, 5 Simple) %K < %D`.
+   * **SELL Trade Early Exit:** Triggered when closed M5 `Stoch (100, 1, 1) %K > 50.0` **AND** closed M5 `Stoch (30, 2, 5 Simple) %K > %D`.
+   * **Execution Action:** Position is closed immediately at market to cut adverse risk and protect account equity.
+
+2. **Immediate Opposite Direction Execution (Reversal Pivot):**
+   * The moment an adverse invalidation liquidation occurs, directional block flags (`initialBuyDone` / `initialSellDone`) are instantly reset to `false`.
+   * If on that confirmed closed candle or subsequent candles, `Stoch (30, 2, 5 Simple) %K` crosses Level 50.0 and aligns with EMA 100 in the opposite direction within the 3-candle tolerance window (`<= 900s` from the Stoch 100 cross), the bot takes the opposite trade immediately.
+   * Eliminates the scenario where an open losing position blocks the execution of a valid opposing market impulse.
