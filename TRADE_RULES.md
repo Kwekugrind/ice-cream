@@ -37,7 +37,7 @@ All active trading bots operate with a standard **$5.00 Stake**, engineered for 
 * **Tier 4 Daily Target Strike Ceiling (Instant Cash-Out):**
   The second floating profit completes the daily quota or reaches +$7.00 standalone, the bot cashes out immediately.
 * **Daily Target Lock (+$7.00):** Transitions bot into `IDLE_DAILY_TARGET_REACHED` until 00:00 UTC rollover.
-* **Daily Drawdown Shield (-$4.00):** If 2 consecutive losses total -$4.00, locks bot into `IDLE_DAILY_MAX_LOSS_REACHED` until 00:00 UTC rollover to preserve the $100 account balance.
+* **Continuous Trading Execution Mandate:** The artificial -$4.00 daily loss halt has been completely abolished. Trading bots evaluate market structure continuously across all sessions without premature daily freezes.
 * **Tier 4 Super Runner Ratchet (Peak $\ge \$12.00$):** Locks in at least **80% of peak profit** (capping maximum giveback to `$2.50`):
   $\text{lockedPnlFloor} = \max(+\$7.50, \text{maxUnrealizedPnL} \times 0.80, \text{maxUnrealizedPnL} - \$2.50)$
 * **Hard Take Profit / Super Runner Cash-out Ceiling (+$20.00):** Instant market cash-out upon touching `+$20.00` floating profit.

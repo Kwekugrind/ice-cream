@@ -338,7 +338,7 @@ const INSTRUMENT_SOFTWARE_SL_MAP = {
 };
 
 const DEFAULT_SOFTWARE_SL_USD = -2.00;
-const DAILY_MAX_LOSS_USD = -4.00; // Stop bot trading if down -$4.00 in a day to safeguard $100 capital
+// Daily Max Loss Freeze Removed per Trader Directive (Zero Artificial Session Halts)
 const rawEnvSl = process.env.SOFTWARE_SL_USD ? parseFloat(process.env.SOFTWARE_SL_USD) : null;
 const SOFTWARE_SL_USD = rawEnvSl !== null
   ? (rawEnvSl > 0 ? -rawEnvSl : rawEnvSl)
@@ -1498,6 +1498,8 @@ state.strategyProfile = STRATEGY_PROFILE;
 sanitizeState(state);
 state.engineVersion = ENGINE_VERSION;
 state.codeTimestamp = CODE_TIMESTAMP;
+state.dailyMaxLossReached = false;
+state.dailyMaxLossDate = null;
 
 function saveState() {
   state.engineVersion = ENGINE_VERSION;
@@ -1906,12 +1908,8 @@ async function manageOpenTradesFastPath() {
         state.dailyTargetDate = new Date().toISOString().split("T")[0];
         console.log(`[DAILY TARGET] +$${DAILY_PROFIT_TARGET_USD.toFixed(2)} Daily Goal Achieved ($${state.dailyNetPnl.toFixed(2)}). Switching to IDLE_DAILY_TARGET_REACHED.`);
         await sendTelegram(`🎯 *${REPO_LABEL} — DAILY TARGET ACHIEVED!* 🎯\n\nDaily Net Profit: *+$${state.dailyNetPnl.toFixed(2)}*\nBot is now locked in profit protection until 00:00 UTC rollover.`);
-      } else if (typeof DAILY_MAX_LOSS_USD === "number" && state.dailyNetPnl <= DAILY_MAX_LOSS_USD) {
-        state.dailyMaxLossReached = true;
-        state.dailyMaxLossDate = new Date().toISOString().split("T")[0];
-        console.log(`[DAILY LOSS LIMIT] $${state.dailyNetPnl.toFixed(2)} Daily Loss Limit reached. Locking bot to protect $100 account until 00:00 UTC rollover.`);
-        await sendTelegram(`🛡️ *${REPO_LABEL} — CAPITAL PROTECTION LIMIT REACHED* 🛡️\n\nDaily Net PnL reached -$4.00 ($${state.dailyNetPnl.toFixed(2)}).\nTrading paused until 00:00 UTC to protect account capital.`);
       }
+
 
       // Disarm setup upon trade exit to require a fresh key level re-test or fresh indicator reset
       state.armed = null;
@@ -3875,12 +3873,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     saveState();
     return;
   }
-  if (state.dailyMaxLossReached) {
-    console.log(`[${REPO_LABEL}] 🛡️ Daily max loss limit (-$4.00) reached. Idling until 00:00 UTC rollover to protect capital.`);
-    state.lastProcessedEpoch = m5BoundaryEpoch;
-    saveState();
-    return;
-  }
+
 
   // ── A. QUANTITATIVE STATE MACHINE & SIGNAL RESOLUTION ──
   if (STRATEGY_PROFILE === "PROFILE_V75_EMA_STOCH15") {
@@ -5761,11 +5754,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     healthStatus = "FUNCTIONING";
     blockerReason = `Daily Net Target (+${DAILY_PROFIT_TARGET_USD.toFixed(2)}) Secured Today (${(state.dailyNetPnl || 0).toFixed(2)})`;
     nextTrigger = "Idling until 00:00 UTC daily rollover";
-  } else if (state.dailyMaxLossReached) {
-    state.openTrade = null;
-    healthStatus = "FUNCTIONING";
-    blockerReason = `Daily Loss Limit (-$4.00) Reached (${(state.dailyNetPnl || 0).toFixed(2)})`;
-    nextTrigger = "Capital protection active. Idling until 00:00 UTC daily rollover";
+
   } else {
     state.openTrade = null;
     if (STRATEGY_PROFILE === "PROFILE_V75_EMA_STOCH15") {

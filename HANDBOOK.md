@@ -8987,7 +8987,13 @@ The trader specified a structural price action invalidation engine based on cons
 
 ---
 
-### 17.1. UNIVERSAL FLEET DIRECTIVES & CENTRALIZED TRADE MANAGEMENT (VERBATIM)
+### 17.1. UNIVERSAL FLEET DIRECTIVES
+#### Directive U3 — Total Abolition of Hard Daily Loss Freeze
+* **Date / Step:** `2026-10-24 11:07:43 UTC`
+* **Verbatim Trader Instruction:**
+  > "Remove the Hard Daily Loss Freeze: Completely remove"
+* **Specification:** Completely stripped all `dailyMaxLossReached` checks, `DAILY_MAX_LOSS_USD` constants, and daily loss freeze returns from `alert.js`. Bots never freeze or idle due to cumulative daily drawdowns.
+ & CENTRALIZED TRADE MANAGEMENT (VERBATIM)
 
 #### Directive U1 — Universal M5 EMA 100 Directional Filter
 * **Date / Step:** `2026-10-20 00:00:22 UTC` (Step 1477 / Directive #17)
@@ -9190,7 +9196,7 @@ The trader specified a structural price action invalidation engine based on cons
    * **Target:** Base Take Profit +$3.50 net (7.00 pts) / Full Daily Strike +$7.00 net (14.00 pts).
    * **Dynamic Trailing Ratchet:** Incubation zone ($0.00-$2.19) -> Tier 1 Breakeven Shield at +$2.20 (locks +$1.00, $1.20 breathing buffer) -> Tier 2 Quota Lock at +$3.50 (locks +$2.20) -> Tier 3 Runner at +$5.00 (locks +$3.80).
    * **Macro Trend Invalidation Exit:** Evaluated on closed M5 candle strictly when in loss (`pnl < 0`). If Stochastic (100, 1, 1) crosses adverse to position through Level 50.0, the trade is liquidated immediately.
-   * **Circuit Breakers:** Daily Profit Lock at +$7.00; Daily Drawdown Shield at -$4.00.
+   * **Circuit Breakers:** Daily Profit Lock at +$7.00; Continuous session execution without artificial daily loss cutoff.
 
 ---
 
