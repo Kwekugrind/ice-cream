@@ -151,7 +151,7 @@ All active bots use a standard **$5.00 Stake** per trade, specifically engineere
 | Bot Label | PM2 Name | Server | Directory Path | Symbol | Symbol ID | Lot Size | Stake | Strategy Gate | Base TP ($3.50 Net) | Daily Strike TP | Calibrated Soft SL |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | **Lery's Alerts** | `lery-v75` | S1 | `~/trading-bots/Lery-s-Alerts` | Volatility 75 | `R_75` | 0.01 Lots | $5.00 | M5 EMA 100/200 Breakout (80/20) & EMA 100 Touch Retrace (20/80) | 350.0 pts | 700.0 pts | -$2.00 |
-| **Coffee Machine** | `coffee-v75-1s` | S1 | `~/trading-bots/coffee` | Volatility 75 (1s) | `1HZ75V` | 0.05 Lots | $5.00 | M5 Stoch 100 Trend + Stoch (30,2,5) Level 50 Cross (±3 candles) + EMA 100 Filter + Stoch (15,2,5) 20/80 Re-Entry | 70.0 pts | 140.0 pts | -$2.00 |
+| **Coffee Machine** | `coffee-v75-1s` | S1 | `~/trading-bots/coffee` | Volatility 75 (1s) | `1HZ75V` | 0.05 Lots | $5.00 | M5 Stoch 100 Trend + Stoch (30,2,5) Level 50 Cross (±3 candles) + EMA 100 Filter + Stoch (15,2,5) 25/75 Re-Entry | 70.0 pts | 140.0 pts | -$2.00 |
 | **Milk Machine** | `milk-v100` | S1 | `~/trading-bots/milk` | Volatility 100 | `R_100` | 1.00 Lot | $5.00 | M5 Stoch 200 (48/52) Trend + M5 Stoch (15,2,5) Initial Lvl 50 & 20/80 Re-Entry + Stoch (25,2,5) 65/35 Exit | 3.50 pts | 7.00 pts | -$2.50 |
 | **Tea Machine** | `tea-v25` | S1 | `~/trading-bots/tea` | Volatility 25 | `R_25` | 0.50 Lots | $5.00 | M5 Stoch 100 Trend + Stoch (30,2,5) Level 50 Cross (±3 candles) + EMA 100 Filter + Stoch (30,25,15) Re-Entry | 7.00 pts | 14.00 pts | -$2.00 |
 | **Ice Cream** | `ice-cream-100-1s` | S2 | `~/trading-bots/ice-cream` | Volatility 25 (1s) | `1HZ25V` | 0.005 Lots | $5.00 | M5 Stoch 200 (45/55) + Stoch (15,2,5) (75/25) + EMA 100 Filter (Skip & Await Re-Entry) + Pullback Re-Entry (25/75) | 525.0 pts | 1050.0 pts | -$2.00 |
@@ -9254,6 +9254,8 @@ The trader instructed:
 ### 17.6. VOLATILITY 75 (1s) INDEX (`1HZ75V` — COFFEE MACHINE)
 
 #### Chronological Verbatim Directives:
+* **Step 9445 (`2026-10-24 10:40:00 UTC` — Re-Entry Level Upgrade to 25/75):**
+  > "1. Please lets update the re entry Stochastic (15, 2, 5 Simple) indicator levels to 25/75 in stead of 20/80 for vix 75 1s"
 * **Step 180 (`2026-10-18 20:30:54 UTC`):**
   > "lets proceed with vix 75 1s. what are the rules"
 * **Step 270 & Step 277 (`2026-10-18 21:06:21 & 21:17:23 UTC`):**
@@ -9280,7 +9282,7 @@ The trader instructed:
    * **Macro Trend Identifier:** Closed M5 Stochastic `(100, 1, 1)`
    * **Baseline Trend Filter:** M5 EMA `100`
    * **Trigger Indicator:** Closed M5 Stochastic `(30, 2, 5 Simple)` with Level `50.0`
-   * **Re-Entry Indicator:** Closed M5 Stochastic `(15, 2, 5 Simple)` with Levels `20.0 / 80.0`
+   * **Re-Entry Indicator:** Closed M5 Stochastic `(15, 2, 5 Simple)` with Levels `25.0 / 75.0`
 2. **Initial Entry Engine (Dual-Stoch ±3 Candle Timing Window):**
    * **BUY:** Stoch (100, 1, 1) %K crosses above Level 50.0 (stays armed while `>= 50.0`) + Price > M5 EMA 100 + Stoch (30, 2, 5 Simple) %K freshly crosses above Level 50.0.
    * **SELL:** Stoch (100, 1, 1) %K crosses below Level 50.0 (stays armed while `<= 50.0`) + Price < M5 EMA 100 + Stoch (30, 2, 5 Simple) %K freshly crosses below Level 50.0.
@@ -9288,8 +9290,8 @@ The trader instructed:
    * **Baseline Requirement:** Price must be beyond EMA 100 at trigger; if not, initial entry is skipped to await re-entry.
 3. **Re-Entry Engine (After Initial Trade Has Closed):**
    * **Trend Alignment:** Macro Trend remains valid (Stoch 100 %K `>= 50.0` for BUY / `<= 50.0` for SELL) + Price confirmed beyond EMA 100.
-   * **BUY Trigger:** Fresh M5 Stochastic (15, 2, 5 Simple) %K cross **above Level 20.0** (`prevK <= 20.0 && sK > 20.0`).
-   * **SELL Trigger:** Fresh M5 Stochastic (15, 2, 5 Simple) %K cross **below Level 80.0** (`prevK >= 80.0 && sK < 80.0`).
+   * **BUY Trigger:** Fresh M5 Stochastic (15, 2, 5 Simple) %K cross **above Level 25.0** (`prevK <= 25.0 && sK > 25.0`).
+   * **SELL Trigger:** Fresh M5 Stochastic (15, 2, 5 Simple) %K cross **below Level 75.0** (`prevK >= 75.0 && sK < 75.0`).
 4. **Trade Management & Early Reversal Pivot Engine:**
    * **Software SL:** -$2.00 (40.0 pts on 0.05 lots) | Hard Broker SL: -$5.00 (100.0 pts).
    * **Base TP:** +$3.50 net (70.0 pts) | **Daily Strike TP:** +$7.00 net (140.0 pts).

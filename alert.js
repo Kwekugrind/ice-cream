@@ -4708,26 +4708,26 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         : `${prefix}_INITIAL_STOCH100_STOCH30 (SELL)`;
       state.v75_1s_initialSellDone = true;
     }
-    // Re-Entry BUY Trigger: While Stoch 100 aligned > 50, Price > EMA 100, initialBuyDone, fresh Stoch (15,2,5) %K cross > 20
-    else if (stoch100AlignedBuy && emaBaselineBuy && Boolean(state.v75_1s_initialBuyDone) && prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0 && noActiveTrades) {
+    // Re-Entry BUY Trigger: While Stoch 100 aligned > 50, Price > EMA 100, initialBuyDone, fresh Stoch (15,2,5) %K cross > 25
+    else if (stoch100AlignedBuy && emaBaselineBuy && Boolean(state.v75_1s_initialBuyDone) && prevK1525 !== null && sK1525 !== null && prevK1525 <= 25.0 && sK1525 > 25.0 && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
-      setupLabel = `${prefix}_REENTRY_STOCH15_20 (BUY)`;
+      setupLabel = `${prefix}_REENTRY_STOCH15_25 (BUY)`;
     }
-    // Re-Entry SELL Trigger: While Stoch 100 aligned < 50, Price < EMA 100, initialSellDone, fresh Stoch (15,2,5) %K cross < 80
-    else if (stoch100AlignedSell && emaBaselineSell && Boolean(state.v75_1s_initialSellDone) && prevK1525 !== null && sK1525 !== null && prevK1525 >= 80.0 && sK1525 < 80.0 && noActiveTrades) {
+    // Re-Entry SELL Trigger: While Stoch 100 aligned < 50, Price < EMA 100, initialSellDone, fresh Stoch (15,2,5) %K cross < 75
+    else if (stoch100AlignedSell && emaBaselineSell && Boolean(state.v75_1s_initialSellDone) && prevK1525 !== null && sK1525 !== null && prevK1525 >= 75.0 && sK1525 < 75.0 && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
-      setupLabel = `${prefix}_REENTRY_STOCH15_80 (SELL)`;
+      setupLabel = `${prefix}_REENTRY_STOCH15_75 (SELL)`;
     }
 
     // Latch Re-Entry Opportunity while trade is running (for immediate entry upon trade close)
-    const hasReentryBuyOpp = stoch100AlignedBuy && emaBaselineBuy && Boolean(state.v75_1s_initialBuyDone) && prevK1525 !== null && sK1525 !== null && prevK1525 <= 20.0 && sK1525 > 20.0;
-    const hasReentrySellOpp = stoch100AlignedSell && emaBaselineSell && Boolean(state.v75_1s_initialSellDone) && prevK1525 !== null && sK1525 !== null && prevK1525 >= 80.0 && sK1525 < 80.0;
+    const hasReentryBuyOpp = stoch100AlignedBuy && emaBaselineBuy && Boolean(state.v75_1s_initialBuyDone) && prevK1525 !== null && sK1525 !== null && prevK1525 <= 25.0 && sK1525 > 25.0;
+    const hasReentrySellOpp = stoch100AlignedSell && emaBaselineSell && Boolean(state.v75_1s_initialSellDone) && prevK1525 !== null && sK1525 !== null && prevK1525 >= 75.0 && sK1525 < 75.0;
     if (hasReentryBuyOpp) {
       state.activeReentryOpportunity = {
         direction: "BUY",
-        setupLabel: `${prefix}_REENTRY_STOCH15_20 (BUY)`,
+        setupLabel: `${prefix}_REENTRY_STOCH15_25 (BUY)`,
         detectedEpoch: m5BoundaryEpoch,
         expiresEpoch: m5BoundaryEpoch + 300,
         currentEma100
@@ -4735,7 +4735,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     } else if (hasReentrySellOpp) {
       state.activeReentryOpportunity = {
         direction: "SELL",
-        setupLabel: `${prefix}_REENTRY_STOCH15_80 (SELL)`,
+        setupLabel: `${prefix}_REENTRY_STOCH15_75 (SELL)`,
         detectedEpoch: m5BoundaryEpoch,
         expiresEpoch: m5BoundaryEpoch + 300,
         currentEma100
@@ -4748,14 +4748,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         state.armed = { dir: "BUY", lbl: `V75-1s Initial BUY Armed (Stoch 100: ${sK100.toFixed(1)} > 50)`, lvl: currentPrice };
         state.nextPhase = `V75-1s Initial BUY Armed — Awaiting Stoch (30,2,5) %K (${sK3025.toFixed(1)}) cross > 50 (within 3 candles of Stoch 100 cross)`;
       } else {
-        state.nextPhase = `V75-1s Awaiting BUY Re-Entry — Await Stoch (15,2,5) %K (${sK1525.toFixed(1)}) cross > 20`;
+        state.nextPhase = `V75-1s Awaiting BUY Re-Entry — Await Stoch (15,2,5) %K (${sK1525.toFixed(1)}) cross > 25`;
       }
     } else if (stoch100AlignedSell) {
       if (!state.v75_1s_initialSellDone) {
         state.armed = { dir: "SELL", lbl: `V75-1s Initial SELL Armed (Stoch 100: ${sK100.toFixed(1)} < 50)`, lvl: currentPrice };
         state.nextPhase = `V75-1s Initial SELL Armed — Awaiting Stoch (30,2,5) %K (${sK3025.toFixed(1)}) cross < 50 (within 3 candles of Stoch 100 cross)`;
       } else {
-        state.nextPhase = `V75-1s Awaiting SELL Re-Entry — Await Stoch (15,2,5) %K (${sK1525.toFixed(1)}) cross < 80`;
+        state.nextPhase = `V75-1s Awaiting SELL Re-Entry — Await Stoch (15,2,5) %K (${sK1525.toFixed(1)}) cross < 75`;
       }
     }
   }
