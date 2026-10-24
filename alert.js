@@ -385,6 +385,17 @@ function escapeMarkdown(text) {
 }
 
 // ==================== TELEGRAM & UTILS ====================
+function getFriendlyStrategyName() {
+  if (SYMBOL === "1HZ75V") return "M5 Trend Confluence (Stoch 100 + Stoch 30 + EMA 100)";
+  if (SYMBOL === "R_25")   return "M5 Trend Confluence (Stoch 100 + Stoch 30 + EMA 100)";
+  if (SYMBOL === "R_75")   return "M5 EMA 100/200 Baseline + Stoch (15,2,5) Trigger";
+  if (SYMBOL === "R_100")  return "M5 Stoch (100,1,1) Trend + Stoch (15,2,5) Confluence";
+  if (SYMBOL === "R_50")   return "M5 Stoch (100,1,1) Trend + Stoch (15,2,5) Confluence";
+  if (SYMBOL === "R_10")   return "M5 Trend Confluence (MACD + EMA 100 + Stoch 5,3,3)";
+  if (SYMBOL === "1HZ25V") return "M5 Stoch (200,1,1) Trend + EMA 100 + Stoch (15,2,5)";
+  return "M5 Multi-Indicator Confluence";
+}
+
 function toAsciiJson(obj) {
   const json = JSON.stringify(obj);
   return json.replace(/[\u007F-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]/g, (c) => {
@@ -398,8 +409,68 @@ function toAsciiJson(obj) {
   });
 }
 
-async function sendTelegram(msg) {
+// ── TELEGRAM DEDUPLICATION & SINGLE-FIRE ENGINE ──
+const sentTelegramHashes = new Map();
+const reportedExitContracts = new Set();
+
+function isExitAlreadyReported(cid) {
+  if (!cid) return false;
+  const sCid = String(cid);
+  if (reportedExitContracts.has(sCid)) return true;
+  if (state.reportedExits && state.reportedExits[sCid]) {
+    reportedExitContracts.add(sCid);
+    return true;
+  }
+  return false;
+}
+
+function markExitReported(cid) {
+  if (!cid) return;
+  const sCid = String(cid);
+  reportedExitContracts.add(sCid);
+  state.reportedExits = state.reportedExits || {};
+  state.reportedExits[sCid] = Date.now();
+  const cutoff = Date.now() - 86400000;
+  for (const k of Object.keys(state.reportedExits)) {
+    if (state.reportedExits[k] < cutoff) delete state.reportedExits[k];
+  }
+  saveState();
+}
+
+async function sendTelegram(msg, options = {}) {
   if (!TG_TOKEN || !TG_CHAT_ID) return { ok: false, error: "missing_credentials" };
+  if (!msg || typeof msg !== "string") return { ok: false };
+
+  // Exit Deduplication Guard: Never fire duplicate exit messages for the same contract
+  let exitCid = options.contractId;
+  if (!exitCid && (msg.includes("Contract:") || msg.includes("contract:"))) {
+    const m = msg.match(/[Cc]ontract:\s*`?([0-9a-zA-Z_-]+)`?/);
+    if (m && m[1]) exitCid = m[1];
+  }
+  if (exitCid && (msg.includes("EXIT") || msg.includes("Exit") || msg.includes("Trade WIN") || msg.includes("Trade LOSS") || msg.includes("Structure Break") || msg.includes("Invalidation") || msg.includes("Liquidated") || msg.includes("liquidated"))) {
+    if (isExitAlreadyReported(exitCid)) {
+      console.log(`[TELEGRAM DEDUP] Auto-suppressed duplicate exit message for contract ${exitCid}`);
+      return { ok: true, suppressed: true };
+    }
+    markExitReported(exitCid);
+  }
+
+  // 60-second general content deduplication
+  const msgHash = crypto.createHash("md5").update(msg.trim()).digest("hex");
+  const now = Date.now();
+  const lastSent = sentTelegramHashes.get(msgHash);
+  if (lastSent && (now - lastSent < 60000)) {
+    console.log(`[TELEGRAM DEDUP] Suppressed duplicate message (${now - lastSent}ms ago)`);
+    return { ok: true, suppressed: true };
+  }
+  sentTelegramHashes.set(msgHash, now);
+
+  if (sentTelegramHashes.size > 200) {
+    for (const [h, t] of sentTelegramHashes.entries()) {
+      if (now - t > 120000) sentTelegramHashes.delete(h);
+    }
+  }
+
   const send = async (text, parseMode) => {
     const body = { chat_id: TG_CHAT_ID, text };
     if (parseMode) body.parse_mode = parseMode;
@@ -1654,11 +1725,8 @@ async function manageOpenTradesFastPath() {
         closingContracts.delete(t.contractId);
         closingContracts.delete(Number(t.contractId));
         modified = true;
-        await sendTelegram(
-          `🩹 *${REPO_LABEL} — AUTOMATED SELF-HEALING RECOVERY* 🩹\n\n` +
-          `Contract \`${t.contractId}\` (*${t.direction}*) was falsely marked as \`${prevResult}\`, but is STILL LIVE on broker!\n\n` +
-          `Restored active state in V8 RAM. Fast-Path Software SL ($-\\ $2.50) and Trailing Stop are now actively monitoring this position.`
-        );
+        // Internal self-healing logged to console only (no confusing Telegram spam)
+        console.log(`[SELF-HEALING RECOVERY] Contract ${t.contractId} (${t.direction}) restored in V8 RAM monitoring.`);
       }
     }
 
@@ -1952,9 +2020,20 @@ async function manageOpenTradesFastPath() {
       closingContracts.delete(openTrade.contractId);
       
       const icon = finalResult === "WIN" ? "✅" : "❌";
-      const pnlStr = serverPnl >= 0 ? `+$${serverPnl.toFixed(2)}` : `-$${Math.abs(serverPnl).toFixed(2)}`;
+      const pnlStr = serverPnl >= 0 ? `+${serverPnl.toFixed(2)}` : `-${Math.abs(serverPnl).toFixed(2)}`;
       const durationMs = new Date(openTrade.closeTime) - new Date(openTrade.openTime);
-      await sendTelegram(`${icon} *${REPO_LABEL} — Trade ${finalResult}*\n\nDirection: ${openTrade.direction}\n📍 Entry: ${Number(openTrade.entry).toFixed(4)}\n🏁 Exit: ${currentPrice.toFixed(4)}\n\n💵 P&L: *${pnlStr}* (Net of comm.)\nReason: ${reason}\nDuration: ${formatDuration(durationMs)}\nDaily Net Total: $${state.dailyNetPnl.toFixed(2)}\nContract: \`${openTrade.contractId}\``);
+      const exitTitle = finalResult === "WIN" ? "EXIT - WIN" : "EXIT - LOSS";
+      await sendTelegram(
+        `${icon} *[${exitTitle}] ${SYMBOL_NAME} — ${REPO_LABEL}*\n\n` +
+        `• Direction: *${openTrade.direction === "BUY" ? "🟢 BUY" : "🔴 SELL"}*\n` +
+        `• Entry: *${Number(openTrade.entry).toFixed(4)}* ➔ Exit: *${currentPrice.toFixed(4)}*\n` +
+        `• P&L: *${pnlStr}* (Net of comm.)\n` +
+        `• Reason: *${reason}*\n` +
+        `• Duration: ${formatDuration(durationMs)}\n` +
+        `• Daily Net Total: *${state.dailyNetPnl.toFixed(2)}*\n` +
+        `• Contract: \`${openTrade.contractId}\``,
+        { contractId: openTrade.contractId }
+      );
 
       // ⚡ Immediate Re-Entry Opportunity Evaluation: If a re-entry opportunity was latched while trade was running, fire immediately!
       if (!state.dailyTargetReached && state.activeReentryOpportunity) {
@@ -2496,7 +2575,17 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             state.dailyTargetReached = true;
             state.dailyTargetDate = todayStr;
           }
-          await sendTelegram(`${t.result === "WIN" ? "✅" : "❌"} *${REPO_LABEL} — Trade ${t.result} (Broker Native Exit)*\n\n💵 P&L: *${rec.profit >= 0 ? `+$${rec.profit.toFixed(2)}` : `-$${Math.abs(rec.profit).toFixed(2)}`}*`);
+          if (!hadResult && !isExitAlreadyReported(t.contractId)) {
+            const pnlLabel = rec.profit >= 0 ? `+${rec.profit.toFixed(2)}` : `-${Math.abs(rec.profit).toFixed(2)}`;
+            await sendTelegram(
+              `${t.result === "WIN" ? "✅" : "❌"} *[EXIT - BROKER CONFIRMED] ${SYMBOL_NAME} — ${REPO_LABEL}*\n\n` +
+              `• Direction: *${t.direction === "BUY" ? "🟢 BUY" : "🔴 SELL"}*\n` +
+              `• Final P&L: *${pnlLabel}* (Net of comm.)\n` +
+              `• Daily Net Total: *${state.dailyNetPnl.toFixed(2)}*\n` +
+              `• Contract: \`${t.contractId}\``,
+              { contractId: t.contractId }
+            );
+          }
         } else {
           // Fallback: Contract is confirmed closed on broker (absent from entire broker portfolio). Reconcile to unblock execution gate.
           t.result = "CLOSED_EXTERNAL";
@@ -5662,9 +5751,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     confluenceLines += `• Daily Target Progress: *$${(state.dailyNetPnl || 0).toFixed(2)} / $${DAILY_PROFIT_TARGET_USD.toFixed(2)}*`;
 
     const message = 
-      `🚨 *${SYMBOL_NAME.toUpperCase()} SIGNAL* 🚨\n\n` +
-      `Direction: *${dirEmoji}*\n` +
-      `Strategy Profile: *${STRATEGY_PROFILE}*\n` +
+      `🚨 *[ENTRY SIGNAL] ${SYMBOL_NAME.toUpperCase()} — ${REPO_LABEL}* 🚨\n\n` +
+      `• Direction: *${dirEmoji}*\n` +
+      `• Strategy: *${getFriendlyStrategyName()}*\n` +
       `Setup: *${escapeMarkdown(entryType)}*\n` +
       `📍 Entry: *${entry.toFixed(4)}*\n` +
       `🛑 Initial SL: *${sl.toFixed(4)}* (${initialM5Fractal ? "M5 Fractal Anchor" : (initialM15Fractal ? "M15 Fractal Anchor" : "Hard Stop Barrier")})\n` +
