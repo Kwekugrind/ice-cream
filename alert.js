@@ -2,6 +2,7 @@
 const fetch = globalThis.fetch;
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import { fileURLToPath } from "url";
 
 let _wsClass = globalThis.WebSocket || null;
@@ -456,7 +457,21 @@ async function sendTelegram(msg, options = {}) {
   }
 
   // 60-second general content deduplication
-  const msgHash = crypto.createHash("md5").update(msg.trim()).digest("hex");
+  let msgHash = "";
+  try {
+    if (crypto && typeof crypto.createHash === "function") {
+      msgHash = crypto.createHash("md5").update(msg.trim()).digest("hex");
+    }
+  } catch {}
+  if (!msgHash) {
+    let h = 5381;
+    const s = msg.trim();
+    for (let i = 0; i < s.length; i++) {
+      h = ((h << 5) + h) + s.charCodeAt(i);
+      h |= 0;
+    }
+    msgHash = String(h);
+  }
   const now = Date.now();
   const lastSent = sentTelegramHashes.get(msgHash);
   if (lastSent && (now - lastSent < 60000)) {
