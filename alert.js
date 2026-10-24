@@ -696,7 +696,13 @@ async function fetchAllData() {
   for (const endpointUrl of endpoints) {
     try {
       return await new Promise((resolve, reject) => {
-        const ws = new WS(endpointUrl);
+        const wsOpts = typeof window === "undefined" ? {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Origin": "https://deriv.com"
+          }
+        } : undefined;
+        const ws = new WS(endpointUrl, wsOpts);
         const results = {};
         let timer = null;
         let isSettled = false;
@@ -805,7 +811,13 @@ async function fetchCurrentSpotPrice() {
   for (const endpointUrl of endpoints) {
     try {
       return await new Promise((resolve, reject) => {
-        const ws = new WS(endpointUrl);
+        const wsOpts = typeof window === "undefined" ? {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Origin": "https://deriv.com"
+          }
+        } : undefined;
+        const ws = new WS(endpointUrl, wsOpts);
         let timer = null;
         let isSettled = false;
 
