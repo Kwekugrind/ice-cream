@@ -687,8 +687,9 @@ async function fetchAllData() {
   }
 
   const endpoints = [
-    `wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`,
-    `wss://ws.derivws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`
+    `wss://red.derivws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`,
+    `wss://ws.derivws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`,
+    `wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`
   ];
 
   let lastError = null;
@@ -795,8 +796,9 @@ async function fetchCurrentSpotPrice() {
   if (!WS) return 0;
 
   const endpoints = [
-    `wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`,
-    `wss://ws.derivws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`
+    `wss://red.derivws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`,
+    `wss://ws.derivws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`,
+    `wss://ws.binaryws.com/websockets/v3?app_id=${MARKET_DATA_APP_ID}`
   ];
 
   let lastError = null;
@@ -1357,7 +1359,12 @@ const ALLOWED_STATE_KEYS = new Set([
   "v10_ema100", "v10_macd", "v10_stoch200", "v10_stoch533",
   "v25_1s_trendDir", "v25_1s_initialDone", "v25_1s_stoch200CrossEpoch",
   "v25_1s_stoch15ArmedBuy", "v25_1s_stoch15ArmedSell", "v25_1s_trend",
-  "v25_1s_ema100", "v25_1s_stoch200", "v25_1s_stoch15",
+  "v25_1s_ema100", "v25_1s_stoch200", "v25_1s_stoch15", "v25_1s_emaAligned",
+  "v25_stoch100CrossEpochBuy", "v25_stoch100CrossEpochSell",
+  "v25_stoch30CrossEpochBuy", "v25_stoch30CrossEpochSell",
+  "v25_stoch302515_touched_50_BUY", "v25_stoch302515_touched_50_SELL",
+  "stoch100Val", "stoch3025Val", "stoch3025Signal", "stoch302515Val", "stoch302515Signal",
+  "queuedPendingOrder", "dailyLossLockout",
   "healthStatus", "blockerReason", "nextTrigger", "lastScanTime",
   "lastSuccessfulScan", "lastError", "lastErrorTime", "lastErrorStack", "errorCount",
   "stochState", "stochSeparation", "cciState", "nextPhase",
@@ -1372,6 +1379,8 @@ function onTradeClosedCleanup(closedEpoch) {
   state.v75_1s_emaTouched_SELL = false;
   state.v25_cciCrossEpochBuy = null;
   state.v25_cciCrossEpochSell = null;
+  state.v25_stoch302515_touched_50_BUY = false;
+  state.v25_stoch302515_touched_50_SELL = false;
   state.activeReentryOpportunity = null;
 }
 
@@ -1390,6 +1399,7 @@ try {
   state = { ...state, ...JSON.parse(fs.readFileSync(STATE_FILE_PATH, "utf8")) }; 
 } catch {}
 
+state.strategyProfile = STRATEGY_PROFILE;
 sanitizeState(state);
 state.engineVersion = ENGINE_VERSION;
 state.codeTimestamp = CODE_TIMESTAMP;
@@ -1397,6 +1407,7 @@ state.codeTimestamp = CODE_TIMESTAMP;
 function saveState() {
   state.engineVersion = ENGINE_VERSION;
   state.codeTimestamp = CODE_TIMESTAMP;
+  state.strategyProfile = STRATEGY_PROFILE;
   sanitizeState(state);
   fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2));
 }
@@ -2304,6 +2315,7 @@ async function checkAndExecuteImmediateReentry(spotPrice) {
 
 // ==================== SLOW PATH (RUNS ON CLOSED M5 CANDLE) ====================
 async function runSlowPathScan(m5BoundaryEpoch) {
+  try {
   console.log(`[${REPO_LABEL}] Scanning closed M5 candle: ${new Date(m5BoundaryEpoch * 1000).toISOString()}`);
   state.lastProcessedEpoch = m5BoundaryEpoch;
   saveState();
@@ -2400,13 +2412,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   try {
     scanData = await fetchAllData();
   } catch (e) {
-    console.error(`[${REPO_LABEL}] fetchAllData error: ${e.message}`);
+    console.log(`[${REPO_LABEL}] fetchAllData error: ${e.message}`);
     return;
   }
   const { m5: candles, m15: m15Candles, m30: m30Candles, d1: d1Candles } = scanData;
 
   if (!candles || candles.length < 120 || !m15Candles || !m30Candles || !d1Candles) {
-    console.warn(`[${REPO_LABEL}] Incomplete candle set: m5=${candles?.length || 0}, m15=${m15Candles?.length || 0}, m30=${m30Candles?.length || 0}, d1=${d1Candles?.length || 0}`);
+    console.log(`[${REPO_LABEL}] Incomplete candle set: m5=${candles?.length || 0}, m15=${m15Candles?.length || 0}, m30=${m30Candles?.length || 0}, d1=${d1Candles?.length || 0}`);
     return;
   }
   const si = candles.length - 2; 
@@ -2484,7 +2496,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const sK = stoch.k[si], sD = stoch.d[si], prevK = stoch.k[si - 1], prevD = stoch.d[si - 1];
 
   if (STRATEGY_PROFILE === "PROFILE_V25_STOCH100_STOCH30" || SYMBOL === "R_25") {
+    console.log(`[${REPO_LABEL}] V25 Null Check: sK100=${sK100}, prevK100=${prevK100}, sK3025=${sK3025}, prevK3025=${prevK3025}, sK302515=${sK302515}, prevK302515=${prevK302515}, sD302515=${sD302515}, prevD302515=${prevD302515}, currentEma100=${currentEma100}`);
     if (sK100 === null || prevK100 === null || sK3025 === null || prevK3025 === null || sK302515 === null || prevK302515 === null || sD302515 === null || prevD302515 === null || currentEma100 === null) {
+      console.log(`[${REPO_LABEL}] ⚠️ V25 Null check TRIPPED! Returning early.`);
       state.lastProcessedEpoch = m5BoundaryEpoch;
       saveState();
       return;
@@ -5771,6 +5785,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   state.lastScanTime = new Date(m5BoundaryEpoch * 1000).toISOString();
   state.lastSuccessfulScan = new Date().toISOString();
   state.lastProcessedEpoch = m5BoundaryEpoch; saveState();
+  } catch (slowErr) {
+    console.log(`[${REPO_LABEL}] ❌ runSlowPathScan Exception: ${slowErr.message}\n${slowErr.stack}`);
+    state.lastError = slowErr.message;
+    state.lastErrorTime = new Date().toISOString();
+    state.lastErrorStack = slowErr.stack ? slowErr.stack.split("\n").slice(0, 3).join(" | ") : null;
+    saveState();
+  }
 }
 
 // ==================== 24/7 CONTINUOUS ENGINE ====================
