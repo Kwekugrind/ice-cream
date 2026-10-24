@@ -1237,6 +1237,101 @@ function findRecentFractalAbove(candles, currentIndex, minPrice) {
   return null;
 }
 
+/**
+ * 🛡️ Evaluates the 2-Opposing-Fractals Structural Reversal Exit on confirmed closed M5 candles.
+ * For BUY trade: Looks for the first two Swing High (Top) fractals formed at/after entry.
+ *   If F2 <= F1 (Lower High or Double Top) -> Sellers are taking over -> Trigger Exit.
+ * For SELL trade: Looks for the first two Swing Low (Bottom) fractals formed at/after entry.
+ *   If F2 >= F1 (Higher Low or Double Bottom) -> Buyers are taking over -> Trigger Exit.
+ */
+function evaluate2OpposingFractalsReversal(t, candles, si) {
+  if (!t || !t.direction || !candles || candles.length < 5 || si < 4) {
+    return { triggered: false };
+  }
+  const isBuy = t.direction === "BUY";
+  const entryEpoch = t.entryEpoch || 0;
+  
+  // Find all confirmed opposing fractals formed after entry in chronological order
+  const fractals = [];
+  
+  // Pivot k ranges from earliest post-entry candle up to si - 2 (since k+2 <= si is confirmed)
+  for (let k = 2; k <= si - 2; k++) {
+    const confirmEpoch = candles[k + 2].epoch;
+    const pivotEpoch = candles[k].epoch;
+    
+    // Only fractals whose pivot or confirmation is at/after trade entry
+    if (confirmEpoch < entryEpoch || pivotEpoch < (entryEpoch - 300)) continue;
+    
+    if (isBuy) {
+      // Swing High (Top Fractal)
+      const h = parseFloat(candles[k].high);
+      const isTop = h > parseFloat(candles[k - 1].high) &&
+                    h > parseFloat(candles[k - 2].high) &&
+                    h > parseFloat(candles[k + 1].high) &&
+                    h > parseFloat(candles[k + 2].high);
+      if (isTop) {
+        fractals.push({ price: h, pivotEpoch, confirmEpoch });
+      }
+    } else {
+      // Swing Low (Bottom Fractal)
+      const l = parseFloat(candles[k].low);
+      const isBottom = l < parseFloat(candles[k - 1].low) &&
+                       l < parseFloat(candles[k - 2].low) &&
+                       l < parseFloat(candles[k + 1].low) &&
+                       l < parseFloat(candles[k + 2].low);
+      if (isBottom) {
+        fractals.push({ price: l, pivotEpoch, confirmEpoch });
+      }
+    }
+  }
+  
+  // Must have at least two opposing fractals formed after entry
+  if (fractals.length < 2) {
+    return { triggered: false };
+  }
+  
+  // Evaluate the first two opposing fractals (F1 and F2)
+  const f1 = fractals[0];
+  const f2 = fractals[1];
+  
+  // Double top/bottom tolerance threshold (0.05% of price)
+  const dtTolerance = f1.price * 0.0005;
+  
+  if (isBuy) {
+    // For BUY: F1 is first high, F2 is second high.
+    // Lower High: F2 < F1 (outside DT tolerance)
+    // Double Top: |F2 - F1| <= dtTolerance or F2 <= F1
+    if (f2.price <= f1.price || Math.abs(f2.price - f1.price) <= dtTolerance) {
+      const isDoubleTop = Math.abs(f2.price - f1.price) <= dtTolerance;
+      return {
+        triggered: true,
+        pattern: isDoubleTop ? "Double Top Fractal" : "Lower High Fractal",
+        f1Price: f1.price,
+        f2Price: f2.price,
+        f1Epoch: f1.pivotEpoch,
+        f2Epoch: f2.pivotEpoch
+      };
+    }
+  } else {
+    // For SELL: F1 is first low, F2 is second low.
+    // Higher Low: F2 > F1 (outside DB tolerance)
+    // Double Bottom: |F2 - F1| <= dtTolerance or F2 >= F1
+    if (f2.price >= f1.price || Math.abs(f2.price - f1.price) <= dtTolerance) {
+      const isDoubleBottom = Math.abs(f2.price - f1.price) <= dtTolerance;
+      return {
+        triggered: true,
+        pattern: isDoubleBottom ? "Double Bottom Fractal" : "Higher Low Fractal",
+        f1Price: f1.price,
+        f2Price: f2.price,
+        f1Epoch: f1.pivotEpoch,
+        f2Epoch: f2.pivotEpoch
+      };
+    }
+  }
+  
+  return { triggered: false };
+}
+
 // ==================== STATE MANAGEMENT ====================
 let state = {
   symbol: SYMBOL,
@@ -2739,7 +2834,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const currentPnl = calcUnrealizedPnL(t, currentPrice);
       const inLoss = currentPnl < 0;
 
-      // Early Exit 2: Opposite M5 Fractal Cross (Strictly when in loss)
+      // Early Exit 2: 2 Opposing M5 Fractals Structural Reversal Exit (Double Top/Lower High on BUY, Double Bottom/Higher Low on SELL)
+      const frac2Eval = evaluate2OpposingFractalsReversal(t, candles, si);
+      const opposing2FractalReversal = inLoss && frac2Eval.triggered;
+
+      // Early Exit 2b: Opposite M5 Fractal Cross (Strictly when in loss)
       const fracAnchor = t.m5Fractal || (isBuy ? findRecentFractalBelow(candles, si, t.entry) : findRecentFractalAbove(candles, si, t.entry));
       const m5FractalCrossed = isPostEntryCandle && (isBuy
         ? (fracAnchor !== null && m5Close < fracAnchor)
@@ -2757,6 +2856,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       if (isRunner) {
         // 🛡️ RUNNER IMMUNITY: Position is in profit and protected by Tiered Ratchet (Tier 2-4: 70-80% locked)
         // Do NOT close on minor pullback oscillations
+      } else if (inLoss && opposing2FractalReversal) {
+        earlyExitTriggered = true;
+        earlyExitType = `Opposing M5 2-Fractal (${frac2Eval.pattern}) Invalidation`;
+        earlyExitDesc = `Opposing M5 2-Fractal ${frac2Eval.pattern} formed (F1: ${frac2Eval.f1Price?.toFixed(4)} -> F2: ${frac2Eval.f2Price?.toFixed(4)}) while in loss (${currentPnl.toFixed(2)})`;
       } else if (inLoss && m5FractalCrossed) {
         earlyExitTriggered = true;
         earlyExitType = "Opposite M5 Fractal Cross Exit";
@@ -3144,7 +3247,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         : (sK3025 !== null && sD3025 !== null && (sK3025 > sD3025 || (prevK3025 !== null && prevD3025 !== null && prevK3025 <= prevD3025 && sK3025 > sD3025)));
       const stochReversalInvalidation = !isRunner && isPostEntryCandle && stoch100Opposite && stoch30KdCrossOpposite;
 
-      // Invalidation 2: 3 Consecutive M5 Candles Closed Against Position (strictly in loss)
+      // Invalidation 2: 2 Opposing M5 Fractals Structural Reversal Exit (Double Top/Lower High on BUY, Double Bottom/Higher Low on SELL)
+      const frac2Eval = evaluate2OpposingFractalsReversal(t, candles, si);
+      const opposing2FractalReversal = !isRunner && currentPnl < 0 && frac2Eval.triggered;
+
+      // Invalidation 3: 3 Consecutive M5 Candles Closed Against Position (strictly in loss)
       let adverseCandleCount = 0;
       for (let ci = si; ci >= 0; ci--) {
         const cEpoch = candles[ci].epoch;
@@ -3157,15 +3264,17 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
       const threeAdverseCandles = !isRunner && currentPnl < 0 && adverseCandleCount >= 3;
 
-      // Invalidation 3: Entry-Hour H1 Adverse Close Exit (strictly in loss)
+      // Invalidation 4: Entry-Hour H1 Adverse Close Exit (strictly in loss)
       const h1Eval = evaluateH1AdverseClose(t, candles, si);
       const h1ClosedAgainst = !isRunner && currentPnl < 0 && h1Eval.triggered;
 
-      if (stochReversalInvalidation || threeAdverseCandles || h1ClosedAgainst) {
+      if (stochReversalInvalidation || opposing2FractalReversal || threeAdverseCandles || h1ClosedAgainst) {
         closingContracts.add(t.contractId);
         const exitLabel = stochReversalInvalidation 
           ? "Stoch 100 Adverse & Stoch (30,2,5) %K/%D Cross Invalidation"
-          : (threeAdverseCandles ? "3 Adverse M5 Candles Invalidation" : "Entry-Hour H1 Adverse Close Exit");
+          : (opposing2FractalReversal
+              ? `Opposing M5 2-Fractal (${frac2Eval.pattern}) Invalidation`
+              : (threeAdverseCandles ? "3 Adverse M5 Candles Invalidation" : "Entry-Hour H1 Adverse Close Exit"));
         console.log(`[EARLY EXIT] ${exitLabel} triggered for ${t.direction} position on ${SYMBOL} (${t.contractId}). Stoch 100: ${sK100?.toFixed(1)}, Stoch 30 %K: ${sK3025?.toFixed(1)}, %D: ${sD3025?.toFixed(1)}, PnL: ${currentPnl.toFixed(2)}. Liquidating immediately.`);
 
         try {

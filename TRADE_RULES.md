@@ -94,3 +94,10 @@ All active trading bots operate with a standard **$5.00 Stake**, engineered for 
    * The moment an adverse invalidation liquidation occurs, directional block flags (`initialBuyDone` / `initialSellDone`) are instantly reset to `false`.
    * If on that confirmed closed candle or subsequent candles, `Stoch (30, 2, 5 Simple) %K` crosses Level 50.0 and aligns with EMA 100 in the opposite direction within the 3-candle tolerance window (`<= 900s` from the Stoch 100 cross), the bot takes the opposite trade immediately.
    * Eliminates the scenario where an open losing position blocks the execution of a valid opposing market impulse.
+
+3. **2-Opposing-Fractals Structural Reversal Exit (Double Top/Lower High on BUY, Double Bottom/Higher Low on SELL):**
+   * **Scope:** `1HZ75V` (Coffee Machine), `R_25` (Tea Machine), and `R_100` (Milk Machine).
+   * **Execution Watchdog:** Evaluated on every confirmed closed M5 candle strictly when in floating loss (`currentPnl < 0`) and not an active runner (`!isRunner`).
+   * **BUY Trade Early Exit:** When the first two Swing High (Top) fractals formed at/after trade entry satisfy `F2 <= F1` (Lower High or Double Top within 0.05% tolerance). Confirms buyers failed to make a higher high and sellers have established resistance.
+   * **SELL Trade Early Exit:** When the first two Swing Low (Bottom) fractals formed at/after trade entry satisfy `F2 >= F1` (Higher Low or Double Bottom within 0.05% tolerance). Confirms sellers failed to make a lower low and buyers have established support.
+   * **Action:** Close position immediately at market to truncate adverse risk before hitting full software stop loss. Directional blocking flags are cleared to allow an immediate reversal pivot if opposite entry conditions align.

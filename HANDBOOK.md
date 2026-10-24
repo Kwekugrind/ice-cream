@@ -8955,6 +8955,30 @@ The trader instructed:
 
 ---
 
+### Diagnostic Scenario 56: M5 In-Loss 2-Opposing-Fractals Structural Reversal Exit (Double Top/Lower High & Double Bottom/Higher Low)
+
+* **Timestamp:** `2026-10-24 10:55:00 UTC`
+* **Target Bots:** `Coffee Machine` (`coffee-v75-1s` / `1HZ75V`), `Tea Machine` (`tea-v25` / `R_25`), and `Milk Machine` (`milk-v100` / `R_100`)
+* **Strategy Profiles:** `PROFILE_V75_1S_STOCH100_STOCH30`, `PROFILE_V25_STOCH100_STOCH30`, and `PROFILE_V100_STOCH200_STOCH15`
+* **Execution Timeframe:** Confirmed Closed M5 Candles (`candles`)
+
+#### Trader Mandate:
+The trader specified a structural price action invalidation engine based on consecutive opposing fractal formation:
+> "at the time of entry if two new fractal forms for example if the bot is in a sell trade and a higher low fractal or double buttom fractal forms after the intial fractal, its an indication of a change in trend (buyers are taking over) so the trade must be closed. same applies for a buy trade. if a lower high fractal or a double top fractal forms, its an its an indication of a change in trend(sellers are taking over). this only applies to the first two fractals that are formed in the opposite direction of the trade (for a sell trade, those fractals will be drawn below the open position and for a buy trade, those fractals will be drawn above the open position)."
+
+#### Quantitative Architectural Implementation:
+1. **M5 Fractal Identification Engine (`evaluate2OpposingFractalsReversal`):**
+   * Scans confirmed closed M5 candles for Bill Williams 5-bar swing fractals formed at or after trade entry (`k+2` confirmed at or after `t.entryEpoch`).
+   * **BUY Trade:** Identifies the first two confirmed Swing High (Top) fractals (`F1` and `F2`). If `F2.price <= F1.price` (Lower High or Double Top within 0.05% tolerance), buyers have failed to extend the impulse.
+   * **SELL Trade:** Identifies the first two confirmed Swing Low (Bottom) fractals (`F1` and `F2`). If `F2.price >= F1.price` (Higher Low or Double Bottom within 0.05% tolerance), sellers have failed to extend the impulse.
+2. **Empirical Floating Loss Gate (`currentPnl < 0`):**
+   * Evaluated strictly while the position is underwater and not an active profit runner (`!isRunner`).
+   * Preserves Runner Immunity: Positions in profit are never closed by pullback fractals, maintaining full exposure to the Tiered Dynamic Ratchet and the +$7.00 daily strike.
+3. **Reversal Pivot Unblocking:**
+   * Market liquidation resets `initialBuyDone` / `initialSellDone` to `false`, enabling the bot to transition smoothly into the opposing trend wave without being locked out.
+
+---
+
 ## 17. COMPENDIUM OF TRADER DIRECTIVES & STRATEGY RULES IN THE TRADER'S OWN WORDS (VERBATIM AUDIT ARCHIVE)
 
 > **AUTHORITATIVE GOVERNANCE MANDATE:**  
