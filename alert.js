@@ -156,7 +156,7 @@ export const INSTRUMENT_PROFILES = {
     stoch25Params: { k: 25, d: 2, slowing: 5 },
     minTakeProfitPoints: 4.00,
     minTakeProfitUsd: 3.50,
-    softwareSlUsd: 2.50,
+    softwareSlUsd: 4.00,
     trailActivationUsd: 2.20,
     maxHardStopPoints: 4.00,
     slType: "M15_FRACTAL",
@@ -179,7 +179,7 @@ export const INSTRUMENT_PROFILES = {
     emaPeriod: 100, // M5 EMA 100
     minTakeProfitPoints: 4.00,
     minTakeProfitUsd: 3.50,
-    softwareSlUsd: 2.50,
+    softwareSlUsd: 4.00,
     trailActivationUsd: 2.20,
     maxHardStopPoints: 5.50,
     slType: "M15_FRACTAL",
@@ -331,7 +331,7 @@ const INSTRUMENT_SOFTWARE_SL_MAP = {
   "R_25": -2.00,     // Tea Machine (V25, 400x) — Max 2% loss risk ($2.00)
   "1HZ75V": -2.00,   // Coffee (V75-1s, 0.05 lots) — Max 2% loss risk ($2.00)
   "R_75": -2.00,     // Lery's Alerts (V75, 50x) — Max 2% loss risk ($2.00)
-  "R_100": -2.50,    // Milk (V100, 40x) — Calibrated breathing room ($2.50 SL)
+  "R_100": -4.00,    // Milk (V100, 40x) — Calibrated breathing room ($2.50 SL)
   "1HZ100V": -2.50,  // Ice Cream Legacy (V100-1s, 40x) ($2.50 SL)
   "1HZ25V": -2.00,   // Ice Cream Machine (V25-1s, 400x) ($2.00 SL)
   "R_50": -2.00,     // OmniSight (V50, 4.00 lots) ($2.00 SL)

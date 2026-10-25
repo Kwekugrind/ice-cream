@@ -146,13 +146,13 @@ Managed centrally via an integrated browser dashboard (`:4000`), Server Hub API 
 
 ### Multi-Bot Fleet Parameter Master Table (Calibrated Multiplier & cTrader Profiles)
 
-All active bots use a standard **$5.00 Stake** per trade, specifically engineered for a **$100.00 Live Account Balance** to target **$7.00 Net Daily Profit per bot** ($49.00/day total fleet quota). Risk is strictly governed by a tight **Software Stop Loss** (-$2.00 on `R_75`, `1HZ75V`, `1HZ25V`, `R_25`, `R_50`, `R_10`; -$2.50 on `R_100` and `1HZ100V`), giving a favorable 1 : 1.75 Risk-to-Reward ratio on base TP ($3.50) and 1 : 3.5 on full daily strike ($7.00).
+All active bots use a standard **$5.00 Stake** per trade, specifically engineered for a **$100.00 Live Account Balance** to target **$7.00 Net Daily Profit per bot** ($49.00/day total fleet quota). Risk is strictly governed by a tight **Software Stop Loss** (-$2.00 on `R_75`, `1HZ75V`, `1HZ25V`, `R_25`, `R_50`, `R_10`; -$4.00 on `R_100` and `1HZ100V`), giving a favorable 1 : 1.75 Risk-to-Reward ratio on base TP ($3.50) and 1 : 3.5 on full daily strike ($7.00).
 
 | Bot Label | PM2 Name | Server | Directory Path | Symbol | Symbol ID | Lot Size | Stake | Strategy Gate | Base TP ($3.50 Net) | Daily Strike TP | Calibrated Soft SL |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | **Lery's Alerts** | `lery-v75` | S1 | `~/trading-bots/Lery-s-Alerts` | Volatility 75 | `R_75` | 0.01 Lots | $5.00 | M5 EMA 100/200 Breakout (80/20) & EMA 100 Touch Retrace (20/80) | 350.0 pts | 700.0 pts | -$2.00 |
 | **Coffee Machine** | `coffee-v75-1s` | S1 | `~/trading-bots/coffee` | Volatility 75 (1s) | `1HZ75V` | 0.05 Lots | $5.00 | M5 Stoch 100 Trend + Stoch (30,2,5) Level 50 Cross (±3 candles) + EMA 100 Filter + Stoch (15,2,5) 25/75 Re-Entry | 70.0 pts | 140.0 pts | -$2.00 |
-| **Milk Machine** | `milk-v100` | S1 | `~/trading-bots/milk` | Volatility 100 | `R_100` | 1.00 Lot | $5.00 | M5 Stoch 200 (48/52) Trend + M5 Stoch (15,2,5) Initial Lvl 50 & 20/80 Re-Entry + Stoch (25,2,5) 65/35 Exit | 3.50 pts | 7.00 pts | -$2.50 |
+| **Milk Machine** | `milk-v100` | S1 | `~/trading-bots/milk` | Volatility 100 | `R_100` | 1.00 Lot | $5.00 | M5 Stoch 200 (48/52) Trend + M5 Stoch (15,2,5) Initial Lvl 50 & 20/80 Re-Entry + Stoch (25,2,5) 65/35 Exit | 4.00 pts | 7.00 pts | -$4.00 |
 | **Tea Machine** | `tea-v25` | S1 | `~/trading-bots/tea` | Volatility 25 | `R_25` | 0.50 Lots | $5.00 | M5 Stoch 100 Trend + Stoch (30,2,5) Level 50 Cross (±3 candles) + EMA 100 Filter + Stoch (30,25,15) Re-Entry | 7.00 pts | 14.00 pts | -$2.00 |
 | **Ice Cream** | `ice-cream-100-1s` | S2 | `~/trading-bots/ice-cream` | Volatility 25 (1s) | `1HZ25V` | 0.005 Lots | $5.00 | M5 Stoch 200 (45/55) + Stoch (15,2,5) (75/25) + EMA 100 Filter (Skip & Await Re-Entry) + Pullback Re-Entry (25/75) | 525.0 pts | 1050.0 pts | -$2.00 |
 | **OmniSight** | `omni-v50` | S2 | `~/trading-bots/OmniSight` | Volatility 50 | `R_50` | 4.00 Lots | $5.00 | M5 Stoch (200,1,1) Trend + M5 Stoch (15,2,5) Initial Lvl 50 & 25/75 Re-Entry + Dynamic Runner | 0.88 pt | 1.75 pt | -$2.00 |
@@ -660,7 +660,7 @@ When a position achieves profitable expansion, the engine transitions from defen
 ### 5. Volatility 100 (1s) (`1HZ100V`) -- Ice Cream
 * **Server:** Server 2 | **Dir:** `~/trading-bots/ice-cream`
 * **Multiplier:** 40x | **Stake:** $5.00 | **cTrader Lot Size:** `1.00` lot
-* **Software SL:** -$2.50 (5.50 pts) | **Max Broker SL:** 5.50 pts (-$2.50)
+* **Software SL:** -$4.00 (4.00 pts) | **Max Broker SL:** 5.00 pts (-$5.00)
 * **Strategy Gate:** 
   1. **Directional Filter:** BUY permitted only when M5 Price > EMA 100; SELL permitted only when M5 Price < EMA 100.
   2. **Initial Entry:** M5 Stoch 200 + MACD (25,75,1) + EMA 100.
