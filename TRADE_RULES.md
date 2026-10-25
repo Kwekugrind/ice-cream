@@ -1,5 +1,5 @@
 # OMNISIGHT FLEET TRADE RULES COMPENDIUM
-### Version 9.0 -- October 2026 Authoritative Trading Rules & Parameter Specification (VIX 100 Profit Management Overhaul: Hard Broker TP $10.00, Move SL to +$0.50 at $5.00 Profit, Stoch 30/20/15 Opposite Cross Profit Exit, Re-Entry Thresholds 25/75, Fleet-Wide Stop & Reversal Invalidations)
+### Version 9.1 -- October 2026 Authoritative Trading Rules & Parameter Specification (Removal of Stoch %K/%D Opposite Cross Early Exit; Fleet-Wide Adoption of Closed-M5 Stoch (15,2,5) Level 40/60 Invalidation Exit in Loss; VIX 100 Hard Broker TP $10.00, Move SL to +$0.50 at $5.00 Profit)
 
 ---
 
@@ -41,8 +41,13 @@ All active trading bots operate with a standard **$5.00 Stake**, engineered for 
 * **Tier 4 Super Runner Ratchet (Peak $\ge \$12.00$):** Locks in at least **80% of peak profit** (capping maximum giveback to `$2.50`):
   $\text{lockedPnlFloor} = \max(+\$7.50, \text{maxUnrealizedPnL} \times 0.80, \text{maxUnrealizedPnL} - \$2.50)$
 * **Hard Take Profit / Super Runner Cash-out Ceiling (+$20.00):** Instant market cash-out upon touching `+$20.00` floating profit.
+* **Fleet-Wide Closed-M5 Stoch (15,2,5) Level 40/60 Loss Invalidation Exit:**
+  The sensitive `"Stoch %K/%D Opposite Cross Early Exit"` has been completely abolished across all bots in the fleet. It is replaced by the calibrated Level 40/60 Invalidation rule, evaluated **STRICTLY when trade is in loss ($\text{currentPnl} < 0$) on confirmed closed M5 candle**:
+  * **BUY trades in loss:** Exits immediately if Stoch (15,2,5) %K crosses below **60.0** (`prevK >= 60.0 && currK < 60.0`).
+  * **SELL trades in loss:** Exits immediately if Stoch (15,2,5) %K crosses above **40.0** (`prevK <= 40.0 && currK > 40.0`).
+  * **State Cleanup:** Triggers full broker contract liquidation, resets `state.openTrade = null`, and invokes `onTradeClosedCleanup(candles[si].epoch)`.
 * **Runner Immunity & Oscillator Profit Exit Abolition:** 
-  Trades in profit are immune to mid-trend oscillator exits. Closed-M5 Stoch (15,2,5) or Stoch (25,2,5) crossing level 50 opposite are evaluated **STRICTLY as early loss invalidations when in adverse position ($\text{currentPnl} < 0$)**. Profitable positions are managed exclusively by the Tiered Dynamic Ratchet and macro trend invalidations (Stoch 200).
+  Trades in profit are immune to mid-trend oscillator exits. Oscillator boundary crosses are evaluated **STRICTLY as early loss invalidations when in adverse position ($\text{currentPnl} < 0$)**. Profitable positions are managed exclusively by the Tiered Dynamic Ratchet and macro trend invalidations (Stoch 200).
 
 ---
 

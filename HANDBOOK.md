@@ -9473,3 +9473,31 @@ To prevent active trades from suffering full software stop loss when market stru
    * `openTrades = trades.filter(t => !t.result && !t.pending && !closingContracts.has(t.contractId))`
    * `noActiveTrades` evaluates to `true` within the exact same slow-path scan.
    * If the reversal conditions (Stoch across 50 and Price aligned with EMA 100) are satisfied on that confirmation candle, the reversal trade fires immediately without delay.
+
+---
+
+## 20. DIAGNOSTIC SCENARIO 57: FLEET-WIDE REPLACEMENT OF "STOCH %K/%D OPPOSITE CROSS EARLY EXIT" WITH CLOSED-M5 STOCH (15,2,5) LEVEL 40/60 LOSS INVALIDATION
+
+### 20.1 Incident Forensic & Root Cause Analysis
+During active market monitoring on October 25, 2026, an active trade on Volatility 75 (`R_75` Lery's Alerts) closed prematurely with the reason:
+`"Stoch %K/%D Opposite Cross Early Exit: M5 Stoch (15,2,5 Simple) opposite direction (%K: 15.8 vs %D: 14.2) while in loss (-$0.77)"`.
+
+The post-mortem revealed two systemic deficiencies:
+1. **Hyper-Sensitive %K/%D Noise Crosses in Oversold/Overbought Extremes:**
+   Evaluating a basic `%K` crossing `%D` opposite cross while in minor floating loss caused trades to liquidate during routine pullback consolidations (even deep in the oversold zone where a bullish rebound was imminent).
+2. **Missing State Cleanup in V75 & Legacy Profiles:**
+   In `PROFILE_V75_EMA_STOCH15`, the early exit path executed broker close and saved trades, but omitted `state.openTrade = null` and `onTradeClosedCleanup(candles[si].epoch)`. This left stale latch flags active in memory.
+
+### 20.2 The Authoritative Closed-M5 Stoch (15,2,5) Level 40/60 Invalidation Formula
+To eliminate premature cut-offs while preserving strict capital defense, the rule `"Stoch %K/%D Opposite Cross Early Exit"` has been completely removed across all 7 trading bots.
+
+In its place, the **Closed-M5 Stoch (15,2,5) Level 40/60 Loss Invalidation Exit** is enforced:
+* **Pre-Conditions:** Evaluated strictly on confirmed closed M5 candles (`candles[si].epoch > t.entryEpoch`), strictly when the trade is in floating loss (`currentPnl < 0`), and strictly when not in active runner immunity (`!isRunner`).
+* **BUY Position Invalidation:**
+  $$\text{prevK} \ge 60.0 \quad \text{AND} \quad \text{currK} < 60.0$$
+  If a BUY trade is in negative territory and Stoch (15,2,5) %K drops below **60.0**, bullish momentum is confirmed shattered, and the trade is liquidated.
+* **SELL Position Invalidation:**
+  $$\text{prevK} \le 40.0 \quad \text{AND} \quad \text{currK} > 40.0$$
+  If a SELL trade is in negative territory and Stoch (15,2,5) %K rises above **40.0**, bearish momentum is confirmed shattered, and the trade is liquidated.
+* **Universal State Reset & Reversal Arming:**
+  On liquidation, `state.openTrade = null` and `onTradeClosedCleanup(candles[si].epoch)` are guaranteed to execute, resetting all latch states and arming reversal channels cleanly.

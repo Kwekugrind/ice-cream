@@ -3010,15 +3010,16 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const h1ClosedAgainst = h1Eval.triggered;
       const h1OpenPrice = h1Eval.h1OpenPrice || t.entry;
 
-      // Early Exit 1: Stop & Reversal Invalidation (Stoch 200 Opposite 50 + Stoch 15 %K/%D Adverse Cross)
-      // On confirmed closed M5 candle after entry:
-      // BUY: Stoch 200 drops below 50.0 AND Stoch (15,2,5) %K crosses/remains below %D
-      // SELL: Stoch 200 rises above 50.0 AND Stoch (15,2,5) %K crosses/remains above %D
+      // Early Exit 1: Closed-M5 Stoch (15,2,5) Level 40/60 Loss Invalidation Exit
+      // BUY in loss: Stoch (15,2,5) %K crosses below 60.0
+      // SELL in loss: Stoch (15,2,5) %K crosses above 40.0
+      const stoch15Level4060Cross = !isRunner && isPostEntryCandle && inLoss && (isBuy
+        ? (prevK1525 !== null && sK1525 !== null && prevK1525 >= 60.0 && sK1525 < 60.0)
+        : (prevK1525 !== null && sK1525 !== null && prevK1525 <= 40.0 && sK1525 > 40.0));
+
       const stoch200Opposite = isBuy ? (sK200 !== null && sK200 < 50.0) : (sK200 !== null && sK200 > 50.0);
-      const stoch15KdCrossOpposite = isBuy
-        ? (sK1525 !== null && sD1525 !== null && (sK1525 < sD1525 || (prevK1525 !== null && prevD1525 !== null && prevK1525 >= prevD1525 && sK1525 < sD1525)))
-        : (sK1525 !== null && sD1525 !== null && (sK1525 > sD1525 || (prevK1525 !== null && prevD1525 !== null && prevK1525 <= prevD1525 && sK1525 > sD1525)));
-      const stochReversalInvalidation = !isRunner && isPostEntryCandle && stoch200Opposite && stoch15KdCrossOpposite;
+      const stoch15Opposite = isBuy ? (sK1525 !== null && sK1525 < 60.0) : (sK1525 !== null && sK1525 > 40.0);
+      const stochReversalInvalidation = !isRunner && isPostEntryCandle && stoch200Opposite && stoch15Opposite;
 
       let earlyExitTriggered = false;
       let earlyExitType = "";
@@ -3027,10 +3028,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       if (isRunner) {
         // 🛡️ RUNNER IMMUNITY: Position is in profit and protected by Tiered Ratchet (Tier 2-4: 70-80% locked)
         // Do NOT close on minor pullback oscillations
+      } else if (stoch15Level4060Cross) {
+        earlyExitTriggered = true;
+        earlyExitType = "Closed-M5 Stoch (15,2,5) Level 40/60 Loss Invalidation Exit";
+        earlyExitDesc = `M5 Stoch (15,2,5) %K (${sK1525?.toFixed(1)}, prev: ${prevK1525?.toFixed(1)}) crossed ${isBuy ? "below 60.0" : "above 40.0"} while in loss (${currentPnl.toFixed(2)})`;
       } else if (stochReversalInvalidation) {
         earlyExitTriggered = true;
         earlyExitType = "Stop & Reversal Invalidation Exit";
-        earlyExitDesc = `Stoch 200 crossed ${isBuy ? "< 50.0" : "> 50.0"} (${sK200?.toFixed(2)}) & Stoch (15,2,5) %K crossed %D opposite (%K: ${sK1525?.toFixed(2)} vs %D: ${sD1525?.toFixed(2)})`;
+        earlyExitDesc = `Stoch 200 crossed ${isBuy ? "< 50.0" : "> 50.0"} (${sK200?.toFixed(2)}) & Stoch (15,2,5) %K reached ${isBuy ? "< 60.0" : "> 40.0"} (${sK1525?.toFixed(2)})`;
       } else if (inLoss && opposing2FractalReversal) {
         earlyExitTriggered = true;
         earlyExitType = `Opposing M5 2-Fractal (${frac2Eval.pattern}) Invalidation`;
@@ -3097,16 +3102,22 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const m5Close = parseFloat(candles[si].close);
       const isPostEntryCandle = !t.entryEpoch || candles[si].epoch > t.entryEpoch;
 
-      // Early Invalidation 0: Stop & Reversal Invalidation (Stoch 200 Opposite 50 + Stoch 15 %K/%D Adverse Cross)
-      const stoch200Opposite = isBuy ? (sK200 !== null && sK200 < 50.0) : (sK200 !== null && sK200 > 50.0);
-      const stoch15KdCrossOpposite = isBuy
-        ? (sK1525 !== null && sD1525 !== null && (sK1525 < sD1525 || (prevK1525 !== null && prevD1525 !== null && prevK1525 >= prevD1525 && sK1525 < sD1525)))
-        : (sK1525 !== null && sD1525 !== null && (sK1525 > sD1525 || (prevK1525 !== null && prevD1525 !== null && prevK1525 <= prevD1525 && sK1525 > sD1525)));
-      const stochReversalInvalidation = !isRunner && isPostEntryCandle && stoch200Opposite && stoch15KdCrossOpposite;
+      // Early Invalidation 0: Closed-M5 Stoch (15,2,5) Level 40/60 Loss Invalidation Exit
+      const stoch15Level4060Cross = !isRunner && isPostEntryCandle && currentPnl < 0 && (isBuy
+        ? (prevK1525 !== null && sK1525 !== null && prevK1525 >= 60.0 && sK1525 < 60.0)
+        : (prevK1525 !== null && sK1525 !== null && prevK1525 <= 40.0 && sK1525 > 40.0));
 
-      if (stochReversalInvalidation) {
+      const stoch200Opposite = isBuy ? (sK200 !== null && sK200 < 50.0) : (sK200 !== null && sK200 > 50.0);
+      const stoch15Opposite = isBuy ? (sK1525 !== null && sK1525 < 60.0) : (sK1525 !== null && sK1525 > 40.0);
+      const stochReversalInvalidation = !isRunner && isPostEntryCandle && stoch200Opposite && stoch15Opposite;
+
+      if (stoch15Level4060Cross || stochReversalInvalidation) {
         closingContracts.add(t.contractId);
-        console.log(`[STOP & REVERSAL EXIT] Active ${t.direction} trade on 1HZ25V: Stoch 200 crossed ${isBuy ? "< 50.0" : "> 50.0"} (${sK200?.toFixed(2)}) & Stoch (15,2,5) %K crossed %D opposite (${sK1525?.toFixed(2)} vs ${sD1525?.toFixed(2)}). Liquidating immediately.`);
+        const exitType = stoch15Level4060Cross ? "Closed-M5 Stoch (15,2,5) Level 40/60 Loss Invalidation Exit" : "Stop & Reversal Invalidation Exit";
+        const exitDesc = stoch15Level4060Cross
+          ? `Stoch (15,2,5) %K crossed ${isBuy ? "below 60.0" : "above 40.0"} (${sK1525?.toFixed(1)}, prev: ${prevK1525?.toFixed(1)}) while in loss (${currentPnl.toFixed(2)})`
+          : `Stoch 200 crossed ${isBuy ? "< 50.0" : "> 50.0"} (${sK200?.toFixed(2)}) & Stoch (15,2,5) reached ${isBuy ? "< 60.0" : "> 40.0"} (${sK1525?.toFixed(2)})`;
+        console.log(`[${exitType.toUpperCase()}] Active ${t.direction} trade on 1HZ25V: ${exitDesc}. Liquidating immediately.`);
         try {
           const closeRes = await closeContract(t.contractId);
           if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
@@ -3134,10 +3145,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           const icon = t.result === "WIN" ? "✅" : "❌";
           const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
           await sendTelegram(
-            `${icon} *${REPO_LABEL} — Stop & Reversal Invalidation Exit*\n\n` +
+            `${icon} *${REPO_LABEL} — ${exitType}*\n\n` +
             `Active *${t.direction}* liquidated immediately on confirmed closed M5 candle.\n` +
-            `• Stoch 200: *${sK200?.toFixed(2)}* (${isBuy ? "< 50.0" : "> 50.0"})\n` +
-            `• Stoch (15,2,5): *%K ${sK1525?.toFixed(2)} vs %D ${sD1525?.toFixed(2)}* (${isBuy ? "%K < %D Bearish Cross" : "%K > %D Bullish Cross"})\n` +
+            `• ${exitDesc}\n` +
             `💵 P&L: *${pnlStr}*\n` +
             `Contract: \`${t.contractId}\`\n` +
             `Bot is flat and armed for immediate reversal trade.`
@@ -3386,14 +3396,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
       }
 
-      // Early Invalidation #3: Closed-M5 Stoch (15,2,5) Level 50 Cross in Opposite Direction Early Exit (Strictly in loss)
+      // Early Invalidation #3: Closed-M5 Stoch (15,2,5) Level 40/60 Cross Invalidation in Loss
       const stoch15OppositeCross = isPostEntryCandle && (isBuy
-        ? (sK1525 !== null && prevK1525 !== null && prevK1525 >= 50.0 && sK1525 < 50.0)
-        : (sK1525 !== null && prevK1525 !== null && prevK1525 <= 50.0 && sK1525 > 50.0));
+        ? (sK1525 !== null && prevK1525 !== null && prevK1525 >= 60.0 && sK1525 < 60.0)
+        : (sK1525 !== null && prevK1525 !== null && prevK1525 <= 40.0 && sK1525 > 40.0));
 
       if (!isRunner && currentPnl < 0 && stoch15OppositeCross) {
         closingContracts.add(t.contractId);
-        console.log(`[STOCH 1525 LEVEL 50 EXIT] Active ${t.direction} #${t.contractId}: Closed-M5 Stoch (15,2,5) %K crossed Level 50 in opposite direction (%K: ${sK1525.toFixed(1)}, prev: ${prevK1525.toFixed(1)}) while in loss ($${currentPnl.toFixed(2)}). Liquidating immediately.`);
+        console.log(`[STOCH 1525 LEVEL 40/60 EXIT] Active ${t.direction} #${t.contractId}: Closed-M5 Stoch (15,2,5) %K crossed ${isBuy ? "below 60.0" : "above 40.0"} (%K: ${sK1525.toFixed(1)}, prev: ${prevK1525.toFixed(1)}) while in loss ($${currentPnl.toFixed(2)}). Liquidating immediately.`);
         try {
           const closeRes = await closeContract(t.contractId);
           if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
@@ -3412,7 +3422,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           saveState();
           const icon = t.result === "WIN" ? "✅" : "❌";
           const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
-          await sendTelegram(`${icon} *${REPO_LABEL} — Stoch (15,2,5) Opposite Level 50 Cross Exit*\n\nClosed-M5 Stoch (15,2,5) %K crossed *Level 50 in opposite direction* (%K: ${sK1525.toFixed(1)}, prev: ${prevK1525.toFixed(1)}).\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+          await sendTelegram(`${icon} *${REPO_LABEL} — Closed-M5 Stoch (15,2,5) Level 40/60 Loss Invalidation Exit*\n\nClosed-M5 Stoch (15,2,5) %K crossed *${isBuy ? "below 60.0" : "above 40.0"}* (%K: ${sK1525.toFixed(1)}, prev: ${prevK1525.toFixed(1)}) while in floating loss.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
         } catch (e) {
           console.error(`[STOCH 1525 LEVEL 50 EXIT] Failed to close contract ${t.contractId}:`, e.message);
           closingContracts.delete(t.contractId);
@@ -3430,12 +3440,16 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const inLoss = pnl < 0;
       const m5Close = parseFloat(candles[si].close);
 
-      // Early Exit 1: Stoch (15,2,5 Simple) %K crossing %D in opposite direction while in loss (on candle after entry)
-      let stochOpposite = false;
-      if (sK !== null && sD !== null && prevK !== null && prevD !== null && inLoss && (!t.entryEpoch || candles[si].epoch > t.entryEpoch)) {
-        const oppositeCross = isBuy ? (prevK >= prevD && sK < sD) : (prevK <= prevD && sK > sD);
-        if (oppositeCross) {
-          stochOpposite = true;
+      // Early Exit 1: Closed-M5 Stoch (15,2,5) Level 40/60 Cross Invalidation in Loss
+      // BUY in loss: %K crosses below 60.0 (prevK >= 60.0 && sK < 60.0)
+      // SELL in loss: %K crosses above 40.0 (prevK <= 40.0 && sK > 40.0)
+      let stoch4060Cross = false;
+      const stochKVal = sK1525 !== null ? sK1525 : sK;
+      const prevStochKVal = prevK1525 !== null ? prevK1525 : prevK;
+      if (stochKVal !== null && prevStochKVal !== null && inLoss && (!t.entryEpoch || candles[si].epoch > t.entryEpoch)) {
+        const cross4060 = isBuy ? (prevStochKVal >= 60.0 && stochKVal < 60.0) : (prevStochKVal <= 40.0 && stochKVal > 40.0);
+        if (cross4060) {
+          stoch4060Cross = true;
         }
       }
 
@@ -3448,10 +3462,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       let exitReason = "";
       let exitDetail = "";
 
-      if (stochOpposite) {
+      if (stoch4060Cross) {
         earlyExitTriggered = true;
-        exitReason = "Stoch %K/%D Opposite Cross Early Exit";
-        exitDetail = `M5 Stoch (15,2,5 Simple) opposite direction (%K: ${sK.toFixed(1)} vs %D: ${sD.toFixed(1)}) while in loss ($${pnl.toFixed(2)})`;
+        exitReason = "Closed-M5 Stoch (15,2,5) Level 40/60 Loss Invalidation Exit";
+        exitDetail = `M5 Stoch (15,2,5) %K (${stochKVal.toFixed(1)}, prev: ${prevStochKVal.toFixed(1)}) crossed ${isBuy ? "below 60.0" : "above 40.0"} while in loss ($${pnl.toFixed(2)})`;
       } else if (!isRunner && h1ClosedAgainst) {
         earlyExitTriggered = true;
         exitReason = "Entry-Hour H1 Adverse Close Exit";
@@ -3474,6 +3488,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
           t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
           state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+          state.openTrade = null;
+          onTradeClosedCleanup(candles[si].epoch);
           saveTrades(trades);
           saveState();
           const icon = t.result === "WIN" ? "✅" : "❌";
@@ -3511,13 +3527,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const currentPnl = calcUnrealizedPnL(t, currentPrice);
       const isRunner = Boolean(t.trendRidingActive || currentPnl >= 3.50 || (t.maxUnrealizedPnL && t.maxUnrealizedPnL >= 4.00));
 
+      // Invalidation 0: Closed-M5 Stoch (15,2,5) Level 40/60 Loss Invalidation Exit
+      const stoch15Level4060Cross = !isRunner && isPostEntryCandle && currentPnl < 0 && (isBuy
+        ? (prevK1525 !== null && sK1525 !== null && prevK1525 >= 60.0 && sK1525 < 60.0)
+        : (prevK1525 !== null && sK1525 !== null && prevK1525 <= 40.0 && sK1525 > 40.0));
+
       // Invalidation 1: Immediate drop/reversal where Stoch 100 crosses opposite (< 50 BUY / > 50 SELL)
-      // AND Stoch (30, 2, 5) %K crosses %D (%K < %D BUY / %K > %D SELL)
       const stoch100Opposite = isBuy ? (sK100 !== null && sK100 < 50.0) : (sK100 !== null && sK100 > 50.0);
-      const stoch30KdCrossOpposite = isBuy
-        ? (sK3025 !== null && sD3025 !== null && (sK3025 < sD3025 || (prevK3025 !== null && prevD3025 !== null && prevK3025 >= prevD3025 && sK3025 < sD3025)))
-        : (sK3025 !== null && sD3025 !== null && (sK3025 > sD3025 || (prevK3025 !== null && prevD3025 !== null && prevK3025 <= prevD3025 && sK3025 > sD3025)));
-      const stochReversalInvalidation = !isRunner && isPostEntryCandle && stoch100Opposite && stoch30KdCrossOpposite;
+      const stoch30Opposite = isBuy ? (sK3025 !== null && sK3025 < 50.0) : (sK3025 !== null && sK3025 > 50.0);
+      const stochReversalInvalidation = !isRunner && isPostEntryCandle && stoch100Opposite && stoch30Opposite;
 
       // Invalidation 2: 2 Opposing M5 Fractals Structural Reversal Exit (Double Top/Lower High on BUY, Double Bottom/Higher Low on SELL)
       const frac2Eval = evaluate2OpposingFractalsReversal(t, candles, si);
@@ -3540,13 +3558,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const h1Eval = evaluateH1AdverseClose(t, candles, si);
       const h1ClosedAgainst = !isRunner && currentPnl < 0 && h1Eval.triggered;
 
-      if (stochReversalInvalidation || opposing2FractalReversal || threeAdverseCandles || h1ClosedAgainst) {
+      if (stoch15Level4060Cross || stochReversalInvalidation || opposing2FractalReversal || threeAdverseCandles || h1ClosedAgainst) {
         closingContracts.add(t.contractId);
-        const exitLabel = stochReversalInvalidation 
-          ? "Stoch 100 Adverse & Stoch (30,2,5) %K/%D Cross Invalidation"
-          : (opposing2FractalReversal
-              ? `Opposing M5 2-Fractal (${frac2Eval.pattern}) Invalidation`
-              : (threeAdverseCandles ? "3 Adverse M5 Candles Invalidation" : "Entry-Hour H1 Adverse Close Exit"));
+        const exitLabel = stoch15Level4060Cross
+          ? "Closed-M5 Stoch (15,2,5) Level 40/60 Loss Invalidation Exit"
+          : (stochReversalInvalidation
+              ? "Stoch 100 Adverse Reversal Invalidation"
+              : (opposing2FractalReversal
+                  ? `Opposing M5 2-Fractal (${frac2Eval.pattern}) Invalidation`
+                  : (threeAdverseCandles ? "3 Adverse M5 Candles Invalidation" : "Entry-Hour H1 Adverse Close Exit")));
         console.log(`[EARLY EXIT] ${exitLabel} triggered for ${t.direction} position on ${SYMBOL} (${t.contractId}). Stoch 100: ${sK100?.toFixed(1)}, Stoch 30 %K: ${sK3025?.toFixed(1)}, %D: ${sD3025?.toFixed(1)}, PnL: ${currentPnl.toFixed(2)}. Liquidating immediately.`);
 
         try {
@@ -3699,12 +3719,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
 
       // Invalidation 3 (V10 only — Stoch 5,3,3 completely removed from 1HZ75V per Trader Mandate Oct 18, 2026):
-      // M5 Stoch (15,2,5) genuinely crosses Level 50 in opposite direction while trade is in loss on candle after entry
+      // Closed-M5 Stoch (15,2,5) Level 40/60 Cross Invalidation in Loss
       if (SYMBOL !== "1HZ75V" && sK1525 !== null && prevK1525 !== null && pnl < 0 && (!t.entryEpoch || candles[si].epoch > t.entryEpoch)) {
-        const stoch1525Adverse = isBuy ? (prevK1525 >= 50.0 && sK1525 < 50.0) : (prevK1525 <= 50.0 && sK1525 > 50.0);
+        const stoch1525Adverse = isBuy ? (prevK1525 >= 60.0 && sK1525 < 60.0) : (prevK1525 <= 40.0 && sK1525 > 40.0);
         if (stoch1525Adverse) {
           closingContracts.add(t.contractId);
-          console.log(`[STOCH 1525 LEVEL 50 LOSS EXIT] Active ${t.direction} in loss ($${pnl.toFixed(2)}): Stoch (15,2,5) %K crossed Level 50 in opposite direction (${sK1525.toFixed(1)}, prev: ${prevK1525.toFixed(1)}). Liquidating immediately.`);
+          console.log(`[STOCH 1525 LEVEL 40/60 LOSS EXIT] Active ${t.direction} in loss ($${pnl.toFixed(2)}): Stoch (15,2,5) %K crossed ${isBuy ? "below 60.0" : "above 40.0"} (${sK1525.toFixed(1)}, prev: ${prevK1525.toFixed(1)}). Liquidating immediately.`);
           try {
             const closeRes = await closeContract(t.contractId);
             if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
@@ -3731,7 +3751,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             saveState();
             const icon = t.result === "WIN" ? "✅" : "❌";
             const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
-            await sendTelegram(`${icon} *${REPO_LABEL} — Stoch (15,2,5) Midline Loss Exit*\n\nM5 Stoch (15,2,5) %K crossed *Level 50 in opposite direction* (${sK1525.toFixed(1)}, prev: ${prevK1525.toFixed(1)}) while in floating loss.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+            await sendTelegram(`${icon} *${REPO_LABEL} — Closed-M5 Stoch (15,2,5) Level 40/60 Loss Invalidation Exit*\n\nM5 Stoch (15,2,5) %K crossed *${isBuy ? "below 60.0" : "above 40.0"}* (${sK1525.toFixed(1)}, prev: ${prevK1525.toFixed(1)}) while in floating loss.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
           } catch (e) {
             console.error(`[STOCH 1525 LEVEL 50 LOSS EXIT] Failed to close contract ${t.contractId}:`, e.message);
             closingContracts.delete(t.contractId);
@@ -3808,10 +3828,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       // 2. Stoch (200,1,1) Adverse Cross (Strictly when in loss and not running in profit)
       const stoch200Adverse = isPostEntryCandle && sK !== null && (isBuy ? sK < 50.0 : sK > 50.0);
 
-      // 3. Closed-M5 Stoch (15,2,5) Level 50 Cross in Opposite Direction (V25 ONLY — V50 enters at 50 & uses Stoch 25 Midline profit exit)
-      const stoch15OppositeCross = isV25Profile && isPostEntryCandle && (isBuy
-        ? (sK1525 !== null && prevK1525 !== null && prevK1525 >= 50.0 && sK1525 < 50.0)
-        : (sK1525 !== null && prevK1525 !== null && prevK1525 <= 50.0 && sK1525 > 50.0));
+      // 3. Closed-M5 Stoch (15,2,5) Level 40/60 Cross Invalidation in Loss
+      const stoch15OppositeCross = isPostEntryCandle && (isBuy
+        ? (sK1525 !== null && prevK1525 !== null && prevK1525 >= 60.0 && sK1525 < 60.0)
+        : (sK1525 !== null && prevK1525 !== null && prevK1525 <= 40.0 && sK1525 > 40.0));
 
       // 4. Entry-Hour H1 Adverse Close Exit
       const h1Eval = evaluateH1AdverseClose(t, candles, si);
@@ -3829,11 +3849,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       } else if (!isRunner && inLoss && stoch200Adverse) {
         earlyExitTriggered = true;
         exitReason = "Stoch (200,1,1) Adverse Invalidation Exit";
-        exitDetail = `M5 Stoch (200,1,1) crossed adverse to position (%K: ${sK.toFixed(1)} ${isBuy ? '< 50.0' : '> 50.0'}) while in loss (${currentPnl.toFixed(2)})`;
+        exitDetail = `M5 Stoch (200,1,1) crossed adverse to position (%K: ${sK.toFixed(1)} ${isBuy ? "< 50.0" : "> 50.0"}) while in loss (${currentPnl.toFixed(2)})`;
       } else if (inLoss && stoch15OppositeCross) {
         earlyExitTriggered = true;
-        exitReason = "Stoch (15,2,5) Opposite Level 50 Cross Exit";
-        exitDetail = `Closed-M5 Stoch (15,2,5) %K crossed Level 50 in opposite direction (%K: ${sK1525.toFixed(1)}, prev: ${prevK1525.toFixed(1)}) while in loss (${currentPnl.toFixed(2)})`;
+        exitReason = "Closed-M5 Stoch (15,2,5) Level 40/60 Loss Invalidation Exit";
+        exitDetail = `Closed-M5 Stoch (15,2,5) %K crossed ${isBuy ? "below 60.0" : "above 40.0"} (%K: ${sK1525.toFixed(1)}, prev: ${prevK1525.toFixed(1)}) while in loss (${currentPnl.toFixed(2)})`;
       } else if (inLoss && h1ClosedAgainst) {
         earlyExitTriggered = true;
         exitReason = "Entry-Hour H1 Adverse Close Exit";
@@ -3857,6 +3877,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
           t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
           state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+          state.openTrade = null;
+          onTradeClosedCleanup(candles[si].epoch);
           saveTrades(trades);
           saveState();
           const icon = t.result === "WIN" ? "✅" : "❌";
