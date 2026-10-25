@@ -9422,3 +9422,54 @@ Live server audits revealed that previous Tier 0 breakeven locks at +$1.00 were 
 ### 18.3. Dual Daily Locks: Profit Lock & Drawdown Shield
 * **Daily Target Lock (`+$7.00`):** Cumulative daily profit $\ge +\$7.00$ triggers `state.dailyTargetReached = true`. The bot transitions to `IDLE_DAILY_TARGET_REACHED`, blocks all new entries, and protects profit until 00:00 UTC rollover.
 * **Daily Loss Limit Shield (`-$4.00`):** If a bot suffers 2 consecutive losses totaling $\le -\$4.00$, `state.dailyMaxLossReached = true` locks the bot into `IDLE_DAILY_MAX_LOSS_REACHED`. Maximum possible daily risk per bot is strictly capped at 4% of account equity.
+
+
+---
+
+## 19. FLEET-WIDE STOP & REVERSAL INVALIDATION ENGINE & SAME-CYCLE EXECUTION PROTOCOL
+
+### 19.1 Operational Background: Forensic Audit of the VIX 50 15:50 UTC Incident
+On October 25, 2026 at 15:45 UTC (candle closed 15:50 UTC), OmniSight entered BUY on Volatility 50 (`R_50`) at 89.2846 under confirmed bullish confluence (Stoch 200 = 54.44 > 52.0, Stoch 15 = 79.62 > 50.0, Price > EMA 100).
+On the immediate subsequent M5 candle (15:50 to 15:55 UTC), the market suffered a catastrophic reversal:
+* M5 close plummeted -31.5 points to 88.9589.
+* Macro Trend Stoch 200 plummeted to 39.93 (< 50.0), signaling a definitive macro trend flip to SELL.
+* Stoch (15,2,5) %K plummeted to 21.36, crossing below %D and crossing below Level 50.0.
+* Price dropped decisively below M5 EMA 100.
+
+**The Flaw Identified:**
+OmniSight held the losing BUY position because `PROFILE_V100_STOCH200_STOCH15` lacked a dedicated Stop & Reversal Invalidation exit. Furthermore, because `openTrades` was evaluated once before exit processing, `noActiveTrades` remained false, preventing the bot from taking the textbook reversal SELL trade on the very candle that confirmed the reversal.
+
+### 19.2 The Fleet-Wide Stop & Reversal Formula
+To prevent active trades from suffering full software stop loss when market structure decisively flips, the engine evaluates the following Stop & Reversal Invalidation rule on every confirmed closed M5 candle following entry (`isPostEntryCandle` && `!isRunner`):
+
+#### For Stoch 200 / Stoch (15,2,5) Assets (`R_50` OmniSight, `R_100` Milk Machine, `1HZ25V` Ice Cream):
+* **BUY Trade Liquidation:**
+  `stoch200Opposite = sK200 < 50.0` **AND** `stoch15KdCrossOpposite = sK1525 < sD1525 || (prevK1525 >= prevD1525 && sK1525 < sD1525)`
+* **SELL Trade Liquidation:**
+  `stoch200Opposite = sK200 > 50.0` **AND** `stoch15KdCrossOpposite = sK1525 > sD1525 || (prevK1525 <= prevD1525 && sK1525 > sD1525)`
+* **Execution Action:** Active trade is liquidated immediately at market.
+
+#### For Stoch 100 / Stoch (30,2,5) Assets (`1HZ75V` Coffee Machine, `R_25` Tea Machine):
+* **BUY Trade Liquidation:** `sK100 < 50.0` **AND** `sK3025 < sD3025`
+* **SELL Trade Liquidation:** `sK100 > 50.0` **AND** `sK3025 > sD3025`
+
+#### For MACD / Stoch 200 / Stoch (5,3,3) Assets (`R_10` Test Bot):
+* **BUY Trade Liquidation:** (`sK200 < 50.0` OR `macdVal < 0.0`) **AND** `sK533 < sD533`
+* **SELL Trade Liquidation:** (`sK200 > 50.0` OR `macdVal > 0.0`) **AND** `sK533 > sD533`
+
+#### For EMA 100/200 / Stoch (15,2,5) Assets (`R_75` Lery's Alerts):
+* **BUY Trade Liquidation:** Price closes below EMA 100 **AND** Stoch 15 %K < %D
+* **SELL Trade Liquidation:** Price closes above EMA 100 **AND** Stoch 15 %K > %D
+
+### 19.3 Immediate Same-Cycle Reversal Execution Protocol
+1. **Immediate State Reset:**
+   * `state.openTrade = null`
+   * `onTradeClosedCleanup(candles[si].epoch)`
+   * Directional lock flags (`initialEntryDone`, `initialBuyDone`, `initialSellDone`) are set to `false`.
+   * Trend direction flips immediately (`trendDir = isBuy ? "SELL" : "BUY"`).
+   * Persistent reversal latch is engaged (`reversalArmed = isBuy ? "SELL" : "BUY"`).
+2. **Same-Candle Memory Synchronization:**
+   * Right after the exit loop completes, `trades = loadTrades()` reloads settled trades from disk.
+   * `openTrades = trades.filter(t => !t.result && !t.pending && !closingContracts.has(t.contractId))`
+   * `noActiveTrades` evaluates to `true` within the exact same slow-path scan.
+   * If the reversal conditions (Stoch across 50 and Price aligned with EMA 100) are satisfied on that confirmation candle, the reversal trade fires immediately without delay.

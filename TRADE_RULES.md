@@ -1,5 +1,5 @@
 # OMNISIGHT FLEET TRADE RULES COMPENDIUM
-### Version 8.8 -- October 2026 Authoritative Trading Rules & Parameter Specification
+### Version 8.9 -- October 2026 Authoritative Trading Rules & Parameter Specification
 
 ---
 
@@ -81,22 +81,32 @@ All active trading bots operate with a standard **$5.00 Stake**, engineered for 
 
 ---
 
-## 7. STOCH 100 & STOCH 30 EARLY INVALIDATION EXIT & REVERSAL PIVOT ENGINE
-### Authoritative Specification for Coffee Machine (`1HZ75V`) and Tea Machine (`R_25`)
+## 7. FLEET-WIDE STOP & REVERSAL INVALIDATION ENGINE & IMMEDIATE REVERSAL PIVOT
 
-1. **Adverse Trend & Stoch %K/%D Cross Invalidation:**
-   * Evaluated on every confirmed closed M5 candle following entry, provided the position is not an active runner (`!isRunner`).
-   * **BUY Trade Early Exit:** Triggered when closed M5 `Stoch (100, 1, 1) %K < 50.0` **AND** closed M5 `Stoch (30, 2, 5 Simple) %K < %D`.
-   * **SELL Trade Early Exit:** Triggered when closed M5 `Stoch (100, 1, 1) %K > 50.0` **AND** closed M5 `Stoch (30, 2, 5 Simple) %K > %D`.
-   * **Execution Action:** Position is closed immediately at market to cut adverse risk and protect account equity.
+### 7.1 Authoritative Specification Across All Applicable Bots
 
-2. **Immediate Opposite Direction Execution (Reversal Pivot):**
-   * The moment an adverse invalidation liquidation occurs, directional block flags (`initialBuyDone` / `initialSellDone`) are instantly reset to `false`.
-   * If on that confirmed closed candle or subsequent candles, `Stoch (30, 2, 5 Simple) %K` crosses Level 50.0 and aligns with EMA 100 in the opposite direction within the 3-candle tolerance window (`<= 900s` from the Stoch 100 cross), the bot takes the opposite trade immediately.
-   * Eliminates the scenario where an open losing position blocks the execution of a valid opposing market impulse.
+On confirmed closed M5 candle following entry (post-entry candle), if the Macro Trend Stochastic crosses opposite Level 50 AND the trigger Stochastic %K crosses %D in the opposite direction, the open trade **MUST CLOSE IMMEDIATELY** to truncate losses before hitting the full software stop loss.
 
+| Bot Profile / Asset | Symbols | Macro Invalidation Condition | Oscillator Invalidation Condition | Immediate Reversal Action |
+|---|---|---|---|---|
+| **Stoch 200 / Stoch (15,2,5)** | `R_50` (OmniSight), `R_100` (Milk Machine) | BUY: Stoch 200 < 50.0<br>SELL: Stoch 200 > 50.0 | BUY: Stoch 15 %K < %D<br>SELL: Stoch 15 %K > %D | Liquidate trade immediately. Arm opposite direction (`reversalArmed`). Flip `trendDir`. Execute reversal on same M5 candle once Stoch 15 confirms across Level 50 & Price aligns with EMA 100. |
+| **Stoch 200 / Stoch (15,2,5)** | `1HZ25V` (Ice Cream) | BUY: Stoch 200 < 50.0<br>SELL: Stoch 200 > 50.0 | BUY: Stoch 15 %K < %D<br>SELL: Stoch 15 %K > %D | Liquidate trade immediately. Clear `initialDone`, set `reversalArmed`. Execute reversal entry once Stoch 15 enters breakout zone (<= 25 SELL / >= 75 BUY) & Price aligns with EMA 100. |
+| **Stoch 100 / Stoch (30,2,5)** | `1HZ75V` (Coffee), `R_25` (Tea Machine) | BUY: Stoch 100 < 50.0<br>SELL: Stoch 100 > 50.0 | BUY: Stoch 30 %K < %D<br>SELL: Stoch 30 %K > %D | Liquidate trade immediately. Reset `initialBuyDone` / `initialSellDone` to `false`. Flip `trendDir`. Execute reversal entry immediately once Stoch 30 crosses Level 50 & aligns with EMA 100. |
+| **Stoch 200 / MACD / Stoch (5,3,3)** | `R_10` (Test Bot) | BUY: Stoch 200 < 50.0 OR MACD < 0.0<br>SELL: Stoch 200 > 50.0 OR MACD > 0.0 | BUY: Stoch 5,3,3 %K < %D<br>SELL: Stoch 5,3,3 %K > %D | Liquidate trade immediately. Reset initial entry flags. Arm opposite direction for immediate confluence reversal. |
+| **EMA 100/200 / Stoch (15,2,5)** | `R_75` (Lery's Alerts) | BUY: Price closes < EMA 100<br>SELL: Price closes > EMA 100 | BUY: Stoch 15 %K < %D<br>SELL: Stoch 15 %K > %D | Liquidate trade immediately. Reset initial flags, arm opposite direction for fresh confluence entry. |
+
+### 7.2 Same-Cycle Reversal Execution Protocol
+
+1. **State Reset & Direction Flip:**
+   * Upon invalidation liquidation, the bot executes `state.openTrade = null` and `onTradeClosedCleanup()`.
+   * Directional lock flags (`initialEntryDone`, `initialBuyDone`, `initialSellDone`) are immediately cleared (`false`).
+   * Main trend direction flips to the opposite side (`trendDir = isBuy ? "SELL" : "BUY"`).
+   * Directional reversal arm flag engages (`reversalArmed = isBuy ? "SELL" : "BUY"`).
+2. **Same-Candle Memory Refresh:**
+   * Immediately following active trade exit evaluation, `runSlowPathScan` reloads `trades = loadTrades()` and recalculates `openTrades`.
+   * Active entry gates evaluate `noActiveTrades = true` on the **exact same scan cycle**, allowing the bot to enter the reversal trade on the exact closed candle that confirmed the reversal without waiting 5 minutes.
 3. **2-Opposing-Fractals Structural Reversal Exit (Double Top/Lower High on BUY, Double Bottom/Higher Low on SELL):**
-   * **Scope:** `1HZ75V` (Coffee Machine), `R_25` (Tea Machine), and `R_100` (Milk Machine).
+   * **Scope:** `1HZ75V` (Coffee Machine), `R_25` (Tea Machine), `R_100` (Milk Machine), and `R_50` (OmniSight).
    * **Execution Watchdog:** Evaluated on every confirmed closed M5 candle strictly when in floating loss (`currentPnl < 0`) and not an active runner (`!isRunner`).
    * **BUY Trade Early Exit:** When the first two Swing High (Top) fractals formed at/after trade entry satisfy `F2 <= F1` (Lower High or Double Top within 0.05% tolerance). Confirms buyers failed to make a higher high and sellers have established resistance.
    * **SELL Trade Early Exit:** When the first two Swing Low (Bottom) fractals formed at/after trade entry satisfy `F2 >= F1` (Higher Low or Double Bottom within 0.05% tolerance). Confirms sellers failed to make a lower low and buyers have established support.
