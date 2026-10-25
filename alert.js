@@ -160,7 +160,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 2.20,
     maxHardStopPoints: 4.00,
     slType: "M15_FRACTAL",
-    notes: "1.00 lot cTrader minimum; Condition 1: M5 Stoch 200 (48/52) Main Trend Identifier; Condition 2: M5 Stoch (15,2,5) Initial (Lvl 50) & Re-Entry (Lvl 20/80); Early Exits: 1) Closed-M5 Stoch (25,2,5) 65/35 Profit Exit, 2) Opposite M5 Fractal Break in loss, 3) Entry-Hour H1 Adverse Close in loss; Dynamic Runner (Tiered Ratchet & $20 Super-Runner Ceiling)."
+    notes: "1.00 lot cTrader minimum; Condition 1: M5 Stoch 200 (48/52) Main Trend Identifier; Condition 2: M5 Stoch (15,2,5) Initial (Lvl 50) & Re-Entry (Lvl 25/75); Early Exits: 1) Closed-M5 Stoch (25,2,5) 65/35 Profit Exit, 2) Opposite M5 Fractal Break in loss, 3) Entry-Hour H1 Adverse Close in loss; Dynamic Runner (Tiered Ratchet & $20 Super-Runner Ceiling)."
   },
     "1HZ100V": {
     symbol: "1HZ100V",
@@ -252,7 +252,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 2.20,
     maxHardStopPoints: 1.25,
     slType: "M5_FRACTAL",
-    notes: "80x multiplier (4.00 lots); V100 Standardized Engine; Condition 1: M5 Stoch 200 (48/52) Main Trend Identifier; Baseline: M5 EMA 100 filter; Condition 2: M5 Stoch (15,2,5) Initial (Lvl 50) & Re-Entry (Lvl 20/80); Trade Management: -$4.00 Software SL, Tier 0 Breakeven Shield at +$1.00 -> $0.50 floor, Dynamic Runner (Tiered Ratchet & $20 Super-Runner Ceiling); Early Loss Exits: Opposite M5 Fractal & H1 Adverse Close in loss."
+    notes: "80x multiplier (4.00 lots); V100 Standardized Engine; Condition 1: M5 Stoch 200 (48/52) Main Trend Identifier; Baseline: M5 EMA 100 filter; Condition 2: M5 Stoch (15,2,5) Initial (Lvl 50) & Re-Entry (Lvl 25/75); Trade Management: -$2.00 Software SL, Tier 0 Breakeven Shield at +$1.00 -> $0.50 floor, Dynamic Runner (Tiered Ratchet & $20 Super-Runner Ceiling); Early Loss Exits: Opposite M5 Fractal & H1 Adverse Close in loss."
   },
   "R_10": {
     symbol: "R_10",
@@ -3143,6 +3143,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
           t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
           state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+          state.openTrade = null;
+          onTradeClosedCleanup(candles[si].epoch);
+          state.v25_1s_initialDone = false;
+          state.v25_1s_stoch15ArmedBuy = false;
+          state.v25_1s_stoch15ArmedSell = false;
+          state.v25_1s_trendDir = isBuy ? "SELL" : "BUY";
+          state.v25_1s_stoch200CrossEpoch = m5BoundaryEpoch;
+          state.v25_1s_reversalArmed = isBuy ? "SELL" : "BUY";
           saveTrades(trades);
           saveState();
           const icon = t.result === "WIN" ? "✅" : "❌";
@@ -3178,6 +3186,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
             t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
             state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+            state.openTrade = null;
+            onTradeClosedCleanup(candles[si].epoch);
+            state.v25_1s_initialDone = false;
+            state.v25_1s_stoch15ArmedBuy = false;
+            state.v25_1s_stoch15ArmedSell = false;
+            state.v25_1s_trendDir = isBuy ? "SELL" : "BUY";
+            state.v25_1s_stoch200CrossEpoch = m5BoundaryEpoch;
+            state.v25_1s_reversalArmed = isBuy ? "SELL" : "BUY";
             saveTrades(trades);
             saveState();
             const icon = t.result === "WIN" ? "✅" : "❌";
@@ -3212,6 +3228,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
           t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
           state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+          state.openTrade = null;
+          onTradeClosedCleanup(candles[si].epoch);
+          state.v25_1s_initialDone = false;
+          state.v25_1s_stoch15ArmedBuy = false;
+          state.v25_1s_stoch15ArmedSell = false;
+          state.v25_1s_trendDir = isBuy ? "SELL" : "BUY";
+          state.v25_1s_stoch200CrossEpoch = m5BoundaryEpoch;
+          state.v25_1s_reversalArmed = isBuy ? "SELL" : "BUY";
           saveTrades(trades);
           saveState();
           const icon = t.result === "WIN" ? "✅" : "❌";
@@ -3263,6 +3287,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
           t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
           state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+          state.openTrade = null;
+          onTradeClosedCleanup(candles[si].epoch);
+          if (STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
+            state.v10_initialBuyDone = false;
+            state.v10_initialSellDone = false;
+            state.v10_stochArmedBuy = !isBuy;
+            state.v10_stochArmedSell = isBuy;
+            state.v10_reversalArmed = isBuy ? "SELL" : "BUY";
+          }
           saveTrades(trades);
           saveState();
           const icon = t.result === "WIN" ? "✅" : "❌";
@@ -3645,6 +3678,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
             t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
             state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+            state.openTrade = null;
+            onTradeClosedCleanup(candles[si].epoch);
+            if (STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
+              state.v10_initialBuyDone = false;
+              state.v10_initialSellDone = false;
+              state.v10_stochArmedBuy = !isBuy;
+              state.v10_stochArmedSell = isBuy;
+              state.v10_reversalArmed = isBuy ? "SELL" : "BUY";
+            }
             saveTrades(trades);
             saveState();
             const icon = t.result === "WIN" ? "✅" : "❌";
@@ -3683,6 +3725,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
           t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
           state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+          state.openTrade = null;
+          onTradeClosedCleanup(candles[si].epoch);
+          if (STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
+            state.v10_initialBuyDone = false;
+            state.v10_initialSellDone = false;
+            state.v10_stochArmedBuy = !isBuy;
+            state.v10_stochArmedSell = isBuy;
+            state.v10_reversalArmed = isBuy ? "SELL" : "BUY";
+          }
           saveTrades(trades);
           saveState();
           const icon = t.result === "WIN" ? "✅" : "❌";
