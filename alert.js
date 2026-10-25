@@ -154,13 +154,14 @@ export const INSTRUMENT_PROFILES = {
     stoch200Params: { k: 200, d: 1, slowing: 1 },
     stoch15Params: { k: 15, d: 2, slowing: 5 },
     stoch25Params: { k: 25, d: 2, slowing: 5 },
-    minTakeProfitPoints: 4.00,
-    minTakeProfitUsd: 3.50,
+    stoch3020Params: { k: 30, d: 20, slowing: 15 },
+    minTakeProfitPoints: 10.00,
+    minTakeProfitUsd: 10.00,
     softwareSlUsd: 4.00,
-    trailActivationUsd: 2.20,
+    trailActivationUsd: 5.00,
     maxHardStopPoints: 4.00,
     slType: "M15_FRACTAL",
-    notes: "1.00 lot cTrader minimum; Condition 1: M5 Stoch 200 (48/52) Main Trend Identifier; Condition 2: M5 Stoch (15,2,5) Initial (Lvl 50) & Re-Entry (Lvl 25/75); Early Exits: 1) Closed-M5 Stoch (25,2,5) 65/35 Profit Exit, 2) Opposite M5 Fractal Break in loss, 3) Entry-Hour H1 Adverse Close in loss; Dynamic Runner (Tiered Ratchet & $20 Super-Runner Ceiling)."
+    notes: "1.00 lot cTrader minimum; Condition 1: M5 Stoch 200 (48/52) Main Trend Identifier; Condition 2: M5 Stoch (15,2,5) Initial (Lvl 50) & Re-Entry (Lvl 25/75); Profit Management: Hard Broker TP $10.00, Software SL -$4.00 moves to +$0.50 if profit reaches $5.00, Closed-M5 Stoch (30,20,15) %K crossing %D opposite Profit Exit; Early Loss Exits: Opposite M5 Fractal Break in loss, Entry-Hour H1 Adverse Close in loss."
   },
     "1HZ100V": {
     symbol: "1HZ100V",
@@ -620,15 +621,15 @@ async function getOpenPortfolio() {
 async function executeTrade(direction, orderContext = {}) {
   if (EXECUTION_MODE === "ctrader") {
     try {
-      const isDynamicRunner = true; // Centralized Dynamic Runner Architecture active across all fleet instruments
+      const isDynamicRunner = SYMBOL === "R_100" ? false : true; // R_100 uses hard $10.00 broker TP; other fleet bots use Dynamic Runner architecture
       const payload = {
         symbol: SYMBOL_NAME || SYMBOL,
         side: direction,
         lots: CTRADER_LOT_SIZE,
         slPrice: orderContext.slPrice || null,
-        tpPrice: isDynamicRunner ? null : (orderContext.tpPrice || orderContext.fibTpPrice || null),
+        tpPrice: SYMBOL === "R_100" ? (orderContext.tpPrice || null) : (isDynamicRunner ? null : (orderContext.tpPrice || orderContext.fibTpPrice || null)),
         slUsd: Math.abs(SOFTWARE_SL_USD) || 4.00,
-        tpUsd: isDynamicRunner ? null : (TARGET_MIN_PROFIT || 4.00),
+        tpUsd: SYMBOL === "R_100" ? 10.00 : (isDynamicRunner ? null : (TARGET_MIN_PROFIT || 4.00)),
         comment: `${REPO_LABEL} cTrader`
       };
       console.log(`[CTRADER ORDER] Sending ${direction} order: ${CTRADER_LOT_SIZE} lots on ${SYMBOL_NAME || SYMBOL} (SL: ${payload.slPrice || payload.slUsd}, TP: ${payload.tpPrice || payload.tpUsd})`);
@@ -671,7 +672,7 @@ async function executeTrade(direction, orderContext = {}) {
       amount: STAKE_USD, 
       basis: "stake", 
       multiplier: MULTIPLIER, 
-      limit_order: { stop_loss: slDollars, take_profit: SERVER_TP_USD } 
+      limit_order: { stop_loss: slDollars, take_profit: SYMBOL === "R_100" ? 10.00 : SERVER_TP_USD } 
     }
   };
   const data = await gatewayFetch("/buy", "POST", payload);
@@ -1816,10 +1817,16 @@ async function manageOpenTradesFastPath() {
     let dailyTargetCeilingHit = false;
     let superRunnerCeilingHit = false;
     const remainingToDailyTarget = Math.max(0, DAILY_PROFIT_TARGET_USD - (state.dailyNetPnl || 0));
-    if (pnl >= DAILY_PROFIT_TARGET_USD || (remainingToDailyTarget > 0 && pnl >= remainingToDailyTarget)) {
-      dailyTargetCeilingHit = true;
-    } else if (pnl >= 12.00) {
-      superRunnerCeilingHit = true;
+    if (SYMBOL === "R_100") {
+      if (pnl >= 10.00) {
+        dailyTargetCeilingHit = true;
+      }
+    } else {
+      if (pnl >= DAILY_PROFIT_TARGET_USD || (remainingToDailyTarget > 0 && pnl >= remainingToDailyTarget)) {
+        dailyTargetCeilingHit = true;
+      } else if (pnl >= 12.00) {
+        superRunnerCeilingHit = true;
+      }
     }
 
     // =========================================================================
@@ -1830,40 +1837,55 @@ async function manageOpenTradesFastPath() {
     // Rule 4: Pre-Target Runner (Peak >= $5.00) -> Locks +$3.80 net floor ($1.20 wick buffer).
     // Rule 5: Daily Target Strike (pnl >= remainingToDailyTarget or >= $7.00) -> Instant Cash-Out!
     // =========================================================================
-    if (peak >= 5.00) {
-      // Tier 3: Pre-Target Runner (Peak >= $5.00)
-      openTrade.trendRidingActive = true;
-      const tier3Floor = Math.max(
-        3.80,
-        parseFloat((peak * 0.75).toFixed(2)),
-        parseFloat((peak - 1.50).toFixed(2))
-      );
-      if (!openTrade.lockedPnlFloor || tier3Floor > openTrade.lockedPnlFloor) {
-        openTrade.lockedPnlFloor = tier3Floor;
-        saveTrades(trades);
-        console.log(`[TIER 3 PRE-TARGET RUNNER] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Floor secured at +${openTrade.lockedPnlFloor.toFixed(2)}.`);
+    if (SYMBOL === "R_100") {
+      // 🛡️ VIX 100 User Directive:
+      // Remove tiered trailing ratchet.
+      // Move software SL to +$0.50 if profit reaches $5.00
+      if (peak >= 5.00) {
+        const r100Floor = 0.50;
+        if (!openTrade.lockedPnlFloor || r100Floor > openTrade.lockedPnlFloor) {
+          openTrade.lockedPnlFloor = r100Floor;
+          saveTrades(trades);
+          console.log(`[R_100 PROFIT PROTECTION] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} >= $5.00 -> Software SL moved to +${openTrade.lockedPnlFloor.toFixed(2)}.`);
+        }
       }
-    } else if (peak >= 3.50) {
-      // Tier 2: Half-Target Quota Lock (Peak >= $3.50)
-      openTrade.trendRidingActive = true;
-      const tier2Floor = Math.max(
-        2.20,
-        parseFloat((peak * 0.65).toFixed(2)),
-        parseFloat((peak - 1.30).toFixed(2))
-      );
-      if (!openTrade.lockedPnlFloor || tier2Floor > openTrade.lockedPnlFloor) {
-        openTrade.lockedPnlFloor = tier2Floor;
-        saveTrades(trades);
-        console.log(`[TIER 2 HALF-TARGET LOCK] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Base floor locked at +${openTrade.lockedPnlFloor.toFixed(2)} (Guarantees >= $2.20 win).`);
-      }
-    } else if (peak >= 2.20) {
-      // Tier 1: Breakeven Capital Shield (Peak >= $2.20)
-      // Locks +$1.00 net floor: Guarantees trade never turns into a loss while giving $1.20 of breathing room for M5 wicks
-      const tier1Floor = 1.00;
-      if (!openTrade.lockedPnlFloor || tier1Floor > openTrade.lockedPnlFloor) {
-        openTrade.lockedPnlFloor = tier1Floor;
-        saveTrades(trades);
-        console.log(`[TIER 1 BREAKEVEN SHIELD] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Guaranteed profit floor locked at +${openTrade.lockedPnlFloor.toFixed(2)} ($1.20 breathing buffer active).`);
+    } else {
+      // UNIFIED PROFIT RATCHET & BREATHING ROOM ARCHITECTURE FOR OTHER FLEET INSTRUMENTS
+      if (peak >= 5.00) {
+        // Tier 3: Pre-Target Runner (Peak >= $5.00)
+        openTrade.trendRidingActive = true;
+        const tier3Floor = Math.max(
+          3.80,
+          parseFloat((peak * 0.75).toFixed(2)),
+          parseFloat((peak - 1.50).toFixed(2))
+        );
+        if (!openTrade.lockedPnlFloor || tier3Floor > openTrade.lockedPnlFloor) {
+          openTrade.lockedPnlFloor = tier3Floor;
+          saveTrades(trades);
+          console.log(`[TIER 3 PRE-TARGET RUNNER] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Floor secured at +${openTrade.lockedPnlFloor.toFixed(2)}.`);
+        }
+      } else if (peak >= 3.50) {
+        // Tier 2: Half-Target Quota Lock (Peak >= $3.50)
+        openTrade.trendRidingActive = true;
+        const tier2Floor = Math.max(
+          2.20,
+          parseFloat((peak * 0.65).toFixed(2)),
+          parseFloat((peak - 1.30).toFixed(2))
+        );
+        if (!openTrade.lockedPnlFloor || tier2Floor > openTrade.lockedPnlFloor) {
+          openTrade.lockedPnlFloor = tier2Floor;
+          saveTrades(trades);
+          console.log(`[TIER 2 HALF-TARGET LOCK] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Base floor locked at +${openTrade.lockedPnlFloor.toFixed(2)} (Guarantees >= $2.20 win).`);
+        }
+      } else if (peak >= 2.20) {
+        // Tier 1: Breakeven Capital Shield (Peak >= $2.20)
+        // Locks +$1.00 net floor: Guarantees trade never turns into a loss while giving $1.20 of breathing room for M5 wicks
+        const tier1Floor = 1.00;
+        if (!openTrade.lockedPnlFloor || tier1Floor > openTrade.lockedPnlFloor) {
+          openTrade.lockedPnlFloor = tier1Floor;
+          saveTrades(trades);
+          console.log(`[TIER 1 BREAKEVEN SHIELD] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Guaranteed profit floor locked at +${openTrade.lockedPnlFloor.toFixed(2)} ($1.20 breathing buffer active).`);
+        }
       }
     }
     // =========================================================================
@@ -1871,15 +1893,14 @@ async function manageOpenTradesFastPath() {
     const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction, openTrade.lots);
 
     const hardStopBreached = isBuy ? currentPrice <= hardStopPrice : currentPrice >= hardStopPrice;
-    const isDynamicRunner = STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES" || SYMBOL === "R_50" || STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || SYMBOL === "1HZ75V" || STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533" || SYMBOL === "1HZ100V" || STRATEGY_PROFILE === "PROFILE_V25_1S_STOCH200_STOCH15" || SYMBOL === "1HZ25V";
+    const isDynamicRunner = (STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES" || SYMBOL === "R_50" || STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || SYMBOL === "1HZ75V" || STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533" || SYMBOL === "1HZ100V" || STRATEGY_PROFILE === "PROFILE_V25_1S_STOCH200_STOCH15" || SYMBOL === "1HZ25V") && SYMBOL !== "R_100";
     const activeTpTarget = isDynamicRunner ? null : (openTrade.tpPrice || openTrade.fibTpPrice || null);
     let tpHit = false;
     if (activeTpTarget) {
       tpHit = isBuy ? currentPrice >= activeTpTarget : currentPrice <= activeTpTarget;
     }
-    // If Trend-Rider is active (pnl >= 4.00 reached) or Dynamic Runner (V25/V100), do NOT exit on initial TP!
-    // Hold position wide open until closed M5 indicator invalidation or dynamic ratchet floor.
-    if (openTrade.trendRidingActive || isDynamicRunner) {
+    // If Trend-Rider is active or Dynamic Runner, do NOT exit on initial TP! (R_100 respects hard $10.00 TP)
+    if ((openTrade.trendRidingActive && SYMBOL !== "R_100") || isDynamicRunner) {
       tpHit = false;
     }
 
@@ -1909,7 +1930,10 @@ async function manageOpenTradesFastPath() {
     // to prevent premature 3-second exits on trades entered near levels 20 or 80.
 
     let reason = null;
-    if (dailyTargetCeilingHit) {
+    if (SYMBOL === "R_100" && (tpHit || pnl >= 10.00 || dailyTargetCeilingHit)) {
+      reason = "Hard Broker Take Profit reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ") — Secured $10.00 Target!";
+    }
+    else if (dailyTargetCeilingHit) {
       reason = "Daily Target TP Hit (+ $" + pnl.toFixed(2) + ") — Secured 100% of Daily $" + DAILY_PROFIT_TARGET_USD.toFixed(2) + " Target!";
     }
     else if (superRunnerCeilingHit) {
@@ -2684,6 +2708,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const stoch302515 = calculateStoch(candles, 30, 25, 15, "Simple");
   const sK302515 = stoch302515.k[si], sD302515 = stoch302515.d[si], prevK302515 = stoch302515.k[si - 1], prevD302515 = stoch302515.d[si - 1];
 
+  // Stoch (30,20,15 Simple) for V100 Milk Opposite %K/%D Profit Exit Engine
+  const stoch302015 = calculateStoch(candles, 30, 20, 15, "Simple");
+  const sK302015 = stoch302015.k[si], sD302015 = stoch302015.d[si], prevK302015 = stoch302015.k[si - 1], prevD302015 = stoch302015.d[si - 1];
+
   const sK200 = stoch200.k[si], prevK200 = stoch200.k[si - 1];
   const macdVal = macd2575.macd[si], prevMacdVal = macd2575.macd[si - 1];
   const sK15 = stoch1558.k[si], prevK15 = stoch1558.k[si - 1];
@@ -2775,7 +2803,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const pnl = currentPnl;
     // 🛡️ RUNNER IMMUNITY: Trades with PnL >= $3.50 or active Trend-Rider ratchet are managed by the Tiered Dynamic Ratchet
     // and are immune to sensitive M5 indicator exhaustion exits (Stoch 50, Stoch 65/35, CCI 0)
-    const isRunner = Boolean(t.trendRidingActive || currentPnl >= 3.50 || (t.maxUnrealizedPnL && t.maxUnrealizedPnL >= 4.00));
+    const isRunner = SYMBOL === "R_100" ? false : Boolean(t.trendRidingActive || currentPnl >= 3.50 || (t.maxUnrealizedPnL && t.maxUnrealizedPnL >= 4.00));
     const inProfitExhaustion = !isRunner && (currentPnl > 0.00) && (!t.entryEpoch || candles[si].epoch > t.entryEpoch);
     if (inProfitExhaustion) {
       const isCciInstrument = (
@@ -2809,10 +2837,20 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           trendExhausted = true;
           exhaustionDetail = `M5 CCI (${cVal !== null ? cVal.toFixed(1) : 0}, prev: ${prevCci !== null ? prevCci.toFixed(1) : 0}) crossed ${isBuy ? "<= 0.0 baseline" : ">= 0.0 baseline"}`;
         }
-      } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || SYMBOL === "R_50" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
-        // Volatility 100 (R_100) Closed-M5 Stoch (25,2,5) 65/35 Profit Exit (when in profit >= $1.00):
-        // BUY: Closes on a closed M5 candle if Stoch (25,2,5) %K crosses below 65.0
-        // SELL: Closes on a closed M5 candle if Stoch (25,2,5) %K crosses above 35.0
+      } else if (SYMBOL === "R_100") {
+        // Volatility 100 (R_100 Milk Machine):
+        // Trader Directive: Replace profit trailing rule with Stoch (30,20,15) %K crossing %D in opposite direction (when in profit)
+        // BUY: Closes on confirmed closed M5 candle if Stoch (30,20,15) %K crosses below %D
+        // SELL: Closes on confirmed closed M5 candle if Stoch (30,20,15) %K crosses above %D
+        const r100Stoch30CrossOppositeBuy = isBuy && prevK302015 !== null && prevD302015 !== null && sK302015 !== null && sD302015 !== null && prevK302015 >= prevD302015 && sK302015 < sD302015;
+        const r100Stoch30CrossOppositeSell = !isBuy && prevK302015 !== null && prevD302015 !== null && sK302015 !== null && sD302015 !== null && prevK302015 <= prevD302015 && sK302015 > sD302015;
+        const r100Exhausted = (r100Stoch30CrossOppositeBuy || r100Stoch30CrossOppositeSell) && currentPnl > 0;
+        if (r100Exhausted) {
+          trendExhausted = true;
+          exhaustionDetail = `Closed-M5 Stoch (30,20,15) Opposite %K/%D Cross Profit Exit — %K (${sK302015 !== null ? sK302015.toFixed(1) : "N/A"}) crossed ${isBuy ? "below" : "above"} %D (${sD302015 !== null ? sD302015.toFixed(1) : "N/A"}) securing +${currentPnl.toFixed(2)}`;
+        }
+      } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_50") {
+        // Volatility 50 (R_50) Closed-M5 Stoch (25,2,5) 65/35 Profit Exit (when in profit >= $0.50):
         const v100Stoch25Cross65Buy = isBuy && prevK2525 !== null && sK2525 !== null && prevK2525 >= 65.0 && sK2525 < 65.0;
         const v100Stoch25Cross35Sell = !isBuy && prevK2525 !== null && sK2525 !== null && prevK2525 <= 35.0 && sK2525 > 35.0;
         const v100Exhausted = (v100Stoch25Cross65Buy || v100Stoch25Cross35Sell) && currentPnl >= 0.50;
@@ -2884,6 +2922,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             state.dailyTargetReached = true;
             state.dailyTargetDate = todayStr;
           }
+          state.openTrade = null;
+          onTradeClosedCleanup(candles[si].epoch);
           saveTrades(trades);
           saveState();
           const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
@@ -5791,8 +5831,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     const minRequiredTp = direction === "BUY" ? Math.max(pointsTpPrice, dollarTpPrice) : Math.min(pointsTpPrice, dollarTpPrice);
 
-    const isDynamicRunner = STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES" || SYMBOL === "R_50" || STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || SYMBOL === "1HZ75V" || STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533" || SYMBOL === "1HZ100V" || STRATEGY_PROFILE === "PROFILE_V25_1S_STOCH200_STOCH15" || SYMBOL === "1HZ25V";
-    if (isDynamicRunner) {
+    const isDynamicRunner = (STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES" || SYMBOL === "R_50" || STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || SYMBOL === "1HZ75V" || STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533" || SYMBOL === "1HZ100V" || STRATEGY_PROFILE === "PROFILE_V25_1S_STOCH200_STOCH15" || SYMBOL === "1HZ25V") && SYMBOL !== "R_100";
+    if (SYMBOL === "R_100") {
+      fibTpPrice = direction === "BUY" ? entry + 10.00 : entry - 10.00;
+      entryType = entryType + " ($10.00 Hard Broker TP)";
+    } else if (isDynamicRunner) {
       fibTpPrice = null;
       entryType = entryType + " (Dynamic Runner - Tiered Ratchet & Profit Exit)";
     } else {
@@ -5898,6 +5941,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
                          `• Trigger Type: *${setupLabel}*\n` +
                          `• Take Profit Target: *${tpPrice ? tpPrice.toFixed(4) : "Dynamic Runner"}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n` +
                          `• Early Invalidation: *3 Consecutive Adverse M5 Closes / Stoch 200 / Stoch (15,2,5) Loss Exit / H1 Adverse Close*\n`;
+    } else if (SYMBOL === "R_100") {
+      confluenceLines += `• M5 Stoch 200 (48/52): *${(sK200 !== null ? sK200.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">48 [BULLISH TREND]" : "<52 [BEARISH TREND]"})\n` +
+                         `• M5 EMA 100: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > EMA 100" : "Price < EMA 100"})\n` +
+                         `• M5 Stoch (15,2,5): *%K ${(sK1525 !== null ? sK1525.toFixed(1) : "N/A")}* | *%D ${(sD1525 !== null ? sD1525.toFixed(1) : "N/A")}* (${setupLabel})\n` +
+                         `• Profit Exit Engine: *Closed-M5 Stoch (30,20,15) Opposite %K/%D Cross / Hard Broker TP $10.00*\n` +
+                         `• Protection: *Software SL -$4.00 (Moves to +$0.50 if profit reaches $5.00) / Opposite M5 Fractal / H1 Adverse Close*\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
       confluenceLines += `• M5 Stoch 200 (48/52): *${(sK200 !== null ? sK200.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">48 [BULLISH TREND]" : "<52 [BEARISH TREND]"})\n` +
                          `• M5 EMA 100: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > EMA 100" : "Price < EMA 100"})\n` +
