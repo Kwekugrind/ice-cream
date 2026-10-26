@@ -1069,6 +1069,84 @@ export function calculateCCI(candles, n = 100) {
   return out;
 }
 
+export function calculateADX(candles, period = 14) {
+  const len = candles.length;
+  const adxOut = new Array(len).fill(null);
+  const plusDIOut = new Array(len).fill(null);
+  const minusDIOut = new Array(len).fill(null);
+
+  if (len < period * 2) {
+    return { adx: adxOut, plusDI: plusDIOut, minusDI: minusDIOut };
+  }
+
+  const tr = new Array(len).fill(0);
+  const plusDM = new Array(len).fill(0);
+  const minusDM = new Array(len).fill(0);
+
+  for (let i = 1; i < len; i++) {
+    const high = parseFloat(candles[i].high);
+    const low = parseFloat(candles[i].low);
+    const prevClose = parseFloat(candles[i - 1].close);
+    const prevHigh = parseFloat(candles[i - 1].high);
+    const prevLow = parseFloat(candles[i - 1].low);
+
+    tr[i] = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
+
+    const upMove = high - prevHigh;
+    const downMove = prevLow - low;
+
+    plusDM[i] = (upMove > downMove && upMove > 0) ? upMove : 0;
+    minusDM[i] = (downMove > upMove && downMove > 0) ? downMove : 0;
+  }
+
+  let smoothedTR = 0;
+  let smoothedPlusDM = 0;
+  let smoothedMinusDM = 0;
+
+  for (let i = 1; i <= period; i++) {
+    smoothedTR += tr[i];
+    smoothedPlusDM += plusDM[i];
+    smoothedMinusDM += minusDM[i];
+  }
+
+  const dx = new Array(len).fill(0);
+
+  let plusDI = smoothedTR > 0 ? (smoothedPlusDM / smoothedTR) * 100 : 0;
+  let minusDI = smoothedTR > 0 ? (smoothedMinusDM / smoothedTR) * 100 : 0;
+  let diSum = plusDI + minusDI;
+  dx[period] = diSum > 0 ? (Math.abs(plusDI - minusDI) / diSum) * 100 : 0;
+  plusDIOut[period] = plusDI;
+  minusDIOut[period] = minusDI;
+
+  for (let i = period + 1; i < len; i++) {
+    smoothedTR = smoothedTR - (smoothedTR / period) + tr[i];
+    smoothedPlusDM = smoothedPlusDM - (smoothedPlusDM / period) + plusDM[i];
+    smoothedMinusDM = smoothedMinusDM - (smoothedMinusDM / period) + minusDM[i];
+
+    plusDI = smoothedTR > 0 ? (smoothedPlusDM / smoothedTR) * 100 : 0;
+    minusDI = smoothedTR > 0 ? (smoothedMinusDM / smoothedTR) * 100 : 0;
+    diSum = plusDI + minusDI;
+    dx[i] = diSum > 0 ? (Math.abs(plusDI - minusDI) / diSum) * 100 : 0;
+
+    plusDIOut[i] = plusDI;
+    minusDIOut[i] = minusDI;
+  }
+
+  let adxSum = 0;
+  for (let i = period; i < 2 * period; i++) {
+    adxSum += dx[i];
+  }
+  let currentADX = adxSum / period;
+  adxOut[2 * period - 1] = currentADX;
+
+  for (let i = 2 * period; i < len; i++) {
+    currentADX = ((currentADX * (period - 1)) + dx[i]) / period;
+    adxOut[i] = currentADX;
+  }
+
+  return { adx: adxOut, plusDI: plusDIOut, minusDI: minusDIOut };
+}
+
 export function calculateMACD(candles, fastPeriod = 25, slowPeriod = 75, signalPeriod = 1) {
   const closes = candles.map(c => parseFloat(c.close));
   const fastEma = emaArray(closes, fastPeriod);
@@ -1546,6 +1624,7 @@ const ALLOWED_STATE_KEYS = new Set([
   "v100_1s_macd", "v100_1s_stoch200", "v100_1s_stoch533", "v100_1s_stoch15",
   "v50_trendDirection", "v50_pending_cci", "v50_initialBuyDone", "v50_initialSellDone",
   "v50_stochArmedBuy", "v50_stochArmedSell", "v50_cciArmedBuy", "v50_cciArmedSell",
+  "v50_trendDir", "v50_initialEntryDone", "v50_armedEpoch", "v50_adx", "adxVal",
   "v25_trendDirection", "v25_initialBuyDone", "v25_initialSellDone", "v25_stochArmedBuy",
   "v25_stochArmedSell", "v25_cciArmedBuy", "v25_cciArmedSell", "v25_cciCrossEpochBuy", "v25_cciCrossEpochSell",
   "v10_stochArmedBuy", "v10_stochArmedSell", "v10_macdArmedBuy", "v10_macdArmedSell",
@@ -2696,6 +2775,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const currentEma200 = ema200[si];
 
   // Indicators for V100 1s & V75 1s Architecture
+  const adxResult = calculateADX(candles, 14);
+  const adxVal = adxResult.adx[si], prevAdxVal = adxResult.adx[si - 1];
+  const plusDIVal = adxResult.plusDI[si], minusDIVal = adxResult.minusDI[si];
   const stoch200 = calculateStoch(candles, 200, 1, 1);
   const macd2575 = calculateMACD(candles, 25, 75, 1);
   const stoch1558 = calculateStoch(candles, 15, 5, 8);
@@ -2764,7 +2846,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       saveState();
       return;
     }
-  } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || SYMBOL === "R_50" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
+  } else if ((STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) && SYMBOL !== "R_50") {
     if (sK200 === null || prevK200 === null || sK1525 === null || prevK1525 === null || currentEma100 === null) {
       state.lastProcessedEpoch = m5BoundaryEpoch;
       saveState();
@@ -3672,6 +3754,39 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         continue;
       }
 
+      // Invalidation 1.5 (V50 only): ADX drops below 20.0 while in loss -> Sideways Chop Invalidation
+      if (SYMBOL === "R_50" && !isRunner && pnl < 0 && isPostEntryCandle && adxVal !== null && adxVal < 20.0) {
+        closingContracts.add(t.contractId);
+        console.log(`[ADX CHOP EXIT] Active ${t.direction} in loss (${pnl.toFixed(2)}): ADX dropped below 20.0 (${adxVal.toFixed(1)}). Market collapsed to sideways chop. Liquidating immediately.`);
+        try {
+          const closeRes = await closeContract(t.contractId);
+          if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+            console.error(`[ADX CHOP EXIT ERROR] Broker sell failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+            closingContracts.delete(t.contractId);
+            continue;
+          }
+          const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
+          t.serverPnl = (closeRes && closeRes.sell?.profit) ?? (settled !== null ? settled.profit : parseFloat(pnl.toFixed(2)));
+          t.resultSource = (closeRes && closeRes.sell?.profit !== undefined) ? "server_close_confirmed" : (settled !== null ? "deriv_settled_official" : "estimated_fallback");
+          t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
+          t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+          state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+          state.openTrade = null;
+          onTradeClosedCleanup(candles[si].epoch);
+          saveTrades(trades);
+          saveState();
+          const icon = t.result === "WIN" ? "✅" : "❌";
+          const pnlStr = t.serverPnl >= 0 ? `+${t.serverPnl.toFixed(2)}` : `-${Math.abs(t.serverPnl).toFixed(2)}`;
+          await sendTelegram(`${icon} *${REPO_LABEL} — ADX < 20 Sideways Chop Invalidation*\n\nM5 ADX dropped below 20.0 (${adxVal.toFixed(1)}). Market in sideways chop.\n💵 P&L: *${pnlStr}*\nContract: \`${t.contractId}\``);
+        } catch (e) {
+          console.error(`[ADX CHOP EXIT] Failed to close contract ${t.contractId}:`, e.message);
+          closingContracts.delete(t.contractId);
+          continue;
+        }
+        closingContracts.delete(t.contractId);
+        continue;
+      }
+
       // Invalidation 2: Macro Trend Stoch (100 for 1HZ75V, 200 for others) Crosses Adverse to Position on M5 Close
       const isPostEntryCandle = !t.entryEpoch || candles[si].epoch > t.entryEpoch;
       const macroTrendStochVal = (SYMBOL === "1HZ75V" || STRATEGY_PROFILE === "PROFILE_V75_1S_STOCH100_STOCH30" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V25_STOCH100_STOCH30") ? sK100 : sK200;
@@ -4033,6 +4148,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   state.stoch3025Signal = sD3025;
   state.stoch302515Val = sK302515;
   state.stoch302515Signal = sD302515;
+  state.adxVal = adxVal;
+  state.v50_adx = adxVal;
 
   // Stoch 50 cross & status (Current cross OR 8-Hour Rolling Lookback OR Position Relative to 50)
   const stoch50CrossUpLookback = (prevK <= 50.0 && sK > 50.0) || checkStochastic8HrLookback(candles, stoch, "BUY", "MIDLINE");
@@ -4525,6 +4642,146 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       };
     }
   }
+  // 2b. VOLATILITY 50 INDEX (OmniSight R_50) — ADX >= 20 + STOCH 200 (LEVEL 50) + EMA 100 + STOCH 15
+  else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH200_ADX20" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || SYMBOL === "R_50") {
+    const botPrefix = "V50";
+    const pfx = "v50";
+
+    // Migrate initial flags
+    if (state.v50_initialEntryDone === undefined) {
+      state.v50_initialEntryDone = Boolean(state.v50_initialBuyDone || state.v50_initialSellDone);
+    }
+
+    // 1. ADX (14) Trend Strength Gate (Threshold 20.0)
+    // When ADX < 20: Sideways Chop Filter Active. All arming and trade entries blocked.
+    // When ADX >= 20: Trend Strength Confirmed.
+    const adxStrong = adxVal !== null && adxVal >= 20.0;
+    const adxFreshCrossUp20 = prevAdxVal !== null && adxVal !== null && prevAdxVal < 20.0 && adxVal >= 20.0;
+
+    // 2. M5 Stoch (200,1,1) Directional Gate (Level 50)
+    // BUY: sK200 >= 50.0; SELL: sK200 <= 50.0
+    const stoch200BuyAligned = sK200 !== null && sK200 >= 50.0;
+    const stoch200SellAligned = sK200 !== null && sK200 <= 50.0;
+    const stoch200CrossUp50 = prevK200 !== null && sK200 !== null && prevK200 <= 50.0 && sK200 > 50.0;
+    const stoch200CrossDown50 = prevK200 !== null && sK200 !== null && prevK200 >= 50.0 && sK200 < 50.0;
+
+    // Fresh Arming Events (Any order or simultaneous cross):
+    const freshArmBuy = adxStrong && stoch200BuyAligned && (
+      (adxFreshCrossUp20 && stoch200BuyAligned) ||
+      (stoch200CrossUp50 && adxStrong) ||
+      (state.v50_trendDir !== "BUY" && prevAdxVal !== null && (prevAdxVal < 20.0 || (prevK200 !== null && prevK200 < 50.0)))
+    );
+
+    const freshArmSell = adxStrong && stoch200SellAligned && (
+      (adxFreshCrossUp20 && stoch200SellAligned) ||
+      (stoch200CrossDown50 && adxStrong) ||
+      (state.v50_trendDir !== "SELL" && prevAdxVal !== null && (prevAdxVal < 20.0 || (prevK200 !== null && prevK200 > 50.0)))
+    );
+
+    if (freshArmBuy) {
+      if (state.v50_trendDir !== "BUY") {
+        state.v50_initialEntryDone = false; // Fresh trend wave: initial entry unlocked!
+        dbg("[V50 TREND] ADX (" + (adxVal ? adxVal.toFixed(1) : "N/A") + " >= 20) + Stoch 200 (" + (sK200 ? sK200.toFixed(1) : "N/A") + " >= 50). BUY TREND ARMED.");
+      }
+      state.v50_trendDir = "BUY";
+      state.v50_armedEpoch = m5BoundaryEpoch;
+    } else if (freshArmSell) {
+      if (state.v50_trendDir !== "SELL") {
+        state.v50_initialEntryDone = false; // Fresh trend wave: initial entry unlocked!
+        dbg("[V50 TREND] ADX (" + (adxVal ? adxVal.toFixed(1) : "N/A") + " >= 20) + Stoch 200 (" + (sK200 ? sK200.toFixed(1) : "N/A") + " <= 50). SELL TREND ARMED.");
+      }
+      state.v50_trendDir = "SELL";
+      state.v50_armedEpoch = m5BoundaryEpoch;
+    }
+
+    // Disarming & Sideways Chop Filter:
+    // If ADX drops below 20 -> Disarm trend! Market is in sideways chop.
+    if (!adxStrong) {
+      if (state.v50_trendDir !== null) {
+        dbg("[V50 CHOP FILTER] ADX dropped to " + (adxVal ? adxVal.toFixed(1) : "N/A") + " (< 20.0). Market is in SIDEWAYS CHOP. Disarming trend.");
+      }
+      state.v50_trendDir = null;
+      state.v50_armedEpoch = null;
+    }
+    // If Stoch 200 dealigns:
+    if (state.v50_trendDir === "BUY" && sK200 !== null && sK200 < 48.0) {
+      dbg("[V50 DEALIGN] Stoch 200 dropped to " + sK200.toFixed(1) + " (< 48.0). Disarming BUY.");
+      state.v50_trendDir = null;
+      state.v50_armedEpoch = null;
+    } else if (state.v50_trendDir === "SELL" && sK200 !== null && sK200 > 52.0) {
+      dbg("[V50 DEALIGN] Stoch 200 rose to " + sK200.toFixed(1) + " (> 52.0). Disarming SELL.");
+      state.v50_trendDir = null;
+      state.v50_armedEpoch = null;
+    }
+
+    // Condition 2: Baseline Filter M5 EMA 100
+    const emaBaselineBuy = currentEma100 !== null && currentPrice > currentEma100;
+    const emaBaselineSell = currentEma100 !== null && currentPrice < currentEma100;
+
+    // Condition 3: M5 Stoch (15,2,5) Initial Lvl 50 & Re-Entry 25/75
+    const stoch15CrossUp50 = prevK1525 !== null && sK1525 !== null && prevK1525 <= 50.0 && sK1525 > 50.0;
+    const stoch15CrossDown50 = prevK1525 !== null && sK1525 !== null && prevK1525 >= 50.0 && sK1525 < 50.0;
+
+    const noActiveTrades = !trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending));
+
+    const isInitialBuy = noActiveTrades && !state.v50_initialEntryDone && state.v50_trendDir === "BUY" && emaBaselineBuy && stoch15CrossUp50;
+    const isInitialSell = noActiveTrades && !state.v50_initialEntryDone && state.v50_trendDir === "SELL" && emaBaselineSell && stoch15CrossDown50;
+
+    const stoch15FreshCross25Buy = prevK1525 !== null && sK1525 !== null && prevK1525 <= 25.0 && sK1525 > 25.0;
+    const stoch15FreshCross75Sell = prevK1525 !== null && sK1525 !== null && prevK1525 >= 75.0 && sK1525 < 75.0;
+
+    const isReentryBuy = noActiveTrades && Boolean(state.v50_initialEntryDone) && state.v50_trendDir === "BUY" && emaBaselineBuy && stoch15FreshCross25Buy;
+    const isReentrySell = noActiveTrades && Boolean(state.v50_initialEntryDone) && state.v50_trendDir === "SELL" && emaBaselineSell && stoch15FreshCross75Sell;
+
+    if (isInitialBuy) {
+      indicatorsSatisfied = true;
+      signalDirection = "BUY";
+      setupLabel = "V50_INITIAL_ADX20_STOCH200_STOCH15 (BUY)";
+      state.v50_initialEntryDone = true;
+    } else if (isInitialSell) {
+      indicatorsSatisfied = true;
+      signalDirection = "SELL";
+      setupLabel = "V50_INITIAL_ADX20_STOCH200_STOCH15 (SELL)";
+      state.v50_initialEntryDone = true;
+    } else if (isReentryBuy) {
+      indicatorsSatisfied = true;
+      signalDirection = "BUY";
+      setupLabel = "V50_REENTRY_STOCH15_25 (BUY)";
+    } else if (isReentrySell) {
+      indicatorsSatisfied = true;
+      signalDirection = "SELL";
+      setupLabel = "V50_REENTRY_STOCH15_75 (SELL)";
+    }
+
+    // Telemetry updates for dashboard
+    state.adxVal = adxVal;
+    state.v50_adx = adxVal;
+    if (state.v50_trendDir === "BUY") {
+      if (!state.v50_initialEntryDone) {
+        state.armed = { dir: "BUY", lbl: "V50 Trend Armed (ADX: " + (adxVal ? adxVal.toFixed(1) : "N/A") + " >= 20, Stoch200: " + (sK200 ? sK200.toFixed(1) : "N/A") + " > 50)", lvl: currentPrice };
+        state.nextPhase = "V50 Initial BUY Armed — Awaiting Stoch (15,2,5) %K cross > 50 (EMA 100: " + (emaBaselineBuy ? "PASS" : "BLOCK") + ")";
+      } else {
+        state.isReentryMode = true;
+        state.nextPhase = "V50 Awaiting BUY Re-Entry — Await Stoch (15,2,5) %K cross > 25 (EMA 100: " + (emaBaselineBuy ? "PASS" : "BLOCK") + ")";
+      }
+    } else if (state.v50_trendDir === "SELL") {
+      if (!state.v50_initialEntryDone) {
+        state.armed = { dir: "SELL", lbl: "V50 Trend Armed (ADX: " + (adxVal ? adxVal.toFixed(1) : "N/A") + " >= 20, Stoch200: " + (sK200 ? sK200.toFixed(1) : "N/A") + " < 50)", lvl: currentPrice };
+        state.nextPhase = "V50 Initial SELL Armed — Awaiting Stoch (15,2,5) %K cross < 50 (EMA 100: " + (emaBaselineSell ? "PASS" : "BLOCK") + ")";
+      } else {
+        state.isReentryMode = true;
+        state.nextPhase = "V50 Awaiting SELL Re-Entry — Await Stoch (15,2,5) %K cross < 75 (EMA 100: " + (emaBaselineSell ? "PASS" : "BLOCK") + ")";
+      }
+    } else {
+      state.armed = null;
+      if (!adxStrong) {
+        state.nextPhase = "V50 CHOP FILTER ACTIVE: ADX (" + (adxVal !== null ? adxVal.toFixed(1) : "--") + " < 20.0) — Market Sideways / Waiting for Trend Strength";
+      } else {
+        state.nextPhase = "V50 Awaiting Trend Alignment (ADX: " + (adxVal ? adxVal.toFixed(1) : "N/A") + ", Stoch 200: " + (sK200 ? sK200.toFixed(1) : "N/A") + ")";
+      }
+    }
+  }
+
   // 2. STANDARDIZED M5 STOCH 200 (48/52) & M5 STOCH (15,2,5) ENGINE (V100, V50)
   else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || SYMBOL === "R_50" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
     const botPrefix = SYMBOL === "R_50" ? "V50" : "V100";
