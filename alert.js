@@ -5139,8 +5139,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const stoch15FreshCrossUp25 = prevK1525 !== null && sK1525 !== null && prevK1525 <= 25.0 && sK1525 > 25.0;
     const stoch15FreshCrossDown75 = prevK1525 !== null && sK1525 !== null && prevK1525 >= 75.0 && sK1525 < 75.0;
 
-    const reentryBuyTrigger = state.v25_1s_initialDone && stoch200InBuyTrend && stoch15FreshCrossUp25 && emaBaselineBuy;
-    const reentrySellTrigger = state.v25_1s_initialDone && stoch200InSellTrend && stoch15FreshCrossDown75 && emaBaselineSell;
+    const reentryBuyTrigger = state.v25_1s_initialDone && stoch200InBuyTrend && stoch15CrossUp25 && emaBaselineBuy;
+    const reentrySellTrigger = state.v25_1s_initialDone && stoch200InSellTrend && stoch15CrossDown75 && emaBaselineSell;
 
     if (!indicatorsSatisfied) {
       if (reentryBuyTrigger && noActiveTrades) {
@@ -5182,7 +5182,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.isReentryMode = Boolean(state.v25_1s_initialDone);
     state.nextPhase = state.v25_1s_initialDone
       ? `Re-Entry Watch (${state.v25_1s_trendDir === "BUY" ? "Stoch 15 > 25 & Price > EMA100" : "Stoch 15 < 75 & Price < EMA100"})`
-      : `Initial Confluence (Stoch 200 45/55 + Stoch 15 75/25 + EMA100)`;
+      : `Initial Confluence (Stoch 200 45/55 + Stoch 15 25/75 + BB 20 Mid)`;
   }
   // 4. VOLATILITY 100 (1s) MACRO TREND STOCH 200, MACD (25,75,1), EMA 100 & FAST STOCH (5,3,3) RE-ENTRY ENGINE
   else if (STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533") {
@@ -6571,7 +6571,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
       } else {
         blockerReason = `Initial Confluence Mode (Stoch 200: ${sK200?.toFixed(1)}, Stoch 15: ${sK1525?.toFixed(1)}, Price vs BB 20 Mid: ${emaBuy ? "ABOVE" : "BELOW"})`;
-        nextTrigger = "Awaiting any-order Stoch 200 (45/55) + Stoch 15 (75/25) + EMA 100 alignment";
+        nextTrigger = "Awaiting any-order Stoch 200 (45/55) + Stoch 15 (25/75) + BB 20 Mid alignment";
       }
     } else if (STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
       const stochBuy = sK200 !== null && sK200 >= 50.0;
