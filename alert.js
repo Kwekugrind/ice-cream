@@ -161,7 +161,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 5.00,
     maxHardStopPoints: 4.00,
     slType: "M15_FRACTAL",
-    notes: "1.00 lot cTrader minimum; Condition 1: M5 Stoch 200 (48/52) Main Trend Identifier; Condition 2: M5 Stoch (15,2,5) Initial (Lvl 50) & Re-Entry (Lvl 25/75); Profit Management: Hard Broker TP $10.00, Software SL -$4.00 moves to +$0.50 if profit reaches $5.00, Closed-M5 Stoch (30,20,15) %K crossing %D opposite Profit Exit; Early Loss Exits: Opposite M5 Fractal Break in loss, Entry-Hour H1 Adverse Close in loss."
+    notes: "1.00 lot cTrader minimum; Condition 1: M5 Stoch 200 (48/52) Main Trend Identifier; Condition 2: Baseline Price vs M5 EMA 100; Condition 3: M5 Stoch (15,2,5) Initial (Lvl 50) & Re-Entry (Lvl 25/75); Profit Management: Tier 1 Breakeven Shield at +$2.00/+$2.20, Tier 2 Lock at +$3.50, Tier 3 Pre-Target Runner at +$5.00, Hard Broker TP $10.00, Closed-M5 Stoch Momentum Profit Exit; Early Loss Exits: Opposite M5 Fractal Break in loss, Entry-Hour H1 Adverse Close in loss."
   },
     "1HZ100V": {
     symbol: "1HZ100V",
@@ -1913,90 +1913,61 @@ async function manageOpenTradesFastPath() {
     let dailyTargetCeilingHit = false;
     let superRunnerCeilingHit = false;
     const remainingToDailyTarget = Math.max(0, DAILY_PROFIT_TARGET_USD - (state.dailyNetPnl || 0));
-    if (SYMBOL === "R_100") {
-      if (pnl >= 10.00) {
-        dailyTargetCeilingHit = true;
+    // =========================================================================
+    // UNIFIED PROFIT RATCHET & CAPITAL PROTECTION ARCHITECTURE (FLEET-WIDE & VIX 100)
+    // Tier 1: Breakeven Shield (Peak >= $2.00 / $2.20) -> Locks +$0.50 / +$1.00 net floor!
+    // Tier 2: Half-Target / 1:1 Risk Lock (Peak >= $3.50) -> Locks +$2.20 net floor!
+    // Tier 3: Pre-Target Runner (Peak >= $5.00) -> Locks +$3.80 net floor!
+    // =========================================================================
+    if (peak >= 5.00) {
+      // Tier 3: Pre-Target Runner (Peak >= $5.00)
+      openTrade.trendRidingActive = true;
+      const tier3Floor = Math.max(
+        3.80,
+        parseFloat((peak * 0.75).toFixed(2)),
+        parseFloat((peak - 1.50).toFixed(2))
+      );
+      if (!openTrade.lockedPnlFloor || tier3Floor > openTrade.lockedPnlFloor) {
+        openTrade.lockedPnlFloor = tier3Floor;
+        saveTrades(trades);
+        console.log(`[TIER 3 PRE-TARGET RUNNER] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Floor secured at +${openTrade.lockedPnlFloor.toFixed(2)}.`);
       }
-    } else {
-      if (pnl >= DAILY_PROFIT_TARGET_USD || (remainingToDailyTarget > 0 && pnl >= remainingToDailyTarget)) {
-        dailyTargetCeilingHit = true;
-      } else if (pnl >= 12.00) {
-        superRunnerCeilingHit = true;
+    } else if (peak >= 3.50) {
+      // Tier 2: Half-Target Quota / 1:1 Risk Lock (Peak >= $3.50)
+      openTrade.trendRidingActive = true;
+      const tier2Floor = Math.max(
+        2.20,
+        parseFloat((peak * 0.65).toFixed(2)),
+        parseFloat((peak - 1.30).toFixed(2))
+      );
+      if (!openTrade.lockedPnlFloor || tier2Floor > openTrade.lockedPnlFloor) {
+        openTrade.lockedPnlFloor = tier2Floor;
+        saveTrades(trades);
+        console.log(`[TIER 2 HALF-TARGET LOCK] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Base floor locked at +${openTrade.lockedPnlFloor.toFixed(2)} (Guarantees >= $2.20 win).`);
+      }
+    } else if (peak >= 2.00) {
+      // Tier 1: Breakeven Capital Shield (Peak >= $2.00)
+      // Locks +$0.50 (or +$1.00 if peak >= $2.20) net floor: Guarantees trade NEVER turns into a loss!
+      const tier1Floor = peak >= 2.20 ? 1.00 : 0.50;
+      if (!openTrade.lockedPnlFloor || tier1Floor > openTrade.lockedPnlFloor) {
+        openTrade.lockedPnlFloor = tier1Floor;
+        saveTrades(trades);
+        console.log(`[TIER 1 BREAKEVEN SHIELD] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Guaranteed profit floor locked at +${openTrade.lockedPnlFloor.toFixed(2)}.`);
       }
     }
-
-    // =========================================================================
-    // UNIFIED PROFIT RATCHET & BREATHING ROOM ARCHITECTURE
-    // Rule 1: Breathing Zone ($0.00 to $2.19) -> Zero premature exit. Full room for M5 candle wicks.
-    // Rule 2: Breakeven Shield (Peak >= $2.20) -> Locks +$1.00 net floor ($1.20 wick buffer).
-    // Rule 3: Half-Target Lock (Peak >= $3.50) -> Locks +$2.20 net floor ($1.30 wick buffer).
-    // Rule 4: Pre-Target Runner (Peak >= $5.00) -> Locks +$3.80 net floor ($1.20 wick buffer).
-    // Rule 5: Daily Target Strike (pnl >= remainingToDailyTarget or >= $7.00) -> Instant Cash-Out!
-    // =========================================================================
-    if (SYMBOL === "R_100") {
-      // 🛡️ VIX 100 User Directive:
-      // Remove tiered trailing ratchet.
-      // Move software SL to +$0.50 if profit reaches $5.00
-      if (peak >= 5.00) {
-        const r100Floor = 0.50;
-        if (!openTrade.lockedPnlFloor || r100Floor > openTrade.lockedPnlFloor) {
-          openTrade.lockedPnlFloor = r100Floor;
-          saveTrades(trades);
-          console.log(`[R_100 PROFIT PROTECTION] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} >= $5.00 -> Software SL moved to +${openTrade.lockedPnlFloor.toFixed(2)}.`);
-        }
-      }
-    } else {
-      // UNIFIED PROFIT RATCHET & BREATHING ROOM ARCHITECTURE FOR OTHER FLEET INSTRUMENTS
-      if (peak >= 5.00) {
-        // Tier 3: Pre-Target Runner (Peak >= $5.00)
-        openTrade.trendRidingActive = true;
-        const tier3Floor = Math.max(
-          3.80,
-          parseFloat((peak * 0.75).toFixed(2)),
-          parseFloat((peak - 1.50).toFixed(2))
-        );
-        if (!openTrade.lockedPnlFloor || tier3Floor > openTrade.lockedPnlFloor) {
-          openTrade.lockedPnlFloor = tier3Floor;
-          saveTrades(trades);
-          console.log(`[TIER 3 PRE-TARGET RUNNER] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Floor secured at +${openTrade.lockedPnlFloor.toFixed(2)}.`);
-        }
-      } else if (peak >= 3.50) {
-        // Tier 2: Half-Target Quota Lock (Peak >= $3.50)
-        openTrade.trendRidingActive = true;
-        const tier2Floor = Math.max(
-          2.20,
-          parseFloat((peak * 0.65).toFixed(2)),
-          parseFloat((peak - 1.30).toFixed(2))
-        );
-        if (!openTrade.lockedPnlFloor || tier2Floor > openTrade.lockedPnlFloor) {
-          openTrade.lockedPnlFloor = tier2Floor;
-          saveTrades(trades);
-          console.log(`[TIER 2 HALF-TARGET LOCK] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Base floor locked at +${openTrade.lockedPnlFloor.toFixed(2)} (Guarantees >= $2.20 win).`);
-        }
-      } else if (peak >= 2.20) {
-        // Tier 1: Breakeven Capital Shield (Peak >= $2.20)
-        // Locks +$1.00 net floor: Guarantees trade never turns into a loss while giving $1.20 of breathing room for M5 wicks
-        const tier1Floor = 1.00;
-        if (!openTrade.lockedPnlFloor || tier1Floor > openTrade.lockedPnlFloor) {
-          openTrade.lockedPnlFloor = tier1Floor;
-          saveTrades(trades);
-          console.log(`[TIER 1 BREAKEVEN SHIELD] #${openTrade.contractId} Peak PnL +${peak.toFixed(2)} -> Guaranteed profit floor locked at +${openTrade.lockedPnlFloor.toFixed(2)} ($1.20 breathing buffer active).`);
-        }
-      }
-    }
-    // =========================================================================
+// =========================================================================
 
     const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction, openTrade.lots);
 
     const hardStopBreached = isBuy ? currentPrice <= hardStopPrice : currentPrice >= hardStopPrice;
-    const isDynamicRunner = (STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES" || SYMBOL === "R_50" || STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || SYMBOL === "1HZ75V" || STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533" || SYMBOL === "1HZ100V" || STRATEGY_PROFILE === "PROFILE_V25_1S_STOCH200_STOCH15" || SYMBOL === "1HZ25V") && SYMBOL !== "R_100";
+    const isDynamicRunner = (STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES" || SYMBOL === "R_50" || STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || SYMBOL === "1HZ75V" || STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533" || SYMBOL === "1HZ100V" || STRATEGY_PROFILE === "PROFILE_V25_1S_STOCH200_STOCH15" || SYMBOL === "1HZ25V");
     const activeTpTarget = isDynamicRunner ? null : (openTrade.tpPrice || openTrade.fibTpPrice || null);
     let tpHit = false;
     if (activeTpTarget) {
       tpHit = isBuy ? currentPrice >= activeTpTarget : currentPrice <= activeTpTarget;
     }
     // If Trend-Rider is active or Dynamic Runner, do NOT exit on initial TP! (R_100 respects hard $10.00 TP)
-    if ((openTrade.trendRidingActive && SYMBOL !== "R_100") || isDynamicRunner) {
+    if (openTrade.trendRidingActive || isDynamicRunner) {
       tpHit = false;
     }
 
@@ -2785,17 +2756,25 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const envParams = PROFILE.envParams || { period: 50, devPct: 0.05 };
   const env = calculateEnvelopes(candles, envParams.period, envParams.devPct);
 
-  // Middle Band of Bollinger Bands 20 (SMA 20) replacing legacy EMA 100 baseline across all fleet bots
+  // Technical Baselines: True EMA 100, EMA 200 & Bollinger Bands 20
+  const ema100Series = calculateEMA(candles, 100);
+  const ema200Series = calculateEMA(candles, 200);
+  const currentTrueEma100 = ema100Series[si];
+  const currentTrueEma200 = ema200Series[si];
+
   const bb20 = calculateBollingerBands(candles, 20, 2);
   const bb20Mid = bb20.middle;
   const currentBb20Mid = bb20Mid[si];
   const prevBb20Mid = bb20Mid[si - 1];
 
-  // Map ema100 and currentEma100 to BB 20 Middle Band for complete fleet alignment
-  const ema100 = bb20Mid;
-  const currentEma100 = currentBb20Mid;
-  const ema200 = calculateEMA(candles, 200);
-  const currentEma200 = ema200[si];
+  // Instrument-Specific Baseline Assignment:
+  // V25 1s (1HZ25V) explicitly uses Bollinger Bands 20 Middle Band (SMA 20)
+  // All other fleet bots (R_100 Milk, R_75 Lery, 1HZ75V Coffee, R_25 Tea, R_50 Omni, R_10 Test) strictly use true M5 EMA 100
+  const isBb20Instrument = SYMBOL === "1HZ25V" || STRATEGY_PROFILE === "PROFILE_V25_1S_STOCH200_STOCH15";
+  const ema100 = isBb20Instrument ? bb20Mid : ema100Series;
+  const currentEma100 = isBb20Instrument ? currentBb20Mid : currentTrueEma100;
+  const ema200 = ema200Series;
+  const currentEma200 = currentTrueEma200;
 
   // Indicators for V100 1s & V75 1s Architecture
   const adxResult = calculateADX(candles, 14);
@@ -2908,7 +2887,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const pnl = currentPnl;
     // 🛡️ RUNNER IMMUNITY: Trades with PnL >= $3.50 or active Trend-Rider ratchet are managed by the Tiered Dynamic Ratchet
     // and are immune to sensitive M5 indicator exhaustion exits (Stoch 50, Stoch 65/35, CCI 0)
-    const isRunner = SYMBOL === "R_100" ? false : Boolean(t.trendRidingActive || currentPnl >= 3.50 || (t.maxUnrealizedPnL && t.maxUnrealizedPnL >= 4.00));
+    const isRunner = Boolean(t.trendRidingActive || currentPnl >= 3.50 || (t.maxUnrealizedPnL && t.maxUnrealizedPnL >= 4.00));
     const inProfitExhaustion = !isRunner && (currentPnl > 0.00) && (!t.entryEpoch || candles[si].epoch > t.entryEpoch);
     if (inProfitExhaustion) {
       const isCciInstrument = (
@@ -6473,18 +6452,18 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const emaSell = currentEma100 !== null && currentPrice < currentEma100;
       if (trend === "BUY") {
         if (!emaBuy) {
-          blockerReason = `BUY Trend Active (Stoch 200: ${sK200 ? sK200.toFixed(1) : "N/A"}), but Price (${currentPrice.toFixed(2)}) is BELOW EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"}). BUY trades blocked by BB 20 Mid filter`;
-          nextTrigger = `Awaiting Price to cross above BB 20 Mid (${currentEma100 ? currentEma100.toFixed(2) : "N/A"})`;
+          blockerReason = `BUY Trend Active (Stoch 200: ${sK200 ? sK200.toFixed(1) : "N/A"}), but Price (${currentPrice.toFixed(2)}) is BELOW EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"}). BUY trades blocked by EMA 100 filter`;
+          nextTrigger = `Awaiting Price to cross above EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"})`;
         } else {
-          blockerReason = `BUY Trend & BB 20 Mid Aligned (Stoch 200: ${sK200 ? sK200.toFixed(1) : "N/A"} > 48, Price > BB 20 Mid)`;
+          blockerReason = `BUY Trend & EMA 100 Aligned (Stoch 200: ${sK200 ? sK200.toFixed(1) : "N/A"} > 48, Price > EMA 100)`;
           nextTrigger = isInitialDone ? `Awaiting Stoch (15,2,5) %K (${sK1525 ? sK1525.toFixed(1) : "N/A"}) oversold pullback cross > 25 for BUY Re-Entry` : `Awaiting Stoch (15,2,5) Level 50 cross for Initial BUY`;
         }
       } else {
         if (!emaSell) {
-          blockerReason = `SELL Trend Active (Stoch 200: ${sK200 ? sK200.toFixed(1) : "N/A"}), but Price (${currentPrice.toFixed(2)}) is ABOVE EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"}). SELL trades blocked by BB 20 Mid filter`;
-          nextTrigger = `Awaiting Price to cross below BB 20 Mid (${currentEma100 ? currentEma100.toFixed(2) : "N/A"})`;
+          blockerReason = `SELL Trend Active (Stoch 200: ${sK200 ? sK200.toFixed(1) : "N/A"}), but Price (${currentPrice.toFixed(2)}) is ABOVE EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"}). SELL trades blocked by EMA 100 filter`;
+          nextTrigger = `Awaiting Price to cross below EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"})`;
         } else {
-          blockerReason = `SELL Trend & BB 20 Mid Aligned (Stoch 200: ${sK200 ? sK200.toFixed(1) : "N/A"} < 52, Price < BB 20 Mid)`;
+          blockerReason = `SELL Trend & EMA 100 Aligned (Stoch 200: ${sK200 ? sK200.toFixed(1) : "N/A"} < 52, Price < EMA 100)`;
           nextTrigger = isInitialDone ? `Awaiting Stoch (15,2,5) %K (${sK1525 ? sK1525.toFixed(1) : "N/A"}) overbought rally cross < 75 for SELL Re-Entry` : `Awaiting Stoch (15,2,5) Level 50 cross for Initial SELL`;
         }
       }
@@ -6506,8 +6485,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         nextTrigger = `Awaiting fresh Stoch (200,1,1) %K cross < 50 (${remMin}m left in 20m window)`;
       } else if (stochBuy && cciBuy) {
         if (!emaBuy) {
-          blockerReason = `BUY Trend & CCI Aligned, but Price (${currentPrice.toFixed(2)}) is BELOW EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"}). BUY trades blocked by BB 20 Mid filter`;
-          nextTrigger = `Awaiting Price to cross above BB 20 Mid (${currentEma100 ? currentEma100.toFixed(2) : "N/A"})`;
+          blockerReason = `BUY Trend & CCI Aligned, but Price (${currentPrice.toFixed(2)}) is BELOW EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"}). BUY trades blocked by EMA 100 filter`;
+          nextTrigger = `Awaiting Price to cross above EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"})`;
         } else {
           blockerReason = `BUY Trend, CCI & EMA 100 Aligned (Stoch 200: ${sK.toFixed(1)} >= 50, CCI 100: ${cVal.toFixed(1)} >= 0, Price > BB 20 Mid)`;
           nextTrigger = state.v25_initialBuyDone ? `Awaiting Stoch (15,2,5) %K (${sK1525 !== null ? sK1525.toFixed(1) : "N/A"}) cross > 25 for BUY Re-Entry` : `Awaiting fresh CCI 100 cross > 0 for Initial BUY`;
@@ -6517,8 +6496,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         nextTrigger = "Awaiting fresh CCI 100 cross above 0";
       } else if (!stochBuy && !cciBuy) {
         if (!emaSell) {
-          blockerReason = `SELL Trend & CCI Aligned, but Price (${currentPrice.toFixed(2)}) is ABOVE EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"}). SELL trades blocked by BB 20 Mid filter`;
-          nextTrigger = `Awaiting Price to cross below BB 20 Mid (${currentEma100 ? currentEma100.toFixed(2) : "N/A"})`;
+          blockerReason = `SELL Trend & CCI Aligned, but Price (${currentPrice.toFixed(2)}) is ABOVE EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"}). SELL trades blocked by EMA 100 filter`;
+          nextTrigger = `Awaiting Price to cross below EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"})`;
         } else {
           blockerReason = `SELL Trend, CCI & EMA 100 Aligned (Stoch 200: ${(sK !== null ? sK.toFixed(1) : "N/A")} <= 50, CCI 100: ${(cVal !== null ? cVal.toFixed(1) : "N/A")} <= 0, Price < BB 20 Mid)`;
           nextTrigger = state.v25_initialSellDone ? `Awaiting Stoch (15,2,5) %K (${sK1525 !== null ? sK1525.toFixed(1) : "N/A"}) cross < 75 for SELL Re-Entry` : `Awaiting fresh CCI 100 cross < 0 for Initial SELL`;
@@ -6533,8 +6512,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const emaSell = currentEma100 !== null && currentPrice < currentEma100;
       if (stochBuy) {
         if (!emaBuy) {
-          blockerReason = `BUY Trend Active (Stoch 200: ${(sK !== null ? sK.toFixed(1) : "N/A")} >= 50.0), but Price (${currentPrice.toFixed(2)}) is BELOW EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"}). BUY trades blocked by BB 20 Mid filter`;
-          nextTrigger = `Awaiting Price to cross above BB 20 Mid (${currentEma100 ? currentEma100.toFixed(2) : "N/A"})`;
+          blockerReason = `BUY Trend Active (Stoch 200: ${(sK !== null ? sK.toFixed(1) : "N/A")} >= 50.0), but Price (${currentPrice.toFixed(2)}) is BELOW EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"}). BUY trades blocked by EMA 100 filter`;
+          nextTrigger = `Awaiting Price to cross above EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"})`;
         } else {
           blockerReason = `BUY Trend & BB 20 Mid Aligned (Stoch 200: ${(sK !== null ? sK.toFixed(1) : "N/A")} >= 50.0, Price > BB 20 Mid)`;
           nextTrigger = state.v50_initialBuyDone
@@ -6543,8 +6522,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
       } else {
         if (!emaSell) {
-          blockerReason = `SELL Trend Active (Stoch 200: ${(sK !== null ? sK.toFixed(1) : "N/A")} <= 50.0), but Price (${currentPrice.toFixed(2)}) is ABOVE EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"}). SELL trades blocked by BB 20 Mid filter`;
-          nextTrigger = `Awaiting Price to cross below BB 20 Mid (${currentEma100 ? currentEma100.toFixed(2) : "N/A"})`;
+          blockerReason = `SELL Trend Active (Stoch 200: ${(sK !== null ? sK.toFixed(1) : "N/A")} <= 50.0), but Price (${currentPrice.toFixed(2)}) is ABOVE EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"}). SELL trades blocked by EMA 100 filter`;
+          nextTrigger = `Awaiting Price to cross below EMA 100 (${currentEma100 ? currentEma100.toFixed(2) : "N/A"})`;
         } else {
           blockerReason = `SELL Trend & BB 20 Mid Aligned (Stoch 200: ${(sK !== null ? sK.toFixed(1) : "N/A")} <= 50.0, Price < BB 20 Mid)`;
           nextTrigger = state.v50_initialSellDone
