@@ -9501,3 +9501,22 @@ In its place, the **Closed-M5 Stoch (15,2,5) Level 40/60 Loss Invalidation Exit*
   If a SELL trade is in negative territory and Stoch (15,2,5) %K rises above **40.0**, bearish momentum is confirmed shattered, and the trade is liquidated.
 * **Universal State Reset & Reversal Arming:**
   On liquidation, `state.openTrade = null` and `onTradeClosedCleanup(candles[si].epoch)` are guaranteed to execute, resetting all latch states and arming reversal channels cleanly.
+
+
+## 18. TRADER MANDATE (OCT 27, 2026) — COMPLETE PURGE OF OBSOLETE RULES & UNIVERSAL STOCH (30,20,15) PROFIT ENGINE
+
+### A. Rules Purged Completely Fleet-Wide (Zero Trace Remaining):
+1. **Profit Protection & Trailing Ratchet:** Completely purged all tiered ratchet brackets, dynamic runners, and partial profit locks.
+2. **Rescue Retracement Exit & All Rescue Logic:** Completely purged all rescue functions, state keys (`rescueStochArmed`), and second position logic across all bots.
+3. **Closed-M5 Stoch (25,2,5) 65/35 Profit Exit:** Completely purged from all bots.
+4. **Entry-Hour H1 Adverse Close Exit:** Completely purged all `evaluateH1AdverseClose` checks across all instruments.
+5. **Closed-M5 Stoch (15,2,5) Level 40/60 Invalidation Exit:** Completely purged from all bot profile exit logic.
+
+### B. The Sole Universal Fleet-Wide Profit Management Rule:
+**Closed-M5 Stoch (30,20,15 Simple) Opposite %K/%D Level 20/80 Cross & Touch Engine:**
+- **Software SL Move to +$0.50 Floor:**
+  - For **BUY** trades in profit (`currentPnl > 0`): If closed M5 Stoch (30,20,15) `%K >= 80.0`, move Software SL to **+$0.50**.
+  - For **SELL** trades in profit (`currentPnl > 0`): If closed M5 Stoch (30,20,15) `%K <= 20.0`, move Software SL to **+$0.50**.
+- **Profit Close on Opposite %K/%D Cross with Level 80 / 20:**
+  - For **BUY** trades in profit: If `%K` crosses `%D` in opposite (bearish) direction AND crosses level 80 (`%K < %D` and `%K < 80.0`), close trade immediately.
+  - For **SELL** trades in profit: If `%K` crosses `%D` in opposite (bullish) direction AND crosses level 20 (`%K > %D` and `%K > 20.0`), close trade immediately.
