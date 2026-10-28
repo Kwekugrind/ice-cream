@@ -138,7 +138,7 @@ export const INSTRUMENT_PROFILES = {
     trailBufferUsd: 1.20,
     maxHardStopPoints: 80.0,
     slType: "M15_FRACTAL",
-    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Baseline Price vs M5 EMA 100; Condition 3: Trigger M5 Stoch (30,2,5 Simple) %K cross Level 50 (±3 candles tolerance from Stoch 100 cross or simultaneous); Re-Entry: Stoch 100 aligned + fresh M5 Stoch (15,2,5 Simple) %K cross > 20 (BUY) / < 80 (SELL) with Price beyond BB 20 Mid."
+    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Baseline Price vs M5 EMA 100; Condition 3: Trigger M5 Stoch (30,2,5 Simple) %K cross Level 50; Re-Entry: Stoch 100 aligned + fresh M5 Stoch (15,2,5 Simple) %K cross > 25 (BUY) / < 75 (SELL) with Price beyond EMA 100."
   },
   "R_100": {
     symbol: "R_100",
@@ -5828,7 +5828,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
       if (stoch100Buy) {
         if (!state.v25_initialBuyDone) {
-          blockerReason = `Macro Trend Bullish (Stoch 100: ${sK100.toFixed(1)} > 50, Price vs BB 20 Mid: ${emaBuy ? "ABOVE" : "BELOW"})`;
+          blockerReason = `Macro Trend Bullish (Stoch 100: ${sK100.toFixed(1)} > 50, Price vs EMA 100: ${emaBuy ? "ABOVE" : "BELOW"})`;
           nextTrigger = `Awaiting Stoch (30,2,5) %K (${sK3025 !== null ? sK3025.toFixed(1) : "N/A"}) cross > 50 (within 3 candles of Stoch 100 cross) for Initial BUY`;
         } else {
           const touched50 = Boolean(state.v25_stoch302515_touched_50_BUY || (sK302515 !== null && sK302515 <= 50.0));
@@ -5839,7 +5839,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
       } else if (stoch100Sell) {
         if (!state.v25_initialSellDone) {
-          blockerReason = `Macro Trend Bearish (Stoch 100: ${sK100.toFixed(1)} < 50, Price vs BB 20 Mid: ${emaSell ? "BELOW" : "ABOVE"})`;
+          blockerReason = `Macro Trend Bearish (Stoch 100: ${sK100.toFixed(1)} < 50, Price vs EMA 100: ${emaSell ? "BELOW" : "ABOVE"})`;
           nextTrigger = `Awaiting Stoch (30,2,5) %K (${sK3025 !== null ? sK3025.toFixed(1) : "N/A"}) cross < 50 (within 3 candles of Stoch 100 cross) for Initial SELL`;
         } else {
           const touched50 = Boolean(state.v25_stoch302515_touched_50_SELL || (sK302515 !== null && sK302515 >= 50.0));
@@ -5862,19 +5862,19 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
       if (stoch100Buy) {
         if (!state.v75_1s_initialBuyDone) {
-          blockerReason = `Macro Trend Bullish (Stoch 100: ${sK100.toFixed(1)} > 50, Price vs BB 20 Mid: ${emaBuy ? "ABOVE" : "BELOW"})`;
+          blockerReason = `Macro Trend Bullish (Stoch 100: ${sK100.toFixed(1)} > 50, Price vs EMA 100: ${emaBuy ? "ABOVE" : "BELOW"})`;
           nextTrigger = `Awaiting Stoch (30,2,5) %K (${sK3025 !== null ? sK3025.toFixed(1) : "N/A"}) cross > 50 (within 3 candles of Stoch 100 cross) for Initial BUY`;
         } else {
           blockerReason = `BUY Trend Active (Stoch 100: ${sK100.toFixed(1)} > 50). Initial BUY already taken.`;
-          nextTrigger = `Awaiting Aux Stoch (15,2,5 Simple) %K (${sK1525 !== null ? sK1525.toFixed(1) : "N/A"}) cross > 20 for BUY Re-Entry`;
+          nextTrigger = `Awaiting Aux Stoch (15,2,5 Simple) %K (${sK1525 !== null ? sK1525.toFixed(1) : "N/A"}) cross > 25 for BUY Re-Entry`;
         }
       } else if (stoch100Sell) {
         if (!state.v75_1s_initialSellDone) {
-          blockerReason = `Macro Trend Bearish (Stoch 100: ${sK100.toFixed(1)} < 50, Price vs BB 20 Mid: ${emaSell ? "BELOW" : "ABOVE"})`;
+          blockerReason = `Macro Trend Bearish (Stoch 100: ${sK100.toFixed(1)} < 50, Price vs EMA 100: ${emaSell ? "BELOW" : "ABOVE"})`;
           nextTrigger = `Awaiting Stoch (30,2,5) %K (${sK3025 !== null ? sK3025.toFixed(1) : "N/A"}) cross < 50 (within 3 candles of Stoch 100 cross) for Initial SELL`;
         } else {
           blockerReason = `SELL Trend Active (Stoch 100: ${sK100.toFixed(1)} < 50). Initial SELL already taken.`;
-          nextTrigger = `Awaiting Aux Stoch (15,2,5 Simple) %K (${sK1525 !== null ? sK1525.toFixed(1) : "N/A"}) cross < 80 for SELL Re-Entry`;
+          nextTrigger = `Awaiting Aux Stoch (15,2,5 Simple) %K (${sK1525 !== null ? sK1525.toFixed(1) : "N/A"}) cross < 75 for SELL Re-Entry`;
         }
       } else {
         blockerReason = "Awaiting Stoch 100 trend definition";
