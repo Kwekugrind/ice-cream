@@ -151,7 +151,7 @@ All active bots use a standard **$5.00 Stake** per trade, specifically engineere
 | Bot Label | PM2 Name | Server | Directory Path | Symbol | Symbol ID | Lot Size | Stake | Strategy Gate | Base TP ($3.50 Net) | Daily Strike TP | Calibrated Soft SL |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | **Lery's Alerts** | `lery-v75` | S1 | `~/trading-bots/Lery-s-Alerts` | Volatility 75 | `R_75` | 0.01 Lots | $5.00 | M5 EMA 100/200 Breakout (80/20) & EMA 100 Touch Retrace (20/80) | 350.0 pts | 700.0 pts | -$2.00 |
-| **Coffee Machine** | `coffee-v75-1s` | S1 | `~/trading-bots/coffee` | Volatility 75 (1s) | `1HZ75V` | 0.05 Lots | $5.00 | M5 Stoch 100 Trend + Stoch (30,2,5) Level 50 Cross (±3 candles) + EMA 100 Filter + Stoch (15,2,5) 25/75 Re-Entry | 70.0 pts | 140.0 pts | -$2.00 |
+| **Coffee Machine** | `coffee-v75-1s` | S1 | `~/trading-bots/coffee` | Volatility 75 (1s) | `1HZ75V` | 0.05 Lots | $5.00 | M5 Stoch 100 Trend + Stoch (30,2,5) Level 50 Cross (±3 candles) + BB 20 Mid Filter + Stoch (15,2,5) 25/75 Re-Entry (Stoch 30 Cross 50 Unlocks Re-Entry) | 70.0 pts | 140.0 pts | -$2.00 |
 | **Milk Machine** | `milk-v100` | S1 | `~/trading-bots/milk` | Volatility 100 | `R_100` | 1.00 Lot | $5.00 | M5 Stoch 200 (48/52) Trend + EMA 100 Baseline + M5 Stoch (15,2,5) Initial Lvl 50 & 25/75 Re-Entry + Tiered Trailing Ratchet | 10.00 pts | 10.00 pts | -$4.00 (Tier 1 Shield @ +$2.00, Tier 2 @ +$3.50) |
 | **Tea Machine** | `tea-v25` | S1 | `~/trading-bots/tea` | Volatility 25 | `R_25` | 0.50 Lots | $5.00 | M5 Stoch 100 Trend + Stoch (30,2,5) Level 50 Cross (±3 candles) + EMA 100 Filter + Stoch (30,25,15) Re-Entry | 7.00 pts | 14.00 pts | -$2.00 |
 | **Ice Cream** | `ice-cream-100-1s` | S2 | `~/trading-bots/ice-cream` | Volatility 25 (1s) | `1HZ25V` | 0.005 Lots | $5.00 | M5 Stoch 200 (45/55) + Stoch (15,2,5) (25/75) (Cross > 25.0 BUY / < 75.0 SELL) + BB 20 Mid Filter + Pullback Re-Entry (25/75) | 525.0 pts | 1050.0 pts | -$2.00 |
@@ -9310,24 +9310,23 @@ The trader specified a structural price action invalidation engine based on cons
 #### Consolidated Authoritative Rules for Volatility 75 (1s) (`1HZ75V`):
 1. **Indicator Configuration:**
    * **Macro Trend Identifier:** Closed M5 Stochastic `(100, 1, 1)`
-   * **Baseline Trend Filter:** M5 EMA `100`
+   * **Baseline Trend Filter:** M5 Bollinger Bands `(20, 2)` Middle Band (SMA 20)
    * **Trigger Indicator:** Closed M5 Stochastic `(30, 2, 5 Simple)` with Level `50.0`
    * **Re-Entry Indicator:** Closed M5 Stochastic `(15, 2, 5 Simple)` with Levels `25.0 / 75.0`
 2. **Initial Entry Engine (Dual-Stoch ±3 Candle Timing Window):**
-   * **BUY:** Stoch (100, 1, 1) %K crosses above Level 50.0 (stays armed while `>= 50.0`) + Price > M5 EMA 100 + Stoch (30, 2, 5 Simple) %K freshly crosses above Level 50.0.
-   * **SELL:** Stoch (100, 1, 1) %K crosses below Level 50.0 (stays armed while `<= 50.0`) + Price < M5 EMA 100 + Stoch (30, 2, 5 Simple) %K freshly crosses below Level 50.0.
+   * **BUY:** Stoch (100, 1, 1) %K crosses above Level 50.0 (stays armed while `>= 50.0`) + Price > M5 BB 20 Mid + Stoch (30, 2, 5 Simple) %K freshly crosses above Level 50.0.
+   * **SELL:** Stoch (100, 1, 1) %K crosses below Level 50.0 (stays armed while `<= 50.0`) + Price < M5 BB 20 Mid + Stoch (30, 2, 5 Simple) %K freshly crosses below Level 50.0.
    * **Timing Tolerance:** The Stoch 30 Level 50 cross may occur up to 3 M5 candles before Stoch 100 crosses Level 50, up to 3 candles after, or simultaneously (`|epoch100 - epoch30| <= 900s`).
-   * **Baseline Requirement:** Price must be beyond EMA 100 at trigger; if not, initial entry is skipped to await re-entry.
-3. **Re-Entry Engine (After Initial Trade Has Closed):**
-   * **Trend Alignment:** Macro Trend remains valid (Stoch 100 %K `>= 50.0` for BUY / `<= 50.0` for SELL) + Price confirmed beyond EMA 100.
+   * **Baseline Requirement:** Price must be beyond BB 20 Mid at trigger; if not, initial entry is skipped to await re-entry.
+   * **Freeing Re-Entry Deadlock (User Mandate):** If the bot could not take the initial entry, but initial entry trigger Stoch (30, 2, 5 Simple) crosses Level 50, the bot immediately unlocks re-entries (`initialBuyDone = true` / `initialSellDone = true`) so subsequent qualifying re-entry signals can be executed without deadlock.
+3. **Re-Entry Engine (After Initial Trade Has Closed or Been Unlocked):**
+   * **Trend Alignment:** Macro Trend remains valid (Stoch 100 %K `>= 50.0` for BUY / `<= 50.0` for SELL) + Price confirmed beyond BB 20 Mid.
    * **BUY Trigger:** Fresh M5 Stochastic (15, 2, 5 Simple) %K cross **above Level 25.0** (`prevK <= 25.0 && sK > 25.0`).
    * **SELL Trigger:** Fresh M5 Stochastic (15, 2, 5 Simple) %K cross **below Level 75.0** (`prevK >= 75.0 && sK < 75.0`).
-4. **Trade Management & Early Reversal Pivot Engine:**
+4. **Trade Management & Profit Engine:**
    * **Software SL:** -$2.00 (40.0 pts on 0.05 lots) | Hard Broker SL: -$5.00 (100.0 pts).
    * **Base TP:** +$3.50 net (70.0 pts) | **Daily Strike TP:** +$7.00 net (140.0 pts).
-   * **Stoch 100 & Stoch (30,2,5) %K/%D Adverse Invalidation Exit:** Evaluated on every post-entry confirmed closed M5 candle while not an active runner. If `Stoch (100, 1, 1) %K` crosses to the opposite side of Level 50 (`< 50.0` for BUY / `> 50.0` for SELL) **AND** `Stoch (30, 2, 5 Simple) %K` crosses `%D` in the opposite direction (`%K < %D` for BUY / `%K > %D` for SELL), the position is liquidated immediately on that confirmed closed candle to cut losses and protect capital.
-   * **Immediate Opposite Direction Execution:** Upon invalidation liquidation, all directional flags (`state.v75_1s_initialBuyDone`, `state.v75_1s_initialSellDone`) are immediately reset to `false`. If on that candle or subsequent candles, `Stoch (30, 2, 5 Simple) %K` crosses Level 50 and satisfies all conditions for an opposite trade (within the 3-candle tolerance window of the Stoch 100 cross and confirmed beyond M5 EMA 100), the bot takes the opposite trade immediately.
-   * **Additional Invalidation Guards:** 3 Consecutive Adverse M5 Closes (in loss) and Entry-Hour H1 Adverse Close Exit.
+   * **Profit Management Engine:** Closed-M5 Stoch (30,20,15) Opposite %K/%D Level 20/80 Profit Exit ($0.50 SL ratchet on touch of 80 for BUY / 20 for SELL; exit on opposite cross & cross beyond 80/20).
 
 ---
 
