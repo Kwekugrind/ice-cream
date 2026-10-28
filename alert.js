@@ -2542,7 +2542,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   // Instrument-Specific Baseline Assignment:
   // V25 1s (1HZ25V) explicitly uses Bollinger Bands 20 Middle Band (SMA 20)
   // All other fleet bots (R_100 Milk, R_75 Lery, 1HZ75V Coffee, R_25 Tea, R_50 Omni, R_10 Test) strictly use true M5 EMA 100
-  const isBb20Instrument = SYMBOL === "1HZ25V" || SYMBOL === "1HZ75V" || STRATEGY_PROFILE === "PROFILE_V75_1S_STOCH100_STOCH30" || STRATEGY_PROFILE === "PROFILE_V25_1S_STOCH200_STOCH15";
+  const isBb20Instrument = SYMBOL === "1HZ25V" || STRATEGY_PROFILE === "PROFILE_V25_1S_STOCH200_STOCH15";
   const ema100 = isBb20Instrument ? bb20Mid : ema100Series;
   const currentEma100 = isBb20Instrument ? currentBb20Mid : currentTrueEma100;
   const ema200 = ema200Series;
@@ -4735,11 +4735,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
   }
-  // 3.5 VOLATILITY 75 (1s) INDEX (1HZ75V COFFEE MACHINE) — STOCH 100, STOCH 30 (±3 CANDLES), BB 20 MID & STOCH 15 RE-ENTRY (25/75)
+  // 3.5 VOLATILITY 75 (1s) INDEX (1HZ75V COFFEE MACHINE) — STOCH 100, STOCH 30 (±3 CANDLES), EMA 100 & STOCH 15 RE-ENTRY (25/75)
   else if (STRATEGY_PROFILE === "PROFILE_V75_1S_STOCH100_STOCH30" || ((STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15") && SYMBOL === "1HZ75V")) {
     const prefix = "V75_1S";
 
-    // 1. Trend & Baseline Alignments (BB 20 Middle Band Baseline Filter)
+    // 1. Trend & Baseline Alignments (EMA 100 Baseline Filter)
     const stoch100AlignedBuy = sK100 !== null && sK100 >= 50.0;
     const stoch100AlignedSell = sK100 !== null && sK100 <= 50.0;
     const emaBaselineBuy = currentEma100 !== null && currentPrice > currentEma100; // currentEma100 = BB 20 Mid for 1HZ75V
@@ -4854,13 +4854,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.v75_1s_initialSellDone = true;
     }
 
-    // Re-Entry BUY Trigger: While Stoch 100 aligned > 50, Price > BB 20 Mid, initialBuyDone, fresh Stoch (15,2,5) %K cross > 25.0
+    // Re-Entry BUY Trigger: While Stoch 100 aligned > 50, Price > EMA 100, initialBuyDone, fresh Stoch (15,2,5) %K cross > 25.0
     if (!indicatorsSatisfied && stoch100AlignedBuy && emaBaselineBuy && Boolean(state.v75_1s_initialBuyDone) && prevK1525 !== null && sK1525 !== null && prevK1525 <= 25.0 && sK1525 > 25.0 && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
       setupLabel = `${prefix}_REENTRY_STOCH15_25 (BUY)`;
     }
-    // Re-Entry SELL Trigger: While Stoch 100 aligned < 50, Price < BB 20 Mid, initialSellDone, fresh Stoch (15,2,5) %K cross < 75.0
+    // Re-Entry SELL Trigger: While Stoch 100 aligned < 50, Price < EMA 100, initialSellDone, fresh Stoch (15,2,5) %K cross < 75.0
     else if (!indicatorsSatisfied && stoch100AlignedSell && emaBaselineSell && Boolean(state.v75_1s_initialSellDone) && prevK1525 !== null && sK1525 !== null && prevK1525 >= 75.0 && sK1525 < 75.0 && noActiveTrades) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
@@ -4895,7 +4895,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     if (stoch100AlignedBuy) {
       if (!state.v75_1s_initialBuyDone) {
         state.armed = { dir: "BUY", lbl: `V75-1s Initial BUY Armed (Stoch 100: ${sK100.toFixed(1)} > 50)`, lvl: currentPrice };
-        state.nextPhase = `V75-1s Initial BUY Armed — Awaiting Stoch (30,2,5) %K (${sK3025.toFixed(1)}) cross > 50 (within 3 candles of Stoch 100 cross) & Price > BB 20 Mid`;
+        state.nextPhase = `V75-1s Initial BUY Armed — Awaiting Stoch (30,2,5) %K (${sK3025.toFixed(1)}) cross > 50 (within 3 candles of Stoch 100 cross) & Price > EMA 100`;
       } else {
         const inPullback = sK1525 !== null && sK1525 <= 25.0;
         if (inPullback && emaBaselineBuy) {
@@ -4909,7 +4909,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     } else if (stoch100AlignedSell) {
       if (!state.v75_1s_initialSellDone) {
         state.armed = { dir: "SELL", lbl: `V75-1s Initial SELL Armed (Stoch 100: ${sK100.toFixed(1)} < 50)`, lvl: currentPrice };
-        state.nextPhase = `V75-1s Initial SELL Armed — Awaiting Stoch (30,2,5) %K (${sK3025.toFixed(1)}) cross < 50 (within 3 candles of Stoch 100 cross) & Price < BB 20 Mid`;
+        state.nextPhase = `V75-1s Initial SELL Armed — Awaiting Stoch (30,2,5) %K (${sK3025.toFixed(1)}) cross < 50 (within 3 candles of Stoch 100 cross) & Price < EMA 100`;
       } else {
         const inPullback = sK1525 !== null && sK1525 >= 75.0;
         if (inPullback && emaBaselineSell) {
