@@ -1994,6 +1994,8 @@ async function manageOpenTradesFastPath() {
       openTrade.resultSource = resultSource;
       openTrade.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
       openTrade.serverPnl = serverPnl;
+      openTrade.exitReason = reason;
+      openTrade.reason = reason;
       state.openTrade = null;
       onTradeClosedCleanup(Math.floor(Date.now() / 1000));
       
@@ -2427,6 +2429,21 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           t.amount = rec.profit;
           t.resultSource = "ctrader_deal_confirmed";
           t.closeTime = new Date(rec.sellTime * 1000).toISOString().replace("T", " ").substring(0, 19);
+          if (!t.exitReason) {
+            if (t.result === "WIN") {
+              if (rec.profit >= 9.0) t.exitReason = "$10.00 Hard Broker TP";
+              else if (rec.profit >= 6.5) t.exitReason = "+$7.00 Daily Strike TP";
+              else if (rec.profit >= 3.2) t.exitReason = "+$3.50 Base Take Profit";
+              else if (t.lockedPnlFloor && t.lockedPnlFloor >= 0.5) t.exitReason = "Closed-M5 Stoch (30,20,15) Level 20/80 Profit Exit";
+              else t.exitReason = "Closed-M5 Stoch (30,20,15) Level 20/80 Profit Exit";
+            } else {
+              if (rec.profit <= -4.8) t.exitReason = "-$5.00 Hard Broker SL";
+              else if (rec.profit <= -3.5) t.exitReason = "-$4.00 Software Stop Loss";
+              else if (rec.profit <= -1.8) t.exitReason = "-$2.00 Software Stop Loss";
+              else t.exitReason = "Early Invalidation Exit";
+            }
+            t.reason = t.exitReason;
+          }
           state.openTrade = null;
           const diff = hadResult ? (rec.profit - oldPnl) : rec.profit;
           state.dailyNetPnl = Number(((state.dailyNetPnl || 0) + diff).toFixed(2));
