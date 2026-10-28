@@ -9296,7 +9296,7 @@ The trader specified a structural price action invalidation engine based on cons
   > A. Indicators
   > 1. Macro Trend Identifier: Stochastic (100, 1, 1)
   > 2. Trigger Indicator: Stochastic (30, 2, 5 Simple) level 50
-  > 3. re entry indicator: Stochastic (15, 2, 5 Simple) level 20/80
+  > 3. re entry indicator: Stochastic (15, 2, 5 Simple) level 25/75
   > 
   > B. Initial Entry Rules (Buy/Sell)
   > 1. Condition 1 (Macro Trend Arming): Closed M5 Stochastic (100, 1, 1) %K crosses above/below Level 50.0. It stays armed as long as it remains above/below 50.
@@ -9305,7 +9305,7 @@ The trader specified a structural price action invalidation engine based on cons
   > 
   > C. Re-Entry Rules (After Initial Trade Has Closed)
   > While the Macro Trend remains valid (Stoch 100 aligned)
-  > Fresh M5 Stochastic (15, 2, 5 Simple) %K crosses above Level 20 for buy or below level 80 for sell."
+  > Fresh M5 Stochastic (15, 2, 5 Simple) %K crosses above Level 25 for buy or below level 75 for sell."
 
 #### Consolidated Authoritative Rules for Volatility 75 (1s) (`1HZ75V`):
 1. **Indicator Configuration:**
