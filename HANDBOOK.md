@@ -151,7 +151,7 @@ All active bots use a standard **$5.00 Stake** per trade, specifically engineere
 | Bot Label | PM2 Name | Server | Directory Path | Symbol | Symbol ID | Lot Size | Stake | Strategy Gate | Base TP ($3.50 Net) | Daily Strike TP | Calibrated Soft SL |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | **Lery's Alerts** | `lery-v75` | S1 | `~/trading-bots/Lery-s-Alerts` | Volatility 75 | `R_75` | 0.01 Lots | $5.00 | M5 EMA 100/200 Breakout (80/20) & EMA 100 Touch Retrace (20/80) | 350.0 pts | 700.0 pts | -$2.00 |
-| **Coffee Machine** | `coffee-v75-1s` | S1 | `~/trading-bots/coffee` | Volatility 75 (1s) | `1HZ75V` | 0.05 Lots | $5.00 | M5 Stoch 100 Trend + Stoch (30,2,5) Level 50 Cross (±3 candles) + EMA 100 Filter + Stoch (15,2,5) 25/75 Re-Entry (Stoch 30 Cross 50 Unlocks Re-Entry) | 70.0 pts | 140.0 pts | -$2.00 |
+| **Coffee Machine** | `coffee-v75-1s` | S1 | `~/trading-bots/coffee` | Volatility 75 (1s) | `1HZ75V` | 0.05 Lots | $5.00 | M5 Stoch 100 Trend + Stoch (15,1,1) Fresh 50 Cross Initial & 20/80 Re-Entry (No EMA Filter) + Level 80/20 Touch Move SL to +$0.30 & Opposite Level 50 Profit Exit | 70.0 pts | 140.0 pts | -$2.00 |
 | **Milk Machine** | `milk-v100` | S1 | `~/trading-bots/milk` | Volatility 100 | `R_100` | 1.00 Lot | $5.00 | M5 Stoch 200 (48/52) Trend + EMA 100 Baseline + M5 Stoch (15,2,5) Initial Lvl 50 & 25/75 Re-Entry + Tiered Trailing Ratchet | 10.00 pts | 10.00 pts | -$4.00 (Tier 1 Shield @ +$2.00, Tier 2 @ +$3.50) |
 | **Tea Machine** | `tea-v25` | S1 | `~/trading-bots/tea` | Volatility 25 | `R_25` | 0.50 Lots | $5.00 | M5 Stoch 100 Trend + Stoch (30,2,5) Level 50 Cross (±3 candles) + EMA 100 Filter + Stoch (30,25,15) Re-Entry | 7.00 pts | 14.00 pts | -$2.00 |
 | **Ice Cream** | `ice-cream-100-1s` | S2 | `~/trading-bots/ice-cream` | Volatility 25 (1s) | `1HZ25V` | 0.005 Lots | $5.00 | M5 Stoch 200 (45/55) + Stoch (15,2,5) (25/75) (Cross > 25.0 BUY / < 75.0 SELL) + BB 20 Mid Filter + Pullback Re-Entry (25/75) | 525.0 pts | 1050.0 pts | -$2.00 |
@@ -9286,6 +9286,41 @@ The trader specified a structural price action invalidation engine based on cons
 #### Chronological Verbatim Directives:
 * **Step 9445 (`2026-10-24 10:40:00 UTC` — Re-Entry Level Upgrade to 25/75):**
   > "1. Please lets update the re entry Stochastic (15, 2, 5 Simple) indicator levels to 25/75 in stead of 20/80 for vix 75 1s"
+* **Step 9550 (`2026-10-28 23:30:00 UTC` — Authoritative Stoch (15,1,1) Overhaul & Independent Trade Management):**
+  > "A. Initial entry
+  > 1. Stoch 100 must first cross above level 50 for buy or below level 50 for sell to set the trend direction.
+  > 2. stoch (15,1,1) fresh cross level 50 to trigger the trade. fresh cross above level 50 buy and below level 50 for sell. (don't enter the trade if stoch 15 was already below or above the 50 line before stoch 100 crossed. In this case set the bot open for a re entry rather.
+  > 
+  > B. Re entry condition
+  > 1. Stoch 100 must still be alaigned.
+  > 2. stoch (15,1,1) must fresh cross from above level 80 for sell or from below level 20 for buy. in the direction of the trend.
+  > 
+  > Trade management rule
+  > 1. after the trade is opened, when stoch (15,1,1) touches level 20 for sell trades / level 80 for buy trades, move software SL to $0.3
+  > 2. when it finally cross above or below level 50, close the trade immediately.
+  > 
+  > Mandates:
+  > 1. don't apply M5 EMA 100 Baseline Filter
+  > 2. the Level 50 exit trigger should only trigger after the trade has touched 80/20"
+
+#### Consolidated Authoritative Rules for Volatility 75 (1s) (`1HZ75V` — October 28, 2026 Mandate):
+1. **Indicator Configuration:**
+   * **Macro Trend Identifier:** Closed M5 Stochastic `(100, 1, 1)` with Level `50.0`
+   * **Trigger & Re-Entry Indicator:** Closed M5 Stochastic `(15, 1, 1 Simple)` with Levels `20.0 / 50.0 / 80.0`
+   * **Baseline Trend Filter:** **NONE** (M5 EMA 100 filter explicitly excluded per trader mandate).
+2. **Initial Entry Engine:**
+   * **Trend Arming:** Closed M5 Stoch (100, 1, 1) %K crosses above Level 50.0 (BUY) or below Level 50.0 (SELL) to set trend direction.
+   * **Trigger:** Closed M5 Stoch (15, 1, 1 Simple) %K fresh cross above Level 50.0 (BUY) or below Level 50.0 (SELL).
+   * **Pre-Cross Bypass Rule:** If Stoch (15, 1, 1) was ALREADY above Level 50 (for BUY) or below Level 50 (for SELL) before Stoch 100 crossed, bypass initial entry immediately and set the bot open for Re-Entry (`initialBuyDone = true` / `initialSellDone = true`).
+3. **Re-Entry Engine (After Initial Entry Taken or Bypassed):**
+   * **Trend Alignment:** Stoch 100 remains aligned in trend direction (`%K >= 50.0` for BUY / `<= 50.0` for SELL).
+   * **BUY Re-Entry:** Fresh M5 Stoch (15, 1, 1 Simple) %K cross **above Level 20.0** (`prevK <= 20.0 && sK > 20.0`).
+   * **SELL Re-Entry:** Fresh M5 Stoch (15, 1, 1 Simple) %K cross **below Level 80.0** (`prevK >= 80.0 && sK < 80.0`).
+4. **Trade Management & Profit Engine:**
+   * **Software SL:** -$2.00 (40.0 pts on 0.05 lots) | Hard Broker SL: -$5.00 (100.0 pts).
+   * **Early Invalidation:** Multi-fractal reversals and 3 adverse candle exits are excluded on 1HZ75V; downside is strictly governed by -$2.00 Software SL.
+   * **Level 80/20 Touch SL Adjustment:** When Stoch (15, 1, 1) touches Level 80.0 for BUY or Level 20.0 for SELL, advance Software SL floor to **+$0.30**.
+   * **Level 50 Full Profit Exit:** Activated **ONLY AFTER** having touched Level 80 (BUY) or Level 20 (SELL). When Stoch (15, 1, 1) confirms across Level 50 (crosses `< 50.0` on BUY or `> 50.0` on SELL), close trade immediately to bank profit.
 * **Step 180 (`2026-10-18 20:30:54 UTC`):**
   > "lets proceed with vix 75 1s. what are the rules"
 * **Step 270 & Step 277 (`2026-10-18 21:06:21 & 21:17:23 UTC`):**
