@@ -136,7 +136,7 @@ export const INSTRUMENT_PROFILES = {
     trailBufferUsd: 1.20,
     maxHardStopPoints: 80.0,
     slType: "M15_FRACTAL",
-    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + fresh M5 Stoch (15,1,1) cross > 20 (BUY) / < 80 (SELL) (NO EMA 100 filter); Trade Management: Stoch (15,1,1) touches 80 (BUY) / 20 (SELL) moves SL to +$0.30; exit on confirmed cross opposite 50."
+    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Standard TP $3.50 (2 wins = $7.00 Daily Target); Stoch (15,1,1) High/Low or Close touch of 70 (BUY) / 30 (SELL) moves SL to +$0.30; exit on confirmed cross opposite 50."
   },
   "R_100": {
     symbol: "R_100",
@@ -1622,7 +1622,7 @@ const ALLOWED_STATE_KEYS = new Set([
   "v25_stoch100CrossEpochBuy", "v25_stoch100CrossEpochSell",
   "v25_stoch30CrossEpochBuy", "v25_stoch30CrossEpochSell",
   "v25_stoch302515_touched_50_BUY", "v25_stoch302515_touched_50_SELL",
-  "stoch100Val", "stoch3025Val", "stoch3025Signal", "stoch302515Val", "stoch302515Signal",
+  "stoch100Val", "stoch1511Val", "stoch1511MaxVal", "stoch1511MinVal", "v75_1s_stoch15_pulled_back_30", "v75_1s_stoch15_pulled_back_70", "stoch3025Val", "stoch3025Signal", "stoch302515Val", "stoch302515Signal",
   "queuedPendingOrder", "dailyLossLockout",
   "healthStatus", "blockerReason", "nextTrigger", "lastScanTime",
   "lastSuccessfulScan", "lastError", "lastErrorTime", "lastErrorStack", "errorCount",
@@ -1891,7 +1891,7 @@ async function manageOpenTradesFastPath() {
 
     const hardStopPrice = deriveHardStopPrice(openTrade.entry, openTrade.direction, openTrade.lots);
     const hardStopBreached = isBuy ? currentPrice <= hardStopPrice : currentPrice >= hardStopPrice;
-    const isDynamicRunner = (STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES" || SYMBOL === "R_50" || STRATEGY_PROFILE === "PROFILE_V75_1S_TREND_MACD_STOCH533" || STRATEGY_PROFILE === "PROFILE_V75_1S_EMA_STOCH15" || SYMBOL === "1HZ75V" || STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533" || SYMBOL === "1HZ100V" || STRATEGY_PROFILE === "PROFILE_V25_1S_STOCH200_STOCH15" || SYMBOL === "1HZ25V");
+    const isDynamicRunner = (STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES" || SYMBOL === "R_50" || STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533" || SYMBOL === "1HZ100V" || STRATEGY_PROFILE === "PROFILE_V25_1S_STOCH200_STOCH15" || SYMBOL === "1HZ25V") && SYMBOL !== "1HZ75V";
     const activeTpTarget = isDynamicRunner ? null : (openTrade.tpPrice || openTrade.fibTpPrice || null);
     let tpHit = false;
     if (activeTpTarget) {
@@ -5738,7 +5738,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       confluenceLines += `• M5 Stoch 100: *${(sK100 !== null ? sK100.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [BULLISH TREND]" : "<50 [BEARISH TREND]"})\n` +
                          `• M5 Stoch (15,1,1): *%K ${(sK1511 !== null ? sK1511.toFixed(1) : "N/A")}*\n` +
                          `• Trigger Type: *${setupLabel}*\n` +
-                         `• Trade Management: *Level 80/20 Touch moves SL to +$0.30; Level 50 Opposite Cross exits*\n`;
+                         `• Take Profit Target: *${tpPrice ? tpPrice.toFixed(2) : "Standard $3.50 TP"} ($3.50 Standard TP — 2 Wins = $7.00 Daily Target)*\n• Trade Management: *Level 70/30 Touch (incl. High/Low wick) moves SL to +$0.30; Level 50 Opposite Cross exits*\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
       confluenceLines += `• M5 Stoch 200: *${(sK200 !== null ? sK200.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">=50 [BULLISH TREND]" : "<=50 [BEARISH TREND]"})\n` +
                          `• M5 MACD (25,75,1): *${(macdVal !== null ? macdVal.toFixed(4) : "N/A")}* (${direction === "BUY" ? ">=0 [BULLISH MOMENTUM]" : "<=0 [BEARISH MOMENTUM]"})\n` +
@@ -5954,7 +5954,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           nextTrigger = `Awaiting Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) fresh cross > 50 for Initial BUY`;
         } else {
           blockerReason = `BUY Trend Active (Stoch 100: ${sK100.toFixed(1)} > 50). Initial BUY done/bypassed.`;
-          nextTrigger = `Awaiting Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) pullback <= 20 then cross > 20 for BUY Re-Entry`;
+          nextTrigger = `Awaiting Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) High/Low or Close touch <= 30 then cross > 30 for BUY Re-Entry`;
         }
       } else if (stoch100Sell) {
         if (!state.v75_1s_initialSellDone) {
@@ -5962,7 +5962,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           nextTrigger = `Awaiting Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) fresh cross < 50 for Initial SELL`;
         } else {
           blockerReason = `SELL Trend Active (Stoch 100: ${sK100.toFixed(1)} < 50). Initial SELL done/bypassed.`;
-          nextTrigger = `Awaiting Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) pullback >= 80 then cross < 80 for SELL Re-Entry`;
+          nextTrigger = `Awaiting Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) High/Low or Close touch >= 70 then cross < 70 for SELL Re-Entry`;
         }
       } else {
         blockerReason = "Awaiting Stoch 100 trend definition";
