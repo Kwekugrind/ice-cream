@@ -28,7 +28,10 @@ All active trading bots operate with a standard **$5.00 Stake**, engineered for 
 
 ## 3. UNIFIED CENTRALIZED TRADE MANAGEMENT & CAPITAL PROTECTION ENGINE
 
-* **Software Stop Loss (-$2.00 on `R_75`, `1HZ75V`, `1HZ25V`, `R_25`, `R_50`, `R_10` / -$4.00 on `R_100`):** Strict 2.0% - 4.0% account capital risk limit on $100 balance. Executed in 2-second fast-path watchdog.
+* **Universal Sequential 2-Step Trade Management Rule (All Bots — Rule 2 Strictly Dependent on Rule 1):**
+  1. **Rule 1 (Stoch (15,1,1) Level 80 / Level 20 Touch $\rightarrow$ +\$0.30 Software SL):** After a trade is opened, `Stoch (15,1,1)` must first move in the trade's direction and touch **Level 80 for BUY trades** (`>= 79.5`) or **Level 20 for SELL trades** (`<= 20.5`). At that point, the Software SL is moved to **+\$0.30** (`stoch15_touched_extreme = true`) and Rule 2 is unlocked.
+  2. **Rule 2 (Immediate Exit on Level 50 Touch/Cross — Strictly Dependent on Rule 1):** **ONLY AFTER** Rule 1 has occurred (`stoch15_touched_extreme === true`), if `Stoch (15,1,1)` subsequently reverses from Level 80/20 and comes back to touch or cross **Level 50** (`<= 50.0` for BUY / `>= 50.0` for SELL), the bot **closes the trade immediately**.
+* **Software Stop Loss (-$2.00 on `R_75`, `1HZ75V`, `R_25`, `R_50`, `R_10` / -$4.00 on `R_100`, `1HZ25V`):** Strict 2.0% - 4.0% account capital risk limit on $100 balance. Executed in 2-second fast-path watchdog.
 * **Hard Broker Stop Loss (-$5.00):** Native broker-level multiplier safety floor.
 * **The Incubation Zone ($0.00 to $2.19):** Full breathing room. Zero premature trailing stops. Trades navigate normal M5 wicks freely.
 * **Tier 1 Breakeven Capital Shield (Peak $\ge +\$2.20$):** Floor locked at **+$1.00 net** ($1.20 breathing buffer). Guarantees all commissions are covered in pure profit.
