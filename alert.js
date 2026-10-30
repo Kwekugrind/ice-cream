@@ -114,8 +114,8 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 2.20,
     trailBufferUsd: 1.20,
     maxHardStopPoints: 250.0,
-    slType: "M15_FRACTAL",
-    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Standard TP $3.50 (2 wins = $7.00 Daily Target); Stoch (15,1,1) High/Low or Close touch of 70 (BUY) / 30 (SELL) moves SL to +$0.30; exit on confirmed cross opposite 50."
+    slType: "HARD_POINTS",
+    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Standard TP $3.50 (2 wins = $7.00 Daily Target); Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
   },
   "1HZ75V": {
     symbol: "1HZ75V",
@@ -136,8 +136,8 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 2.20,
     trailBufferUsd: 1.20,
     maxHardStopPoints: 80.0,
-    slType: "M15_FRACTAL",
-    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Standard TP $3.50 (2 wins = $7.00 Daily Target); Stoch (15,1,1) High/Low or Close touch of 70 (BUY) / 30 (SELL) moves SL to +$0.30; exit on confirmed cross opposite 50."
+    slType: "HARD_POINTS",
+    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Standard TP $3.50 (2 wins = $7.00 Daily Target); Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
   },
   "R_100": {
     symbol: "R_100",
@@ -157,8 +157,8 @@ export const INSTRUMENT_PROFILES = {
     softwareSlUsd: 4.00,
     trailActivationUsd: 5.00,
     maxHardStopPoints: 4.00,
-    slType: "M15_FRACTAL",
-    notes: "1.00 lot cTrader minimum; Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Hard Broker TP $10.00; Stoch (15,1,1) High/Low or Close touch of 70 (BUY) / 30 (SELL) moves SL to +$0.30; exit on confirmed cross opposite 50."
+    slType: "HARD_POINTS",
+    notes: "1.00 lot cTrader minimum; Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Hard Broker TP $10.00; Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
   },
     "1HZ100V": {
     symbol: "1HZ100V",
@@ -181,7 +181,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 2.20,
     maxHardStopPoints: 5.50,
     slType: "M15_FRACTAL",
-    notes: "Macro Trend Stoch 200 Level 50 Gate & MACD Confirmation + M5 EMA 100 Baseline + M5 Fast Stoch (5,3,3) 20/80 Re-Entry Trigger + 3-Candle, Stoch 200 & Closed-M5 Stoch (15,2,5) Level 50 Opposite Cross Loss Exits + Stoch (25,2,5) Midline 50 Profit Exit + Dynamic Runner ($20 Ceiling & Closed-M5 Stoch (30,20,15) Opposite %K/%D Level 20/80 Profit Exit)."
+    notes: "Macro Trend Stoch 200 Level 50 Gate & MACD Confirmation + M5 EMA 100 Baseline + M5 Fast Stoch (5,3,3) 20/80 Re-Entry Trigger + Trade Management: Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
   },
   "1HZ25V": {
     symbol: "1HZ25V",
@@ -202,7 +202,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 2.20,
     maxHardStopPoints: 800.0,
     slType: "HARD_POINTS",
-    notes: "0.005 lots cTrader engine; Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Hard Broker TP $10.00; Stoch (15,1,1) High/Low or Close touch of 70 (BUY) / 30 (SELL) moves SL to +$0.30; exit on confirmed cross opposite 50."
+    notes: "0.005 lots cTrader engine; Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Hard Broker TP $10.00; Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
   },
   "R_25": {
     symbol: "R_25",
@@ -223,8 +223,8 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 2.20,
     trailBufferUsd: 1.20,
     maxHardStopPoints: 10.00,
-    slType: "M5_FRACTAL",
-    notes: "0.50 lots cTrader engine; Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Hard Broker TP $8.00; Stoch (15,1,1) High/Low or Close touch of 70 (BUY) / 30 (SELL) moves SL to +$0.30; exit on confirmed cross opposite 50."
+    slType: "HARD_POINTS",
+    notes: "0.50 lots cTrader engine; Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Hard Broker TP $8.00; Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
   },
   "R_50": {
     symbol: "R_50",
@@ -246,7 +246,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 2.20,
     maxHardStopPoints: 1.25,
     slType: "M5_FRACTAL",
-    notes: "80x multiplier (4.00 lots); V100 Standardized Engine; Condition 1: M5 Stoch 200 (48/52) Main Trend Identifier; Baseline: M5 EMA 100 filter; Condition 2: M5 Stoch (15,2,5) Initial (Lvl 50) & Re-Entry (Lvl 25/75); Trade Management: -$2.00 Software SL, Tier 0 Breakeven Shield at +$1.00 -> $0.50 floor, Closed-M5 Stoch (30,20,15) Opposite %K/%D Level 20/80 Profit Exit; Early Loss Exits: Opposite M5 Fractal & H1 Adverse Close in loss."
+    notes: "80x multiplier (4.00 lots); Condition 1: M5 Stoch 200 (48/52) Main Trend Identifier; Baseline: M5 EMA 100 filter; Condition 2: M5 Stoch (15,2,5) Initial (Lvl 50) & Re-Entry (Lvl 25/75); Trade Management: -$2.00 Software SL, Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
   },
   "R_10": {
     symbol: "R_10",
@@ -1741,6 +1741,45 @@ async function processQueuedPendingOrder(currentPrice) {
   }
 }
 
+let latestM5Candles = null;
+
+function updateAndComputeLiveStoch1511(currentPrice, nowEpoch) {
+  if (!latestM5Candles || latestM5Candles.length < 16 || !currentPrice || isNaN(currentPrice)) {
+    return { liveK: null, maxK: null, minK: null };
+  }
+  const currentBucket = Math.floor(nowEpoch / 300) * 300;
+  let lastCandle = latestM5Candles[latestM5Candles.length - 1];
+  if (lastCandle.epoch < currentBucket) {
+    latestM5Candles.push({
+      epoch: currentBucket,
+      open: currentPrice,
+      high: currentPrice,
+      low: currentPrice,
+      close: currentPrice
+    });
+    if (latestM5Candles.length > 250) latestM5Candles.shift();
+    lastCandle = latestM5Candles[latestM5Candles.length - 1];
+  } else {
+    lastCandle.close = currentPrice;
+    lastCandle.high = Math.max(parseFloat(lastCandle.high) || currentPrice, currentPrice);
+    lastCandle.low = Math.min(parseFloat(lastCandle.low) || currentPrice, currentPrice);
+  }
+  const idx = latestM5Candles.length - 1;
+  const sl15 = latestM5Candles.slice(idx - 14, idx + 1);
+  const hh15 = Math.max(...sl15.map(c => parseFloat(c.high)));
+  const ll15 = Math.min(...sl15.map(c => parseFloat(c.low)));
+  const cH = parseFloat(lastCandle.high);
+  const cL = parseFloat(lastCandle.low);
+  const liveK = hh15 === ll15 ? 50 : ((currentPrice - ll15) / (hh15 - ll15)) * 100;
+  const highK15 = hh15 === ll15 ? 100 : ((cH - ll15) / (hh15 - ll15)) * 100;
+  const lowK15 = hh15 === ll15 ? 0 : ((cL - ll15) / (hh15 - ll15)) * 100;
+  return {
+    liveK,
+    maxK: Math.max(liveK, highK15),
+    minK: Math.min(liveK, lowK15)
+  };
+}
+
 async function manageOpenTradesFastPath() {
   let trades = loadTrades();
   // 🛡️ Self-Healing: Prune expired / orphaned pending trades older than 180 seconds with no contractId
@@ -1857,6 +1896,21 @@ async function manageOpenTradesFastPath() {
     return true;
   }
 
+  // Ensure M5 candles are cached in memory for live intrabar Stoch (15,1,1) evaluation
+  if (!latestM5Candles || latestM5Candles.length < 16) {
+    try {
+      const { m5 } = await fetchAllData();
+      if (m5 && m5.length >= 20) {
+        latestM5Candles = m5.map(c => ({ ...c }));
+      }
+    } catch (_) {}
+  }
+
+  const liveStoch15 = updateAndComputeLiveStoch1511(currentPrice, nowEpoch);
+  if (liveStoch15.liveK !== null) {
+    state.stoch1511Val = liveStoch15.liveK;
+  }
+
   for (const openTrade of openTrades) {
     if (!openTrade.contractId || closingContracts.has(openTrade.contractId)) continue;
     
@@ -1869,6 +1923,43 @@ async function manageOpenTradesFastPath() {
     // =========================================================================
     openTrade.maxUnrealizedPnL = Math.max(openTrade.maxUnrealizedPnL || 0, pnl);
     const peak = openTrade.maxUnrealizedPnL;
+
+    // =========================================================================
+    // ☕ UNIVERSAL LIVE & CLOSED-CANDLE STOCH (15,1,1) TRADE MANAGEMENT:
+    // 1. After trade is opened, when Stoch (15,1,1) touches Level 80 for BUY (>= 79.5)
+    //    or Level 20 for SELL (<= 20.5), move Software SL to +$0.30.
+    // 2. ONLY AFTER touching 80/20, when Stoch (15,1,1) finally crosses below Level 50 (BUY)
+    //    or above Level 50 (SELL), close the trade immediately.
+    // =========================================================================
+    let stoch15Level50ExitReason = null;
+    if (liveStoch15.liveK !== null && (!openTrade.entryEpoch || (nowEpoch - openTrade.entryEpoch) >= 5)) {
+      const liveBuyTouched80 = liveStoch15.liveK >= 79.5 || (liveStoch15.maxK !== null && liveStoch15.maxK >= 79.5);
+      const liveSellTouched20 = liveStoch15.liveK <= 20.5 || (liveStoch15.minK !== null && liveStoch15.minK <= 20.5);
+      if (isBuy && liveBuyTouched80) {
+        openTrade.stoch15_touched_extreme = true;
+        if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 0.30) {
+          openTrade.lockedPnlFloor = 0.30;
+          saveTrades(trades);
+          console.log(`[FAST-PATH STOCH 15] BUY #${openTrade.contractId} Stoch (15,1,1) touched Level 80 (%K: ${liveStoch15.liveK.toFixed(1)}) -> Software SL moved to +$0.30!`);
+        }
+      } else if (!isBuy && liveSellTouched20) {
+        openTrade.stoch15_touched_extreme = true;
+        if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 0.30) {
+          openTrade.lockedPnlFloor = 0.30;
+          saveTrades(trades);
+          console.log(`[FAST-PATH STOCH 15] SELL #${openTrade.contractId} Stoch (15,1,1) touched Level 20 (%K: ${liveStoch15.liveK.toFixed(1)}) -> Software SL moved to +$0.30!`);
+        }
+      }
+
+      const hasTouched8020 = Boolean(openTrade.stoch15_touched_extreme || (openTrade.lockedPnlFloor && openTrade.lockedPnlFloor >= 0.30));
+      if (hasTouched8020) {
+        if (isBuy && liveStoch15.liveK < 50.0) {
+          stoch15Level50ExitReason = `Stoch (15,1,1) crossed below Level 50 (${liveStoch15.liveK.toFixed(1)}) after touching Level 80 — Immediate Exit (${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)})`;
+        } else if (!isBuy && liveStoch15.liveK > 50.0) {
+          stoch15Level50ExitReason = `Stoch (15,1,1) crossed above Level 50 (${liveStoch15.liveK.toFixed(1)}) after touching Level 20 — Immediate Exit (${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)})`;
+        }
+      }
+    }
 
     // Daily Target Strike Ceiling (Instant Cash-Out when daily target is reached)
     let dailyTargetCeilingHit = false;
@@ -1921,9 +2012,12 @@ async function manageOpenTradesFastPath() {
     }
     else if (tpHit) { 
       reason = "Take Profit Target reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ")"; 
-    } 
-    else if (openTrade.lockedPnlFloor && pnl <= openTrade.lockedPnlFloor) { 
-      reason = "Software SL (+$" + openTrade.lockedPnlFloor.toFixed(2) + " Floor) reached — Secured +$" + openTrade.lockedPnlFloor.toFixed(2) + " (Peak: +$" + (openTrade.maxUnrealizedPnL || 0).toFixed(2) + ")"; 
+    }
+    else if (stoch15Level50ExitReason) {
+      reason = stoch15Level50ExitReason;
+    }
+    else if (openTrade.lockedPnlFloor && (openTrade.maxUnrealizedPnL || 0) >= 0.35 && pnl <= openTrade.lockedPnlFloor) { 
+      reason = "Software SL (+$" + openTrade.lockedPnlFloor.toFixed(2) + " Floor) reached after Stoch (15,1,1) Level 80/20 Touch — Secured +$" + openTrade.lockedPnlFloor.toFixed(2) + " (Peak: +$" + (openTrade.maxUnrealizedPnL || 0).toFixed(2) + ")"; 
     }
     else if (fakeoutExitTriggered) {
       reason = "Opposite M15 Fractal Fakeout Exit — Closed at " + currentPrice.toFixed(4) + " ($" + pnl.toFixed(2) + ") to avoid full -$2.50 SL";
@@ -2256,11 +2350,11 @@ async function checkAndExecuteImmediateReentry(spotPrice) {
     : (direction === "BUY" ? price * (1 + reqPnlSoft / (STAKE_USD * MULTIPLIER)) : price * (1 - reqPnlSoft / (STAKE_USD * MULTIPLIER)));
 
   let sl;
-  if (PROFILE.slType === "HARD_POINTS" || SYMBOL === "1HZ25V") {
-      sl = hardStopPrice;
+  if (SYMBOL === "1HZ75V" || SYMBOL === "R_75" || SYMBOL === "R_100" || SYMBOL === "R_25" || SYMBOL === "1HZ25V") {
+    sl = slCapPrice;
+  } else if (PROFILE.slType === "HARD_POINTS") {
+    sl = hardStopPrice;
   } else if (PROFILE.slType === "M5_FRACTAL") {
-    // Hardened Fractal SL Buffer: Do not anchor SL tighter than minimum buffer distance
-    // For R_25: minimum 6.00 points ($3.00), preventing tight sub-5-minute wick stopouts
     const minFractalDist = (SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100") ? 6.00 : 0;
     const fracDistBuy = initialM5Fractal ? (price - initialM5Fractal) : 0;
     const fracDistSell = initialM5Fractal ? (initialM5Fractal - price) : 0;
@@ -2434,15 +2528,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           if (!t.exitReason) {
             if (t.result === "WIN") {
               if (rec.profit >= 9.0) t.exitReason = "$10.00 Hard Broker TP";
+              else if (rec.profit >= 7.5 && SYMBOL === "R_25") t.exitReason = "$8.00 Hard Broker TP";
               else if (rec.profit >= 6.5) t.exitReason = "+$7.00 Daily Strike TP";
-              else if (rec.profit >= 3.2) t.exitReason = "+$3.50 Base Take Profit";
-              else if (t.lockedPnlFloor && t.lockedPnlFloor >= 0.5) t.exitReason = "Closed-M5 Stoch (30,20,15) Level 20/80 Profit Exit";
-              else t.exitReason = "Closed-M5 Stoch (30,20,15) Level 20/80 Profit Exit";
+              else if (rec.profit >= 3.2) t.exitReason = "+$3.50 Standard Take Profit";
+              else if (rec.profit <= 0.45 && t.lockedPnlFloor && t.lockedPnlFloor >= 0.30) t.exitReason = "+$0.30 Software SL Lock (Stoch 15 Lvl 80/20 Touch)";
+              else t.exitReason = "Stoch (15,1,1) Level 50 Profit Exit";
             } else {
               if (rec.profit <= -4.8) t.exitReason = "-$5.00 Hard Broker SL";
               else if (rec.profit <= -3.5) t.exitReason = "-$4.00 Software Stop Loss";
-              else if (rec.profit <= -1.8) t.exitReason = "-$2.00 Software Stop Loss";
-              else t.exitReason = "Early Invalidation Exit";
+              else t.exitReason = "-$2.00 Software Stop Loss";
             }
             t.reason = t.exitReason;
           }
@@ -2495,6 +2589,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     console.log(`[${REPO_LABEL}] Incomplete candle set: m5=${candles?.length || 0}, m15=${m15Candles?.length || 0}, m30=${m30Candles?.length || 0}, d1=${d1Candles?.length || 0}`);
     return;
   }
+  latestM5Candles = candles.map(c => ({ ...c }));
   const si = candles.length - 2; 
   const currentPrice = parseFloat(candles[si].close);
   state.symbol = SYMBOL;
@@ -2687,148 +2782,54 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     if (closingContracts.has(t.contractId)) continue;
 
     // =========================================================================
-    // 🏆 UNIVERSAL FLEET-WIDE PROFIT MANAGEMENT (THE SOLE PROFIT MANAGEMENT RULE):
-    // Closed-M5 Stoch (30,20,15 Simple) Opposite %K/%D Level 20/80 Cross & Touch Engine
-    // 1) When in profit, BUY %K >= 80 or SELL %K <= 20 moves Software SL to +$0.50 floor.
-    // 2) When in profit, BUY opposite cross (%K < %D and cross level 80) or 
-    //    SELL opposite cross (%K > %D and cross level 20) closes trade immediately.
+    // 🏆 UNIVERSAL FLEET-WIDE TRADE MANAGEMENT RULE (ALL BOTS):
+    // 1. After the trade is opened, when Stoch (15,1,1) touches Level 80 for BUY trades
+    //    or Level 20 for SELL trades (including intrabar High/Low wick touch), move Software SL to +$0.30.
+    // 2. ONLY AFTER touching 80/20, when Stoch (15,1,1) finally crosses below Level 50 (BUY)
+    //    or above Level 50 (SELL), close the trade immediately.
     // =========================================================================
     const isBuy = t.direction === "BUY";
     const currentPnl = calcUnrealizedPnL(t, currentPrice);
-    const inProfit = currentPnl > 0.00;
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // ☕ 1HZ75V, R_75, R_100, R_25 & 1HZ25V TRADE MANAGEMENT: STOCH (15,1,1) LEVEL 70/30 TOUCH (INCL. HIGH/LOW WICK) ($0.30 SL) & LEVEL 50 PROFIT EXIT
-    // ══════════════════════════════════════════════════════════════════════════
-    if (SYMBOL === "1HZ75V" || SYMBOL === "R_75" || SYMBOL === "R_100" || SYMBOL === "R_25" || SYMBOL === "1HZ25V" || STRATEGY_PROFILE === "PROFILE_V75_1S_STOCH100_STOCH15" || STRATEGY_PROFILE === "PROFILE_V75_1S_STOCH100_STOCH30") {
-      if (!t.entryEpoch || candles[si].epoch > t.entryEpoch) {
-        // 1. Move Software SL to +$0.30 when Stoch (15,1,1) touches Level 70 (BUY) / Level 30 (SELL) (even slightest High/Low wick touch)
-        const buyTouched70 = (sK1511 !== null && sK1511 >= 69.5) || (sMaxK1511 !== null && sMaxK1511 >= 69.5);
-        const sellTouched30 = (sK1511 !== null && sK1511 <= 30.5) || (sMinK1511 !== null && sMinK1511 <= 30.5);
-        if (isBuy && buyTouched70) {
-          t.stoch15_touched_extreme = true;
-          if (!t.lockedPnlFloor || t.lockedPnlFloor < 0.30) {
-            t.lockedPnlFloor = 0.30;
-            saveTrades(trades);
-            console.log("[COFFEE PROFIT ENGINE] BUY #" + t.contractId + " Stoch (15,1,1) touched Level 70 (%K: " + (sK1511 !== null ? sK1511.toFixed(1) : "N/A") + ", High %K: " + (sMaxK1511 !== null ? sMaxK1511.toFixed(1) : "N/A") + ") -> Software SL secured at +$0.30 floor!");
-          }
-        } else if (!isBuy && sellTouched30) {
-          t.stoch15_touched_extreme = true;
-          if (!t.lockedPnlFloor || t.lockedPnlFloor < 0.30) {
-            t.lockedPnlFloor = 0.30;
-            saveTrades(trades);
-            console.log("[COFFEE PROFIT ENGINE] SELL #" + t.contractId + " Stoch (15,1,1) touched Level 30 (%K: " + (sK1511 !== null ? sK1511.toFixed(1) : "N/A") + ", Low %K: " + (sMinK1511 !== null ? sMinK1511.toFixed(1) : "N/A") + ") -> Software SL secured at +$0.30 floor!");
-          }
-        }
-
-        // 2. Full Profit Exit: ONLY triggers AFTER having touched 70/30 when Stoch (15,1,1) crosses Level 50
-        const hasTouchedExtreme = Boolean(t.stoch15_touched_extreme || (t.lockedPnlFloor && t.lockedPnlFloor >= 0.30));
-        let stoch15Exit = false;
-        let exitDetail = "";
-
-        if (hasTouchedExtreme) {
-          if (isBuy && sK1511 !== null && sK1511 < 50.0) {
-            stoch15Exit = true;
-            exitDetail = "Closed-M5 Stoch (15,1,1) crossed below Level 50 (" + sK1511.toFixed(1) + ") after touching Level 70";
-          } else if (!isBuy && sK1511 !== null && sK1511 > 50.0) {
-            stoch15Exit = true;
-            exitDetail = "Closed-M5 Stoch (15,1,1) crossed above Level 50 (" + sK1511.toFixed(1) + ") after touching Level 30";
-          }
-        }
-
-        if (stoch15Exit) {
-          closingContracts.add(t.contractId);
-          console.log("[PROFIT EXIT] Active " + t.direction + " #" + t.contractId + ": " + exitDetail + ". Current PnL: +$" + currentPnl.toFixed(2) + ". Liquidating to bank profit.");
-          t.exitReason = "Closed-M5 Stoch (15,1,1) Level 50 Profit Exit";
-          try {
-            const closeRes = await closeContract(t.contractId);
-            if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
-              console.error("[PROFIT EXIT ERROR] Broker close failed for " + t.contractId + ": " + (closeRes.error.message || JSON.stringify(closeRes.error)));
-              closingContracts.delete(t.contractId);
-              continue;
-            }
-            const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
-            t.serverPnl = (closeRes && closeRes.sell?.profit) ?? (settled !== null ? settled.profit : parseFloat(currentPnl.toFixed(2)));
-            t.resultSource = (closeRes && closeRes.sell?.profit !== undefined) ? "server_close_confirmed" : (settled !== null ? "deriv_settled_official" : "estimated_fallback");
-            t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
-            t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
-            state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
-            if (state.dailyNetPnl >= DAILY_PROFIT_TARGET_USD) {
-              state.dailyTargetReached = true;
-              state.dailyTargetDate = todayStr;
-            }
-            state.openTrade = null;
-            onTradeClosedCleanup(candles[si].epoch);
-            saveTrades(trades);
-            saveState();
-
-            const icon = t.result === "WIN" ? "✅" : "❌";
-            const pnlStr = t.serverPnl >= 0 ? "+" + t.serverPnl.toFixed(2) : "-" + Math.abs(t.serverPnl).toFixed(2);
-            await sendTelegram(
-              icon + " *[PROFIT EXIT] " + SYMBOL_NAME + " — " + REPO_LABEL + "*\n\n" +
-              "• Direction: *" + (t.direction === "BUY" ? "🟢 BUY" : "🔴 SELL") + "*\n" +
-              "• Exit Trigger: *" + exitDetail + "*\n" +
-              "• Stoch (15,1,1): *%K " + (sK1511 ? sK1511.toFixed(1) : "N/A") + "*\n" +
-              "• Net P&L: *" + pnlStr + "*\n" +
-              "• Daily Net Total: *" + state.dailyNetPnl.toFixed(2) + "*\n" +
-              "• Contract: `" + t.contractId + "`"
-            );
-          } catch (e) {
-            console.error("[PROFIT EXIT] Exception closing " + t.contractId + ":", e.message);
-            closingContracts.delete(t.contractId);
-            continue;
-          }
-          closingContracts.delete(t.contractId);
-          continue;
-        }
-      }
-    } else if (inProfit && (!t.entryEpoch || candles[si].epoch > t.entryEpoch)) {
-      // 1. Software SL Move to +$0.50 on Level 80 / 20 Touch
-      if (isBuy && sK302015 !== null && sK302015 >= 80.0) {
-        if (!t.lockedPnlFloor || t.lockedPnlFloor < 0.50) {
-          t.lockedPnlFloor = 0.50;
+    if (!t.entryEpoch || candles[si].epoch > t.entryEpoch) {
+      // 1. Move Software SL to +$0.30 when Stoch (15,1,1) touches Level 80 (BUY) / Level 20 (SELL) (even slightest High/Low wick touch)
+      const buyTouched80 = (sK1511 !== null && sK1511 >= 79.5) || (sMaxK1511 !== null && sMaxK1511 >= 79.5);
+      const sellTouched20 = (sK1511 !== null && sK1511 <= 20.5) || (sMinK1511 !== null && sMinK1511 <= 20.5);
+      if (isBuy && buyTouched80) {
+        t.stoch15_touched_extreme = true;
+        if (!t.lockedPnlFloor || t.lockedPnlFloor < 0.30) {
+          t.lockedPnlFloor = 0.30;
           saveTrades(trades);
-          console.log("[PROFIT ENGINE] BUY #" + t.contractId + " Stoch (30,20,15) %K touched " + sK302015.toFixed(1) + " >= 80.0 -> Software SL secured at +$0.50!");
+          console.log("[TRADE MANAGEMENT] BUY #" + t.contractId + " Stoch (15,1,1) touched Level 80 (%K: " + (sK1511 !== null ? sK1511.toFixed(1) : "N/A") + ", High %K: " + (sMaxK1511 !== null ? sMaxK1511.toFixed(1) : "N/A") + ") -> Software SL moved to +$0.30!");
         }
-      } else if (!isBuy && sK302015 !== null && sK302015 <= 20.0) {
-        if (!t.lockedPnlFloor || t.lockedPnlFloor < 0.50) {
-          t.lockedPnlFloor = 0.50;
+      } else if (!isBuy && sellTouched20) {
+        t.stoch15_touched_extreme = true;
+        if (!t.lockedPnlFloor || t.lockedPnlFloor < 0.30) {
+          t.lockedPnlFloor = 0.30;
           saveTrades(trades);
-          console.log("[PROFIT ENGINE] SELL #" + t.contractId + " Stoch (30,20,15) %K touched " + sK302015.toFixed(1) + " <= 20.0 -> Software SL secured at +$0.50!");
+          console.log("[TRADE MANAGEMENT] SELL #" + t.contractId + " Stoch (15,1,1) touched Level 20 (%K: " + (sK1511 !== null ? sK1511.toFixed(1) : "N/A") + ", Low %K: " + (sMinK1511 !== null ? sMinK1511.toFixed(1) : "N/A") + ") -> Software SL moved to +$0.30!");
         }
       }
 
-      // Track max/min %K on open trade for precision touch memory
-      if (sK302015 !== null) {
-        t.maxStochK302015 = Math.max(t.maxStochK302015 || 0, sK302015);
-        t.minStochK302015 = Math.min(t.minStochK302015 || 100, sK302015);
-      }
-
-      // 2. Profit Close on Opposite %K/%D Cross AND Level 80 / 20 Cross
-      let stoch30OppositeCrossExit = false;
+      // 2. Immediate Exit: ONLY triggers AFTER having touched 80/20 when Stoch (15,1,1) crosses Level 50
+      const hasTouchedExtreme = Boolean(t.stoch15_touched_extreme || (t.lockedPnlFloor && t.lockedPnlFloor >= 0.30));
+      let stoch15Exit = false;
       let exitDetail = "";
 
-      if (isBuy && prevK302015 !== null && sK302015 !== null && prevD302015 !== null && sD302015 !== null) {
-        // Bearish cross (%K below %D) AND crosses level 80
-        const kCrossBelowD = (prevK302015 >= prevD302015 && sK302015 < sD302015) || (sK302015 < sD302015);
-        const kCrossBelow80 = (prevK302015 >= 80.0 && sK302015 < 80.0) || (sK302015 < 80.0 && (t.lockedPnlFloor >= 0.50 || (t.maxStochK302015 && t.maxStochK302015 >= 80.0)));
-        if (kCrossBelowD && kCrossBelow80) {
-          stoch30OppositeCrossExit = true;
-          exitDetail = "Closed-M5 Stoch (30,20,15) Bearish %K/%D Cross below Level 80 (%K: " + sK302015.toFixed(1) + ", %D: " + sD302015.toFixed(1) + ", prev %K: " + prevK302015.toFixed(1) + ")";
-        }
-      } else if (!isBuy && prevK302015 !== null && sK302015 !== null && prevD302015 !== null && sD302015 !== null) {
-        // Bullish cross (%K above %D) AND crosses level 20
-        const kCrossAboveD = (prevK302015 <= prevD302015 && sK302015 > sD302015) || (sK302015 > sD302015);
-        const kCrossAbove20 = (prevK302015 <= 20.0 && sK302015 > 20.0) || (sK302015 > 20.0 && (t.lockedPnlFloor >= 0.50 || (t.minStochK302015 && t.minStochK302015 <= 20.0)));
-        if (kCrossAboveD && kCrossAbove20) {
-          stoch30OppositeCrossExit = true;
-          exitDetail = "Closed-M5 Stoch (30,20,15) Bullish %K/%D Cross above Level 20 (%K: " + sK302015.toFixed(1) + ", %D: " + sD302015.toFixed(1) + ", prev %K: " + prevK302015.toFixed(1) + ")";
+      if (hasTouchedExtreme) {
+        if (isBuy && sK1511 !== null && sK1511 < 50.0) {
+          stoch15Exit = true;
+          exitDetail = "Stoch (15,1,1) crossed below Level 50 (" + sK1511.toFixed(1) + ") after touching Level 80";
+        } else if (!isBuy && sK1511 !== null && sK1511 > 50.0) {
+          stoch15Exit = true;
+          exitDetail = "Stoch (15,1,1) crossed above Level 50 (" + sK1511.toFixed(1) + ") after touching Level 20";
         }
       }
 
-      if (stoch30OppositeCrossExit) {
+      if (stoch15Exit) {
         closingContracts.add(t.contractId);
-        console.log("[PROFIT EXIT] Active " + t.direction + " #" + t.contractId + ": " + exitDetail + ". Current PnL: +$" + currentPnl.toFixed(2) + ". Liquidating to bank profit.");
+        console.log("[PROFIT EXIT] Active " + t.direction + " #" + t.contractId + ": " + exitDetail + ". Current PnL: +$" + currentPnl.toFixed(2) + ". Closing immediately.");
+        t.exitReason = "Stoch (15,1,1) Level 50 Profit Exit";
         try {
           const closeRes = await closeContract(t.contractId);
           if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
@@ -2850,17 +2851,20 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           onTradeClosedCleanup(candles[si].epoch);
           saveTrades(trades);
           saveState();
-          const pnlStr = t.serverPnl >= 0 ? ("+" + t.serverPnl.toFixed(2)) : ("-" + Math.abs(t.serverPnl).toFixed(2));
+
+          const icon = t.result === "WIN" ? "✅" : "❌";
+          const pnlStr = t.serverPnl >= 0 ? "+" + t.serverPnl.toFixed(2) : "-" + Math.abs(t.serverPnl).toFixed(2);
           await sendTelegram(
-            "🏆 *" + REPO_LABEL + " — Closed-M5 Stoch (30,20,15) Level 20/80 Profit Exit*\n\n" +
-            "Active *" + t.direction + "* secured profit: *" + pnlStr + "*!\n" +
-            "• " + exitDetail + "\n" +
-            "• Exit Price: *" + currentPrice.toFixed(4) + "*\n" +
+            icon + " *[PROFIT EXIT] " + SYMBOL_NAME + " — " + REPO_LABEL + "*\n\n" +
+            "• Direction: *" + (t.direction === "BUY" ? "🟢 BUY" : "🔴 SELL") + "*\n" +
+            "• Exit Trigger: *" + exitDetail + "*\n" +
+            "• Stoch (15,1,1): *%K " + (sK1511 ? sK1511.toFixed(1) : "N/A") + "*\n" +
+            "• Net P&L: *" + pnlStr + "*\n" +
             "• Daily Net Total: *" + state.dailyNetPnl.toFixed(2) + "*\n" +
-            "Contract: `" + t.contractId + "`"
+            "• Contract: `" + t.contractId + "`"
           );
         } catch (e) {
-          console.error("[PROFIT EXIT EXCEPTION] Failed to close contract " + t.contractId + ":", e.message);
+          console.error("[PROFIT EXIT] Exception closing " + t.contractId + ":", e.message);
           closingContracts.delete(t.contractId);
           continue;
         }
@@ -3652,8 +3656,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
 
-    // Upgrade M15 Fractal SL if new favorable M15 structure forms
-    if (m15Candles.length >= 5) {
+    // Upgrade M15 Fractal SL if new favorable M15 structure forms (Excluded on Stoch 100 + Stoch 15,1,1 fleet)
+    if (m15Candles.length >= 5 && SYMBOL !== "1HZ75V" && SYMBOL !== "R_75" && SYMBOL !== "R_100" && SYMBOL !== "R_25" && SYMBOL !== "1HZ25V") {
       for (let k = 2; k <= m15Candles.length - 4; k++) {
         if (m15Candles[k + 2].epoch + M15 > t.entryEpoch) {
           const c = m15Candles;
@@ -5735,7 +5739,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       : (direction === "BUY" ? entry * (1 + reqPnlSoft / (STAKE_USD * MULTIPLIER)) : entry * (1 - reqPnlSoft / (STAKE_USD * MULTIPLIER)));
 
     let sl;
-    if (PROFILE.slType === "HARD_POINTS" || SYMBOL === "1HZ25V") {
+    if (SYMBOL === "1HZ75V" || SYMBOL === "R_75" || SYMBOL === "R_100" || SYMBOL === "R_25" || SYMBOL === "1HZ25V") {
+      sl = slCapPrice;
+    } else if (PROFILE.slType === "HARD_POINTS") {
       sl = hardStopPrice;
     } else if (PROFILE.slType === "M5_FRACTAL") {
       // Hardened Fractal SL Buffer: Do not anchor SL tighter than minimum buffer distance
@@ -5767,7 +5773,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       confluenceLines += `• M5 Stoch 200 (45/55): *${(sK200 !== null ? sK200.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">55 [BULLISH TREND]" : "<45 [BEARISH TREND]"})\n` +
                          `• M5 Stoch (15,2,5): *%K ${(sK1525 !== null ? sK1525.toFixed(1) : "N/A")}* | *%D ${(sD1525 !== null ? sD1525.toFixed(1) : "N/A")}* (${setupLabel})\n` +
                          `• M5 BB 20 Mid: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > BB 20 Mid" : "Price < BB 20 Mid"})\n` +
-                         `• Take Profit Target: *${tpPrice ? tpPrice.toFixed(4) : "Dynamic Runner"}* (Closed-M5 Stoch (30,20,15) Opposite %K/%D Level 20/80 Profit Exit)\n` +
+                         `• Take Profit Target: *${tpPrice ? tpPrice.toFixed(4) : "Dynamic Runner"}* (Stoch (15,1,1) Level 80/20 Touch -> +$0.30 SL & Level 50 Immediate Exit)\n` +
                          `• Early Invalidation: *3 Adverse M5 Closes / Stoch 200 Invalidation / Entry-Hour H1 Adverse Close*\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533") {
       confluenceLines += `• M5 Stoch 100: *${(sK100 !== null ? sK100.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [BULLISH TREND]" : "<50 [BEARISH TREND]"})\n` +
@@ -5807,7 +5813,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       confluenceLines += `• M5 Stoch 100: *${(sK100 !== null ? sK100.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [BULLISH TREND]" : "<50 [BEARISH TREND]"})\n` +
                          `• M5 Stoch (15,1,1): *%K ${(sK1511 !== null ? sK1511.toFixed(1) : "N/A")}*\n` +
                          `• Trigger Type: *${setupLabel}*\n` +
-                         `• Take Profit Target: *${tpDesc}*\n• Trade Management: *Level 70/30 Touch (incl. High/Low wick) moves SL to +$0.30; Level 50 Opposite Cross exits*\n`;
+                         `• Take Profit Target: *${tpDesc}*\n• Trade Management: *Stoch (15,1,1) Level 80 (BUY) / Level 20 (SELL) Touch moves Software SL to +$0.30; Level 50 Cross Immediate Exit*\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
       confluenceLines += `• M5 Stoch 200: *${(sK200 !== null ? sK200.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">=50 [BULLISH TREND]" : "<=50 [BEARISH TREND]"})\n` +
                          `• M5 MACD (25,75,1): *${(macdVal !== null ? macdVal.toFixed(4) : "N/A")}* (${direction === "BUY" ? ">=0 [BULLISH MOMENTUM]" : "<=0 [BEARISH MOMENTUM]"})\n` +
@@ -5820,14 +5826,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       confluenceLines += `• M5 Stoch 200 (48/52): *${(sK200 !== null ? sK200.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">48 [BULLISH TREND]" : "<52 [BEARISH TREND]"})\n` +
                          `• M5 BB 20 Mid: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > BB 20 Mid" : "Price < BB 20 Mid"})\n` +
                          `• M5 Stoch (15,2,5): *%K ${(sK1525 !== null ? sK1525.toFixed(1) : "N/A")}* | *%D ${(sD1525 !== null ? sD1525.toFixed(1) : "N/A")}* (${setupLabel})\n` +
-                         `• Profit Exit Engine: *Closed-M5 Stoch (30,20,15) Opposite %K/%D Cross / Hard Broker TP $10.00*\n` +
-                         `• Protection: *Software SL -$4.00 (Moves to +$0.50 if profit reaches $5.00) / Opposite M5 Fractal / H1 Adverse Close*\n`;
+                         `• Profit Exit Engine: *Stoch (15,1,1) Level 80/20 Touch -> +$0.30 SL & Level 50 Immediate Exit / Hard Broker TP $10.00*\n` +
+                         `• Protection: *Software SL -$4.00 / Opposite M5 Fractal / H1 Adverse Close*\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || (STRATEGY_PROFILE === "PROFILE_V100_MIDLINE_ENV" && SYMBOL === "R_100")) {
       confluenceLines += `• M5 Stoch 200 (48/52): *${(sK200 !== null ? sK200.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">48 [BULLISH TREND]" : "<52 [BEARISH TREND]"})\n` +
                          `• M5 BB 20 Mid: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > BB 20 Mid" : "Price < BB 20 Mid"})\n` +
                          `• M5 Stoch (15,2,5): *%K ${(sK1525 !== null ? sK1525.toFixed(1) : "N/A")}* | *%D ${(sD1525 !== null ? sD1525.toFixed(1) : "N/A")}* (${setupLabel})\n` +
-                         `• Early Exits: *Opposite M5 Fractal Exit / Stoch (30,20,15) Level 20/80 Profit Exit*\n` +
-                         `• Take Profit: *Closed-M5 Stoch (30,20,15) Opposite %K/%D Level 20/80 Profit Exit*\n`;
+                         `• Early Exits: *Opposite M5 Fractal Exit / Stoch (15,1,1) Level 80/20 Touch -> +$0.30 SL & Level 50 Immediate Exit*\n` +
+                         `• Take Profit: *Stoch (15,1,1) Level 80/20 Touch -> +$0.30 SL & Level 50 Immediate Exit*\n`;
     } else if (STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100" || STRATEGY_PROFILE === "PROFILE_V25_STOCH45_VALIDATOR") {
       confluenceLines += `• M5 Stoch (200,1,1) Trend: *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">=50 [BULLISH ARMED]" : "<=50 [BEARISH ARMED]"})\n` +
                          `• M5 BB 20 Mid: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > BB 20 Mid" : "Price < BB 20 Mid"})\n` +
@@ -5839,8 +5845,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       confluenceLines += `• M5 Stoch (200,1,1) Trend: *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">=50 [BULLISH ARMED]" : "<=50 [BEARISH ARMED]"})\n` +
                          `• M5 BB 20 Mid: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > BB 20 Mid" : "Price < BB 20 Mid"})\n` +
                          `• M5 Stoch (15,2,5) Trigger: *%K ${(sK1525 !== null ? sK1525.toFixed(1) : "N/A")}* | *%D ${(sD1525 !== null ? sD1525.toFixed(1) : "N/A")}* (${setupLabel || "STANDARD"})\n` +
-                         `• Take Profit: *Closed-M5 Stoch (30,20,15) Opposite %K/%D Level 20/80 Profit Exit*\n` +
-                         `• Early Exit Engine: *Previous M5 Fractal Break / Stoch 200 / Stoch (25,2,5) Midline 50 Profit Exit (>= $0.50) / Entry-Hour H1 Adverse Close*\n`;
+                         `• Take Profit: *Stoch (15,1,1) Level 80/20 Touch -> +$0.30 SL & Level 50 Immediate Exit*\n` +
+                         `• Early Exit Engine: *Previous M5 Fractal Break / Stoch 200 / Stoch (15,1,1) Level 50 Profit Exit*\n`;
     } else {
       confluenceLines += `• M5 Stoch (200,1,1) Trend: *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">=50 [BULLISH ARMED]" : "<=50 [BEARISH ARMED]"})\n` +
                          `• M5 BB 20 Mid: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > BB 20 Mid" : "Price < BB 20 Mid"})\n` +
@@ -5856,8 +5862,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       `• Strategy: *${getFriendlyStrategyName()}*\n` +
       `Setup: *${escapeMarkdown(entryType)}*\n` +
       `📍 Entry: *${entry.toFixed(4)}*\n` +
-      `🛑 Initial SL: *${sl.toFixed(4)}* (${initialM5Fractal ? "M5 Fractal Anchor" : (initialM15Fractal ? "M15 Fractal Anchor" : "Hard Stop Barrier")})\n` +
-      `🎯 Take Profit: *${(isDynamicRunner || !tpPrice) ? "Closed-M5 Stoch (30,20,15) Opposite %K/%D Level 20/80 Profit Exit" : `${tpPrice.toFixed(4)} (Min ${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)` }*\n\n` +
+      `🛑 Initial SL: *${sl.toFixed(4)}* (Software SL $${Math.abs(SOFTWARE_SL_USD).toFixed(2)} Cap)\n` +
+      `🎯 Take Profit: *${(isDynamicRunner || !tpPrice) ? "Stoch (15,1,1) Level 80/20 Touch -> +$0.30 SL & Level 50 Immediate Exit" : `${tpPrice.toFixed(4)} (Min ${TARGET_MIN_PROFIT.toFixed(2)} Net + Stoch 15 Lvl 80/20 -> +$0.30 SL & Lvl 50 Exit)` }*\n\n` +
       `💰 Stake: $${STAKE_USD} | Mode: ${EXECUTION_MODE === "ctrader" ? `cTrader CFD (${CTRADER_LOT_SIZE} lots)` : `Multiplier ${MULTIPLIER}x`}\n\n` +
       `📐 *Technical Confluence Verification:*\n` +
       confluenceLines + `\n` +
@@ -5950,13 +5956,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     };
     blockerReason = `Active Position Open: #${activeTrade.contractId || activeTrade.id} (${activeTrade.direction} @ ${Number(activeTrade.entry).toFixed(2)}, PnL: ${uPnl >= 0 ? "+" : ""}${uPnl.toFixed(2)})`;
     if (SYMBOL === "R_100" || SYMBOL === "1HZ25V") {
-      nextTrigger = `Managing Position: Hard TP +$10.00 | Stoch (15,1,1) Level 70/30 Touch Move SL to +$0.30 & Opposite Level 50 Profit Exit (SL: ${SOFTWARE_SL_USD.toFixed(2)})`;
+      nextTrigger = `Managing Position: Hard TP +$10.00 | Stoch (15,1,1) Level 80/20 Touch Move SL to +$0.30 & Level 50 Immediate Exit (SL: ${SOFTWARE_SL_USD.toFixed(2)})`;
     } else if (SYMBOL === "R_25") {
-      nextTrigger = `Managing Position: Hard TP +$8.00 | Stoch (15,1,1) Level 70/30 Touch Move SL to +$0.30 & Opposite Level 50 Profit Exit (SL: ${SOFTWARE_SL_USD.toFixed(2)})`;
+      nextTrigger = `Managing Position: Hard TP +$8.00 | Stoch (15,1,1) Level 80/20 Touch Move SL to +$0.30 & Level 50 Immediate Exit (SL: ${SOFTWARE_SL_USD.toFixed(2)})`;
     } else if (SYMBOL === "1HZ75V" || SYMBOL === "R_75") {
-      nextTrigger = `Managing Position: Standard TP +$3.50 | Stoch (15,1,1) Level 70/30 Touch Move SL to +$0.30 & Opposite Level 50 Profit Exit (SL: ${SOFTWARE_SL_USD.toFixed(2)})`;
+      nextTrigger = `Managing Position: Standard TP +$3.50 | Stoch (15,1,1) Level 80/20 Touch Move SL to +$0.30 & Level 50 Immediate Exit (SL: ${SOFTWARE_SL_USD.toFixed(2)})`;
     } else {
-      nextTrigger = `Managing Position: Closed-M5 Stoch (30,20,15) Level 20/80 Profit Engine active (TP Target: ${TARGET_MIN_PROFIT.toFixed(2)} Net, SL: ${SOFTWARE_SL_USD.toFixed(2)})`;
+      nextTrigger = `Managing Position: Stoch (15,1,1) Level 80/20 Touch Move SL to +$0.30 & Level 50 Immediate Exit (TP Target: ${TARGET_MIN_PROFIT.toFixed(2)} Net, SL: ${SOFTWARE_SL_USD.toFixed(2)})`;
     }
   } else if (state.dailyTargetReached) {
     state.openTrade = null;
@@ -6180,6 +6186,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   state.healthStatus = healthStatus;
   state.blockerReason = blockerReason;
   state.nextTrigger = nextTrigger;
+  state.nextPhase = nextTrigger;
   state.lastScanTime = new Date(m5BoundaryEpoch * 1000).toISOString();
   state.lastSuccessfulScan = new Date().toISOString();
   state.lastProcessedEpoch = m5BoundaryEpoch; saveState();
