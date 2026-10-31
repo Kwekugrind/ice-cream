@@ -1612,6 +1612,8 @@ const ALLOWED_STATE_KEYS = new Set([
   "v10_stochArmedBuy", "v10_stochArmedSell", "v10_macdArmedBuy", "v10_macdArmedSell",
   "v10_initialBuyDone", "v10_initialSellDone", "v10_trend",
   "v10_ema100", "v10_macd", "v10_stoch200", "v10_stoch533",
+  "v10_stoch50CrossEpochBuy", "v10_stoch50CrossEpochSell", "v10_stoch25CrossEpochBuy", "v10_stoch25CrossEpochSell",
+  "v10_stoch25_pulled_back", "v10_stoch50", "v10_stoch25", "stoch50Val", "stoch2511Val", "stoch2511MaxVal", "stoch2511MinVal",
   "v25_1s_trendDir", "v25_1s_initialDone", "v25_1s_stoch200CrossEpoch",
   "v25_1s_stoch15ArmedBuy", "v25_1s_stoch15ArmedSell", "v25_1s_trend",
   "v25_1s_ema100", "v25_1s_stoch200", "v25_1s_stoch15", "v25_1s_emaAligned",
@@ -6034,6 +6036,33 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.v10_initialSellDone = false;
       state.v10_stoch25_pulled_back = false;
     }
+
+    // Recover missing Stoch 50 cross epoch from history if aligned (e.g. after daemon restart or reload)
+    if (stoch50AlignedBuy && !state.v10_stoch50CrossEpochBuy) {
+      const crossEpoch = findStochasticCrossCandleEpoch(candles, stoch50, "BUY", "MIDLINE");
+      if (crossEpoch) {
+        state.v10_stoch50CrossEpochBuy = crossEpoch;
+        if ((m5BoundaryEpoch - crossEpoch) > 600) {
+          state.v10_initialBuyDone = true;
+        }
+      } else {
+        // Stoch 50 was aligned before recent lookback window; initial entry window has passed
+        state.v10_initialBuyDone = true;
+      }
+    }
+    if (stoch50AlignedSell && !state.v10_stoch50CrossEpochSell) {
+      const crossEpoch = findStochasticCrossCandleEpoch(candles, stoch50, "SELL", "MIDLINE");
+      if (crossEpoch) {
+        state.v10_stoch50CrossEpochSell = crossEpoch;
+        if ((m5BoundaryEpoch - crossEpoch) > 600) {
+          state.v10_initialSellDone = true;
+        }
+      } else {
+        // Stoch 50 was aligned before recent lookback window; initial entry window has passed
+        state.v10_initialSellDone = true;
+      }
+    }
+
     // Expire Stoch 25 cross epochs only after 2 candles (600s) or on opposite cross
     if (state.v10_stoch25CrossEpochBuy && ((m5BoundaryEpoch - state.v10_stoch25CrossEpochBuy) > 600 || stoch25CrossDown50)) {
       state.v10_stoch25CrossEpochBuy = null;
@@ -6058,10 +6087,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
 
     // Startup recovery if state flags are not initialized
-    if (stoch50AlignedBuy && state.v10_initialBuyDone === undefined) {
+    if (stoch50AlignedBuy && (state.v10_initialBuyDone === undefined || state.v10_initialBuyDone === null)) {
       state.v10_initialBuyDone = true;
     }
-    if (stoch50AlignedSell && state.v10_initialSellDone === undefined) {
+    if (stoch50AlignedSell && (state.v10_initialSellDone === undefined || state.v10_initialSellDone === null)) {
       state.v10_initialSellDone = true;
     }
 
@@ -6116,8 +6145,17 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
       }
 
-      const stoch25CrossUp50Reentry = sK2511 !== null && prevK2511 !== null && prevK2511 <= 50.0 && sK2511 > 50.0 && Boolean(state.v10_stoch25_pulled_back);
-      const stoch25CrossDown50Reentry = sK2511 !== null && prevK2511 !== null && prevK2511 >= 50.0 && sK2511 < 50.0 && Boolean(state.v10_stoch25_pulled_back);
+      const prevInPullbackBuy = (prevK2511 !== null && prevK2511 <= 50.0) || (prevMinK2511 !== null && prevMinK2511 <= 50.0);
+      const stoch25CrossUp50Reentry = sK2511 !== null && prevK2511 !== null && sK2511 > 50.0 && (
+        (prevInPullbackBuy && Boolean(state.v10_stoch25_pulled_back)) ||
+        prevInPullbackBuy
+      );
+
+      const prevInPullbackSell = (prevK2511 !== null && prevK2511 >= 50.0) || (prevMaxK2511 !== null && prevMaxK2511 >= 50.0);
+      const stoch25CrossDown50Reentry = sK2511 !== null && prevK2511 !== null && sK2511 < 50.0 && (
+        (prevInPullbackSell && Boolean(state.v10_stoch25_pulled_back)) ||
+        prevInPullbackSell
+      );
 
       const isReentryBuyTrigger = stoch50AlignedBuy && Boolean(state.v10_initialBuyDone) && stoch25CrossUp50Reentry;
       const isReentrySellTrigger = stoch50AlignedSell && Boolean(state.v10_initialSellDone) && stoch25CrossDown50Reentry;

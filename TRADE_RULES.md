@@ -29,8 +29,16 @@ All active trading bots operate with a standard **$5.00 Stake**, engineered for 
 ## 3. UNIFIED CENTRALIZED TRADE MANAGEMENT & CAPITAL PROTECTION ENGINE
 
 * **Universal Sequential 2-Step Trade Management Rule (Fleet Bots `R_100`, `1HZ25V`, `R_75`, `1HZ75V`, `R_50`, `R_10`):**
-  1. **Rule 1 (Stoch (15,1,1) Level 80 / Level 20 Touch on Post-Entry Candles):** After the entry candle closes, `Stoch (15,1,1)` must first move in the trade's direction and touch **Level 80 for BUY trades** (`>= 79.5`) or **Level 20 for SELL trades** (`<= 20.5`). At that point, `stoch15_touched_extreme = true` and Rule 2 is unlocked. On `R_75` and `1HZ75V`, the trade runs freely toward the **+$3.50 Take Profit** and is NOT choked out by a premature +$0.30 P&L trailing floor.
+  1. **Rule 1 (Stoch (15,1,1) Level 80 / Level 20 Touch on Post-Entry Candles):** After the entry candle closes, `Stoch (15,1,1)` must first move in the trade's direction and touch **Level 80 for BUY trades** (`>= 79.5`) or **Level 20 for SELL trades** (`<= 20.5`). At that point, `stoch15_touched_extreme = true` and Rule 2 is unlocked. On `R_75` and `1HZ75V`, the trade runs toward the calibrated **+$2.00 Software TP / +$2.50 Hard TP** and is NOT choked out by a premature +$0.30 P&L trailing floor.
   2. **Rule 2 (Immediate Exit on Level 50 Touch/Cross — Strictly Dependent on Rule 1):** **ONLY AFTER** Rule 1 has occurred (`stoch15_touched_extreme === true`), if `Stoch (15,1,1)` subsequently reverses from Level 80/20 and comes back to touch or cross **Level 50** (`<= 50.0` for BUY / `>= 50.0` for SELL), the bot **closes the trade immediately**.
+* **Instrument-Specific Take Profit Calibration Matrix:**
+  * **VIX 100 (`R_100`):** Hard Broker TP **+$10.00** (Secures daily target in 1 win).
+  * **VIX 25 (1s) (`1HZ25V`):** Hard Broker TP **+$10.00** (Entry Candle High/Low Stop Loss).
+  * **VIX 75 (`R_75`):** Software TP **+$2.00**, Hard Broker TP **+$2.50** (3 wins = $6.00–$7.00 Daily Target).
+  * **VIX 75 (1s) (`1HZ75V`):** Software TP **+$2.00**, Hard Broker TP **+$2.50**.
+  * **VIX 25 (`R_25`):** Software TP **+$3.50**, Hard Broker TP **+$5.00**, Software SL -$3.50, Hard Broker SL -$5.00.
+  * **VIX 50 (`R_50`):** Software TP **+$2.50**, Hard Broker TP **+$3.00**, Software SL -$2.50, Hard Broker SL -$5.00.
+  * **VIX 10 (`R_10`):** Software TP **+$3.50**, Hard Broker TP **+$5.00**, Software SL -$3.50, Hard Broker SL -$5.00.
 * **V25 Sequential 2-Step Trade Management Rule (`R_25` — Tea Machine):**
   1. **Rule 1 (Stoch (25,1,1) Level 50 Touch $\rightarrow$ +\$0.30 Software SL):** After a trade is opened, when in profit and `Stoch (25,1,1)` touches/reaches **Level 50** (`>= 50.0` for BUY / `<= 50.0` for SELL on confirmed closed M5 candle), move Software SL to **+\$0.30** (`stoch25_touched_midline = true`) and unlock Rule 2.
   2. **Rule 2 (Immediate Exit on Level 50 Reversal — Strictly Dependent on Rule 1):** **ONLY AFTER** Rule 1 has occurred (`stoch25_touched_midline === true`), if `Stoch (25,1,1)` subsequently reverses across **Level 50** (`< 50.0` for BUY / `> 50.0` for SELL), the bot **closes the trade immediately**.
