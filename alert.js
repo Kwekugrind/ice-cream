@@ -5837,6 +5837,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
 
     // A. Initial Entry Triggers (Strictly Stoch 100 + Stoch 15,1,1 fresh 50 cross; V25-1s strictly requires MACD 5,35,1 filter)
+    const macdFilterBuy = sMacd5351 !== null && sMacd5351 > 0.0;
+    const macdFilterSell = sMacd5351 !== null && sMacd5351 < 0.0;
     const isInitialBuyTrigger = stoch100AlignedBuy && (!isV25_1s || macdFilterBuy) && !state.v75_1s_initialBuyDone && stoch15CrossUp50 && !hasActiveBuy;
     const isInitialSellTrigger = stoch100AlignedSell && (!isV25_1s || macdFilterSell) && !state.v75_1s_initialSellDone && stoch15CrossDown50 && !hasActiveSell;
 
