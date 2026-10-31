@@ -199,11 +199,11 @@ export const INSTRUMENT_PROFILES = {
     macdParams: { fast: 5, slow: 35, signal: 1 },
     minTakeProfitPoints: 2000.0,
     minTakeProfitUsd: 10.00,
-    softwareSlUsd: 4.00,
+    softwareSlUsd: null,
     trailActivationUsd: 2.20,
-    maxHardStopPoints: 800.0,
-    slType: "HARD_POINTS",
-    notes: "0.005 lots cTrader engine; Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 20 (BUY) / 80 (SELL) (even slightest High/Low wick touch) and crosses > 20 (BUY) / < 80 (SELL) + M5 MACD (5,35,1) Filter (BUY blocked if MACD < 0, SELL blocked if MACD > 0); Trade Management: Hard Broker TP $10.00; Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
+    maxHardStopPoints: 1000.0,
+    slType: "ENTRY_CANDLE_EXTREME",
+    notes: "0.005 lots cTrader engine; Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50; Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) pulls back to 20 (BUY) / 80 (SELL) and crosses > 20 (BUY) / < 80 (SELL) + M5 MACD (5,35,1) Filter (BUY blocked if MACD < 0, SELL blocked if MACD > 0); Trade Management: Hard Broker TP $10.00 (Hard Broker SL -$5.00); Software SL is closed M5 candle past Entry Candle Low (BUY) / High (SELL); Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
   },
   "R_25": {
     symbol: "R_25",
@@ -326,7 +326,7 @@ const INSTRUMENT_SOFTWARE_SL_MAP = {
   "R_75": -2.00,     // Lery's Alerts (V75, 50x) — Max 2% loss risk ($2.00)
   "R_100": -4.00,    // Milk Machine (V100, 1.00 lot) — Software SL -$4.00
   "1HZ100V": -4.00,  // Ice Cream Legacy (V100-1s, 40x) ($2.50 SL)
-  "1HZ25V": -4.00,   // Ice Cream Machine (V25-1s) ($4.00 Software SL, $5.00 Broker Hard SL)
+  "1HZ25V": null,   // Ice Cream Machine (V25-1s) (Dynamic Entry Candle High/Low Software SL, $5.00 Broker Hard SL)
   "R_50": -2.50,     // OmniSight (V50, 4.00 lots) — Calibrated Software SL -$2.50
   "R_10": -3.50      // Test Bot (V10, 400x) — Calibrated Software SL -$3.50 ($5.00 Broker Hard SL)
 };
@@ -2155,7 +2155,7 @@ async function manageOpenTradesFastPath() {
     }
     else if (hardStopBreached) { reason = "Hard SL breached at " + currentPrice.toFixed(4); } 
     else if (pnl <= CATASTROPHIC_PNL_FLOOR) { reason = "Catastrophic floor hit — PnL $" + pnl.toFixed(2); } 
-    else if (pnl <= SOFTWARE_SL_USD) { reason = "Software SL hit — PnL $" + pnl.toFixed(2); }
+    else if (SYMBOL !== "1HZ25V" && pnl <= SOFTWARE_SL_USD) { reason = "Software SL hit — PnL $" + pnl.toFixed(2); }
     if (!reason) {
       state.openTrade = {
         ...openTrade,
@@ -2493,7 +2493,11 @@ async function checkAndExecuteImmediateReentry(spotPrice) {
     : (direction === "BUY" ? price * (1 + reqPnlSoft / (STAKE_USD * MULTIPLIER)) : price * (1 - reqPnlSoft / (STAKE_USD * MULTIPLIER)));
 
   let sl;
-  if (SYMBOL === "1HZ75V" || SYMBOL === "R_75" || SYMBOL === "R_100" || SYMBOL === "R_25" || SYMBOL === "R_50" || SYMBOL === "1HZ25V" || SYMBOL === "R_10") {
+  if (SYMBOL === "1HZ25V") {
+    sl = direction === "BUY"
+      ? ((cM5 && cM5.length > 0) ? parseFloat(cM5[cM5.length - 1].low) : price)
+      : ((cM5 && cM5.length > 0) ? parseFloat(cM5[cM5.length - 1].high) : price);
+  } else if (SYMBOL === "1HZ75V" || SYMBOL === "R_75" || SYMBOL === "R_100" || SYMBOL === "R_25" || SYMBOL === "R_50" || SYMBOL === "R_10") {
     sl = slCapPrice;
   } else if (PROFILE.slType === "HARD_POINTS") {
     sl = hardStopPrice;
@@ -3212,6 +3216,68 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       let exitDetail = "";
       const cOpen = parseFloat(candles[si].open);
       const cClose = parseFloat(candles[si].close);
+
+      // =========================================================================
+      // 🎯 VIX 25 (1s) (1HZ25V) ENTRY CANDLE HIGH/LOW CLOSE INVALIDATION SL:
+      // - BUY: if closed M5 candle closes below entry candle Low, exit trade.
+      // - SELL: if closed M5 candle closes above entry candle High, exit trade.
+      // =========================================================================
+      if (SYMBOL === "1HZ25V") {
+        let v251sExit = false;
+        let v251sExitDetail = "";
+        if (isBuy && t.entryCandleLow !== undefined && t.entryCandleLow !== null && cClose < t.entryCandleLow) {
+          v251sExit = true;
+          v251sExitDetail = "Entry Candle SL Triggered: M5 candle closed (" + cClose.toFixed(2) + ") below Entry Candle Low (" + parseFloat(t.entryCandleLow).toFixed(2) + ")";
+        } else if (!isBuy && t.entryCandleHigh !== undefined && t.entryCandleHigh !== null && cClose > t.entryCandleHigh) {
+          v251sExit = true;
+          v251sExitDetail = "Entry Candle SL Triggered: M5 candle closed (" + cClose.toFixed(2) + ") above Entry Candle High (" + parseFloat(t.entryCandleHigh).toFixed(2) + ")";
+        }
+
+        if (v251sExit) {
+          closingContracts.add(t.contractId);
+          console.log("[ENTRY CANDLE SL 1HZ25V] Active " + t.direction + " #" + t.contractId + ": " + v251sExitDetail + ". Current PnL: " + (currentPnl >= 0 ? "+$" : "-$") + Math.abs(currentPnl).toFixed(2) + ". Closing immediately.");
+          t.exitReason = v251sExitDetail;
+          try {
+            const closeRes = await closeContract(t.contractId);
+            if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+              console.error("[SL EXIT ERROR 1HZ25V] Broker close failed for " + t.contractId + ": " + (closeRes.error.message || JSON.stringify(closeRes.error)));
+              closingContracts.delete(t.contractId);
+              continue;
+            }
+            const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
+            t.serverPnl = (closeRes && closeRes.sell?.profit) ?? (settled !== null ? settled.profit : parseFloat(currentPnl.toFixed(2)));
+            t.resultSource = (closeRes && closeRes.sell?.profit !== undefined) ? "server_close_confirmed" : (settled !== null ? "deriv_settled_official" : "estimated_fallback");
+            t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
+            t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+            state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+            if (state.dailyNetPnl >= DAILY_PROFIT_TARGET_USD) {
+              state.dailyTargetReached = true;
+              state.dailyTargetDate = todayStr;
+            }
+            state.openTrade = null;
+            onTradeClosedCleanup(candles[si].epoch);
+            saveTrades(trades);
+            saveState();
+
+            const icon = t.result === "WIN" ? "✅" : "❌";
+            const pnlStr = t.serverPnl >= 0 ? "+" + t.serverPnl.toFixed(2) : "-" + Math.abs(t.serverPnl).toFixed(2);
+            await sendTelegram(
+              icon + " *[STOP LOSS EXIT] " + SYMBOL_NAME + " — " + REPO_LABEL + "*\n\n" +
+              "• Direction: *" + (t.direction === "BUY" ? "🟢 BUY" : "🔴 SELL") + "*\n" +
+              "• Exit Reason: *" + v251sExitDetail + "*\n" +
+              "• Net P&L: *" + pnlStr + "*\n" +
+              "• Daily Net Total: *" + state.dailyNetPnl.toFixed(2) + "*\n" +
+              "• Contract: `" + t.contractId + "`"
+            );
+          } catch (e) {
+            console.error("[SL EXIT 1HZ25V] Exception closing " + t.contractId + ":", e.message);
+            closingContracts.delete(t.contractId);
+            continue;
+          }
+          closingContracts.delete(t.contractId);
+          continue;
+        }
+      }
 
       if (!t.stoch15_touched_extreme) {
         // Step 1 (Rule 1): Move Software SL to +$0.30 when Stoch (15,1,1) touches Level 80 (BUY) / Level 20 (SELL)
@@ -6769,7 +6835,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     };
     blockerReason = `Active Position Open: #${activeTrade.contractId || activeTrade.id} (${activeTrade.direction} @ ${Number(activeTrade.entry).toFixed(2)}, PnL: ${uPnl >= 0 ? "+" : ""}${uPnl.toFixed(2)})`;
     if (SYMBOL === "R_100" || SYMBOL === "1HZ25V") {
-      nextTrigger = `Managing Position: Hard TP +$10.00 | Stoch (15,1,1) Level 80/20 Touch Move SL to +$0.30 & Level 50 Immediate Exit (SL: ${SOFTWARE_SL_USD.toFixed(2)})`;
+      nextTrigger = `Managing Position: Hard TP +$10.00 | Entry Candle High/Low Close SL | Stoch (15,1,1) Level 80/20 Touch Move SL to +$0.30 & Level 50 Immediate Exit (Hard SL: -$5.00)`;
     } else if (SYMBOL === "R_25") {
       nextTrigger = `Managing Position: Hard TP +$5.00 | Sequential Stoch (25,1,1) Rule 1 (Lvl 50 -> +$0.30 SL) & Rule 2 (Lvl 50 Reversal Exit) | Software SL: ${SOFTWARE_SL_USD.toFixed(2)}`;
     } else if (SYMBOL === "R_50") {
