@@ -385,7 +385,6 @@ function getFriendlyStrategyName() {
   if (SYMBOL === "R_50") return "M5 MACD (5,35,1) Trend + Stoch (25,1,1) Confluence (+/-2c Initial & 10/90 Re-Entry)";
   if (SYMBOL === "1HZ25V") return "M5 Stoch (100,1,1) Trend + Stoch (15,1,1) Confluence (20/80 Re-Entry + MACD 5,35,1 Filter)";
   if (SYMBOL === "1HZ75V" || SYMBOL === "R_75" || SYMBOL === "R_100") return "M5 Stoch (100,1,1) Trend + Stoch (15,1,1) Confluence (30/70 Re-Entry)";
-  if (SYMBOL === "R_50")   return "M5 Stoch (100,1,1) Trend + Stoch (15,2,5) Confluence";
   if (SYMBOL === "R_10")   return "M5 Trend Confluence (MACD + BB 20 Mid + Stoch 5,3,3)";
   return "M5 Multi-Indicator Confluence";
 }
@@ -3193,8 +3192,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       }
     }
 
-    // Active Trade Exits for PROFILE_V100_STOCH200_STOCH15 (Standardized: V50 OmniSight)
-    if ((STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_50") && SYMBOL !== "R_100") {
+    // Active Trade Exits for PROFILE_V100_STOCH200_STOCH15 (Standardized: V50 OmniSight Legacy)
+    if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" && SYMBOL !== "R_50" && SYMBOL !== "R_100") {
       const isBuy = t.direction === "BUY";
       const m5Close = parseFloat(candles[si].close);
       const isPostEntryCandle = !t.entryEpoch || candles[si].epoch > t.entryEpoch;
@@ -3695,8 +3694,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         continue;
       }
 
-      // Invalidation 1.5 (V50 only): ADX drops below 20.0 while in loss -> Sideways Chop Invalidation
-      if (SYMBOL === "R_50" && !isRunner && pnl < 0 && isPostEntryCandle && adxVal !== null && adxVal < 20.0) {
+      // Invalidation 1.5 (V50 legacy only): ADX drops below 20.0 while in loss -> Sideways Chop Invalidation
+      if (STRATEGY_PROFILE === "PROFILE_V50_STOCH200_ADX20" && SYMBOL === "R_50" && !isRunner && pnl < 0 && isPostEntryCandle && adxVal !== null && adxVal < 20.0) {
         closingContracts.add(t.contractId);
         console.log(`[ADX CHOP EXIT] Active ${t.direction} in loss (${pnl.toFixed(2)}): ADX dropped below 20.0 (${adxVal.toFixed(1)}). Market collapsed to sideways chop. Liquidating immediately.`);
         try {
@@ -4476,8 +4475,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       };
     }
   }
-  // 2b. VOLATILITY 50 INDEX (OmniSight R_50) — ADX >= 20 + STOCH 200 (LEVEL 50) + EMA 100 + STOCH 15
-  else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH200_ADX20" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || SYMBOL === "R_50") {
+  // 2b. VOLATILITY 50 INDEX (OmniSight R_50 Legacy ADX) — ADX >= 20 + STOCH 200 (LEVEL 50) + EMA 100 + STOCH 15
+  else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH200_ADX20" || STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150") {
     const botPrefix = "V50";
     const pfx = "v50";
 
@@ -4616,8 +4615,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
   }
 
-  // 2. STANDARDIZED M5 STOCH 200 (48/52) & M5 STOCH (15,2,5) ENGINE (V50)
-  else if ((STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_50") && SYMBOL !== "R_100") {
+  // 2. STANDARDIZED M5 STOCH 200 (48/52) & M5 STOCH (15,2,5) ENGINE (V50 Legacy)
+  else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" && SYMBOL !== "R_50" && SYMBOL !== "R_100") {
     const botPrefix = SYMBOL === "R_50" ? "V50" : "V100";
     const pfx = botPrefix.toLowerCase();
     const trendDirKey = pfx + "_trendDir";
@@ -6495,7 +6494,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 ` +
                          `• Early Invalidation: *3 Consecutive Adverse M5 Closes / Stoch 100 Invalidation Exit / Entry-Hour H1 Adverse Close*
 `;
-    } else if (SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V25_MACD_STOCH25" || STRATEGY_PROFILE === "PROFILE_V25_STOCH100_STOCH25") {
+    } else if (SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V25_STOCH100_STOCH25") {
+      const tpDesc = `${tpPrice ? tpPrice.toFixed(2) : "Hard $5.00 TP"} ($5.00 Hard Broker TP)`;
+      confluenceLines += `• M5 Stoch 100: *${(sK100 !== null ? sK100.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [BULLISH TREND]" : "<50 [BEARISH TREND]"})\n` +
+                         `• M5 Stoch (25,1,1): *%K ${(sK2511 !== null ? sK2511.toFixed(1) : "N/A")}*\n` +
+                         `• Trigger Type: *${setupLabel}*\n` +
+                         `• Take Profit Target: *${tpDesc}*\n• Trade Management: *Hard TP $5.00 | Software SL -$3.50 | Sequential Stoch (25,1,1) Rule 1 (Lvl 50 -> +$0.30 SL) & Rule 2 (Lvl 50 Reversal Exit)*\n`;
+    } else if (SYMBOL === "R_50" || STRATEGY_PROFILE === "PROFILE_V50_MACD_STOCH25") {
       const tpDesc = `${tpPrice ? tpPrice.toFixed(2) : "Hard $3.00 TP"} ($3.00 Hard Broker TP)`;
       confluenceLines += `• M5 MACD (5,35,1): *${(sMacd5351 !== null && sMacd5351 !== undefined ? sMacd5351.toFixed(4) : "N/A")}* (${direction === "BUY" ? ">0 [BULLISH TREND]" : "<0 [BEARISH TREND]"})\n` +
                          `• M5 Stoch (25,1,1): *%K ${(sK2511 !== null ? sK2511.toFixed(1) : "N/A")}*\n` +
@@ -6536,7 +6541,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
                          `• Trigger Type: *${setupLabel || "STANDARD"}*\n` +
                          `• Take Profit Target: *${tpPrice ? tpPrice.toFixed(4) : "Dynamic Runner"}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n` +
                          `• Early Exit Engine: *Previous M5 Fractal (${initialM5Fractal ? initialM5Fractal.toFixed(2) : "N/A"}) Break / Stoch 200 / Closed-M5 Stoch (15,2,5) Lvl 50 Cross / H1 Adverse Close*\n`;
-    } else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES" || SYMBOL === "R_50") {
+    } else if (STRATEGY_PROFILE === "PROFILE_V50_STOCH200_CCI150" || STRATEGY_PROFILE === "PROFILE_V50_STOCH_BOUNDARIES") {
       confluenceLines += `• M5 Stoch (200,1,1) Trend: *%K ${(sK !== null ? sK.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">=50 [BULLISH ARMED]" : "<=50 [BEARISH ARMED]"})\n` +
                          `• M5 BB 20 Mid: *${currentEma100 ? currentEma100.toFixed(4) : "N/A"}* (${direction === "BUY" ? "Price > BB 20 Mid" : "Price < BB 20 Mid"})\n` +
                          `• M5 Stoch (15,2,5) Trigger: *%K ${(sK1525 !== null ? sK1525.toFixed(1) : "N/A")}* | *%D ${(sD1525 !== null ? sD1525.toFixed(1) : "N/A")}* (${setupLabel || "STANDARD"})\n` +
@@ -6797,8 +6802,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         blockerReason = "Awaiting Stoch 100 trend definition";
         nextTrigger = "Awaiting Stoch 100 cross 50.0";
       }
-    } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || SYMBOL === "R_100" || SYMBOL === "R_50") {
-      const botPrefix = SYMBOL === "R_25" ? "V25" : SYMBOL === "R_50" ? "V50" : "V100";
+    } else if (STRATEGY_PROFILE === "PROFILE_V100_STOCH200_STOCH15" || (SYMBOL === "R_100" && STRATEGY_PROFILE !== "PROFILE_V75_1S_STOCH100_STOCH15")) {
+      const botPrefix = "V100";
       const pfx = botPrefix.toLowerCase();
       const trend = state[pfx + "_trendDir"] || (sK200 >= 50 ? "BUY" : "SELL");
       const isInitialDone = !!state[pfx + "_initialEntryDone"];
