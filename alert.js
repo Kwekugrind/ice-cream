@@ -1976,107 +1976,8 @@ async function manageOpenTradesFastPath() {
     openTrade.maxUnrealizedPnL = Math.max(openTrade.maxUnrealizedPnL || 0, pnl);
     const peak = openTrade.maxUnrealizedPnL;
 
-    let stoch15Level50ExitReason = null;
-    let stoch25Level50ExitReason = null;
-    const isPostEntryM5Bucket = !openTrade.entryEpoch || Math.floor(nowEpoch / 300) > Math.floor(openTrade.entryEpoch / 300);
-
-    if (SYMBOL === "R_25" || SYMBOL === "R_50") {
-      // =========================================================================
-      // 🍵 TEA MACHINE (R_25) & 🧭 OMNISIGHT (R_50) SEQUENTIAL STOCH (25,1,1) TRADE MANAGEMENT:
-      // STRICTLY SEQUENTIAL (RULE 2 DEPENDS ON RULE 1):
-      // Step 1 (Rule 1): After trade is opened, when in profit and Stoch (25,1,1)
-      //    touches Level 50 (>= 50.0 for BUY, <= 50.0 for SELL), move Software SL
-      //    to +$0.30 and set openTrade.stoch25_touched_midline = true.
-      // Step 2 (Rule 2 — Dependent on Rule 1): ONLY AFTER Rule 1 has occurred
-      //    (openTrade.stoch25_touched_midline === true), if Stoch (25,1,1) reverses and
-      //    crosses back below 50.0 for BUY or above 50.0 for SELL, close immediately.
-      // =========================================================================
-      if (liveStoch25.liveK !== null && isPostEntryM5Bucket) {
-        if (!openTrade.stoch25_touched_midline) {
-          if (isBuy && liveStoch25.liveK >= 50.0 && pnl > 0) {
-            openTrade.stoch25_touched_midline = true;
-            openTrade.stoch25_touched_midline_epoch = nowEpoch;
-            if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 0.30) {
-              openTrade.lockedPnlFloor = 0.30;
-            }
-            saveTrades(trades);
-            console.log(`[FAST-PATH STOCH 25] Rule 1 Armed: BUY #${openTrade.contractId} Stoch (25,1,1) touched Level 50 (%K: ${liveStoch25.liveK.toFixed(1)}) in profit (+$${pnl.toFixed(2)}) -> Software SL moved to +$0.30 & Rule 2 (Level 50 Exit) Unlocked!`);
-          } else if (!isBuy && liveStoch25.liveK <= 50.0 && pnl > 0) {
-            openTrade.stoch25_touched_midline = true;
-            openTrade.stoch25_touched_midline_epoch = nowEpoch;
-            if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 0.30) {
-              openTrade.lockedPnlFloor = 0.30;
-            }
-            saveTrades(trades);
-            console.log(`[FAST-PATH STOCH 25] Rule 1 Armed: SELL #${openTrade.contractId} Stoch (25,1,1) touched Level 50 (%K: ${liveStoch25.liveK.toFixed(1)}) in profit (+$${pnl.toFixed(2)}) -> Software SL moved to +$0.30 & Rule 2 (Level 50 Exit) Unlocked!`);
-          }
-        } else if (openTrade.stoch25_touched_midline === true) {
-          if (isBuy && liveStoch25.liveK < 50.0) {
-            stoch25Level50ExitReason = `Rule 2 Triggered: Stoch (25,1,1) reversed below Level 50 (${liveStoch25.liveK.toFixed(1)}) after Rule 1 Level 50 Touch — Immediate Exit (${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)})`;
-          } else if (!isBuy && liveStoch25.liveK > 50.0) {
-            stoch25Level50ExitReason = `Rule 2 Triggered: Stoch (25,1,1) reversed above Level 50 (${liveStoch25.liveK.toFixed(1)}) after Rule 1 Level 50 Touch — Immediate Exit (${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)})`;
-          }
-        }
-      }
-    } else if (SYMBOL === "R_10") {
-      // =========================================================================
-      // 🎯 VIX 10 (R_10) FAST-PATH STOCH (25,1,1) RULE 2 TRACKING:
-      // Track Stoch (25,1,1) touch of Level 80 (BUY) or Level 20 (SELL)
-      // =========================================================================
-      if (liveStoch25.liveK !== null && isPostEntryM5Bucket) {
-        if (!openTrade.stoch25_touched_extreme) {
-          if (isBuy && liveStoch25.liveK >= 79.5) {
-            openTrade.stoch25_touched_extreme = true;
-            openTrade.stoch25_touched_extreme_epoch = nowEpoch;
-            saveTrades(trades);
-            console.log(`[FAST-PATH STOCH 25] Rule 2 Armed: BUY #${openTrade.contractId} Stoch (25,1,1) touched Level 80 (%K: ${liveStoch25.liveK.toFixed(1)}) -> Awaiting Level 50 reversal close!`);
-          } else if (!isBuy && liveStoch25.liveK <= 20.5) {
-            openTrade.stoch25_touched_extreme = true;
-            openTrade.stoch25_touched_extreme_epoch = nowEpoch;
-            saveTrades(trades);
-            console.log(`[FAST-PATH STOCH 25] Rule 2 Armed: SELL #${openTrade.contractId} Stoch (25,1,1) touched Level 20 (%K: ${liveStoch25.liveK.toFixed(1)}) -> Awaiting Level 50 reversal close!`);
-          }
-        }
-      }
-    } else {
-      // =========================================================================
-      // ☕ UNIVERSAL FLEET LIVE & CLOSED-CANDLE STOCH (15,1,1) TRADE MANAGEMENT:
-      // STRICTLY SEQUENTIAL (RULE 2 DEPENDS ON RULE 1):
-      // Step 1 (Rule 1): After trade is opened, Stoch (15,1,1) must first move in the trade's
-      //    direction and touch Level 80 for BUY (>= 79.5) or Level 20 for SELL (<= 20.5).
-      //    At that point, Software SL moves to +$0.30 (stoch15_touched_extreme = true).
-      // Step 2 (Rule 2 — Dependent on Rule 1): ONLY AFTER Rule 1 has occurred
-      //    (openTrade.stoch15_touched_extreme === true), if Stoch (15,1,1) reverses and
-      //    comes back to touch or cross Level 50 (<= 50.0 BUY / >= 50.0 SELL), close immediately.
-      // =========================================================================
-      if (liveStoch15.liveK !== null && isPostEntryM5Bucket) {
-        if (!openTrade.stoch15_touched_extreme) {
-          if (isBuy && liveStoch15.liveK >= 79.5) {
-            openTrade.stoch15_touched_extreme = true;
-            openTrade.stoch15_touched_extreme_epoch = nowEpoch;
-            if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 0.30) {
-              openTrade.lockedPnlFloor = 0.30;
-            }
-            saveTrades(trades);
-            console.log(`[FAST-PATH STOCH 15] Rule 1 Armed: BUY #${openTrade.contractId} Stoch (15,1,1) touched Level 80 (%K: ${liveStoch15.liveK.toFixed(1)}) -> Software SL moved to +$0.30 & Rule 2 (Level 50 Exit) Unlocked!`);
-          } else if (!isBuy && liveStoch15.liveK <= 20.5) {
-            openTrade.stoch15_touched_extreme = true;
-            openTrade.stoch15_touched_extreme_epoch = nowEpoch;
-            if (!openTrade.lockedPnlFloor || openTrade.lockedPnlFloor < 0.30) {
-              openTrade.lockedPnlFloor = 0.30;
-            }
-            saveTrades(trades);
-            console.log(`[FAST-PATH STOCH 15] Rule 1 Armed: SELL #${openTrade.contractId} Stoch (15,1,1) touched Level 20 (%K: ${liveStoch15.liveK.toFixed(1)}) -> Software SL moved to +$0.30 & Rule 2 (Level 50 Exit) Unlocked!`);
-          }
-        } else if (openTrade.stoch15_touched_extreme === true) {
-          if (isBuy && liveStoch15.liveK <= 50.0) {
-            stoch15Level50ExitReason = `Rule 2 Triggered: Stoch (15,1,1) reversed to touch/cross Level 50 (${liveStoch15.liveK.toFixed(1)}) after Rule 1 Level 80 Touch — Immediate Exit (${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)})`;
-          } else if (!isBuy && liveStoch15.liveK >= 50.0) {
-            stoch15Level50ExitReason = `Rule 2 Triggered: Stoch (15,1,1) reversed to touch/cross Level 50 (${liveStoch15.liveK.toFixed(1)}) after Rule 1 Level 20 Touch — Immediate Exit (${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)})`;
-          }
-        }
-      }
-    }
+    // Fast-path trade monitoring: Focuses strictly on calibrated Take Profit and Stop Loss execution.
+    // Intrabar stochastic tick-oscillations and +.30 trailing floors removed to allow trades full breathing room to reach programmed Take Profit.
 
     // Daily Target Strike Ceiling (Instant Cash-Out when daily target is reached)
     let dailyTargetCeilingHit = false;
@@ -2140,21 +2041,7 @@ async function manageOpenTradesFastPath() {
     else if (tpHit) { 
       reason = "Take Profit Target reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ")"; 
     }
-    else if (stoch25Level50ExitReason) {
-      reason = stoch25Level50ExitReason;
-    }
-    else if (stoch15Level50ExitReason) {
-      reason = stoch15Level50ExitReason;
-    }
-    else if ((SYMBOL === "R_25" || SYMBOL === "R_50") && openTrade.stoch25_touched_midline === true && openTrade.lockedPnlFloor && pnl <= openTrade.lockedPnlFloor) {
-      reason = "Rule 1 Software SL (+$" + openTrade.lockedPnlFloor.toFixed(2) + " Floor) reached after Stoch (25,1,1) Level 50 Touch — Secured +$" + openTrade.lockedPnlFloor.toFixed(2);
-    }
-    else if (SYMBOL !== "R_75" && SYMBOL !== "1HZ75V" && openTrade.stoch15_touched_extreme === true && openTrade.lockedPnlFloor && (openTrade.maxUnrealizedPnL || 0) >= 0.65 && pnl <= openTrade.lockedPnlFloor) { 
-      reason = "Rule 1 Software SL (+$" + openTrade.lockedPnlFloor.toFixed(2) + " Floor) reached after Stoch (15,1,1) Level 80/20 Touch — Secured +$" + openTrade.lockedPnlFloor.toFixed(2) + " (Peak: +$" + (openTrade.maxUnrealizedPnL || 0).toFixed(2) + ")"; 
-    }
-    else if (fakeoutExitTriggered) {
-      reason = "Opposite M15 Fractal Fakeout Exit — Closed at " + currentPrice.toFixed(4) + " ($" + pnl.toFixed(2) + ") to avoid full -$2.50 SL";
-    }
+
     else if (SYMBOL !== "1HZ25V" && hardStopBreached) { reason = "Hard SL breached at " + currentPrice.toFixed(4); } 
     else if (pnl <= CATASTROPHIC_PNL_FLOOR) { reason = "Catastrophic floor hit — PnL $" + pnl.toFixed(2); } 
     else if (SYMBOL !== "1HZ25V" && pnl <= SOFTWARE_SL_USD) { reason = "Software SL hit — PnL $" + pnl.toFixed(2); }
