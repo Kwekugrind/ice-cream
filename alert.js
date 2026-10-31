@@ -196,13 +196,14 @@ export const INSTRUMENT_PROFILES = {
     gateType: "STOCH100_STOCH15",
     stoch100Params: { k: 100, d: 1, slowing: 1 },
     stoch15Params: { k: 15, d: 1, slowing: 1, method: "Simple", level: 50 },
+    macdParams: { fast: 5, slow: 35, signal: 1 },
     minTakeProfitPoints: 2000.0,
     minTakeProfitUsd: 10.00,
     softwareSlUsd: 4.00,
     trailActivationUsd: 2.20,
     maxHardStopPoints: 800.0,
     slType: "HARD_POINTS",
-    notes: "0.005 lots cTrader engine; Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Hard Broker TP $10.00; Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
+    notes: "0.005 lots cTrader engine; Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 20 (BUY) / 80 (SELL) (even slightest High/Low wick touch) and crosses > 20 (BUY) / < 80 (SELL) + M5 MACD (5,35,1) Filter (BUY blocked if MACD < 0, SELL blocked if MACD > 0); Trade Management: Hard Broker TP $10.00; Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
   },
   "R_25": {
     symbol: "R_25",
@@ -382,7 +383,8 @@ function escapeMarkdown(text) {
 function getFriendlyStrategyName() {
   if (SYMBOL === "R_25") return "M5 Stoch (100,1,1) Trend + Stoch (25,1,1) Confluence (+/-3c Initial & 10/90 Re-Entry)";
   if (SYMBOL === "R_50") return "M5 MACD (5,35,1) Trend + Stoch (25,1,1) Confluence (+/-2c Initial & 10/90 Re-Entry)";
-  if (SYMBOL === "1HZ75V" || SYMBOL === "R_75" || SYMBOL === "R_100" || SYMBOL === "1HZ25V") return "M5 Stoch (100,1,1) Trend + Stoch (15,1,1) Confluence (30/70 Re-Entry)";
+  if (SYMBOL === "1HZ25V") return "M5 Stoch (100,1,1) Trend + Stoch (15,1,1) Confluence (20/80 Re-Entry + MACD 5,35,1 Filter)";
+  if (SYMBOL === "1HZ75V" || SYMBOL === "R_75" || SYMBOL === "R_100") return "M5 Stoch (100,1,1) Trend + Stoch (15,1,1) Confluence (30/70 Re-Entry)";
   if (SYMBOL === "R_50")   return "M5 Stoch (100,1,1) Trend + Stoch (15,2,5) Confluence";
   if (SYMBOL === "R_10")   return "M5 Trend Confluence (MACD + BB 20 Mid + Stoch 5,3,3)";
   return "M5 Multi-Indicator Confluence";
@@ -2823,10 +2825,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.stoch1511Val = sK2511;
   }
 
-  // MACD (5, 35, 1) for R_25 Tea Machine Macro Trend Gate
+  // MACD (5, 35, 1) for R_50 OmniSight Macro Trend & 1HZ25V Ice Cream Re-Entry Filter
   const macd5351 = calculateMACD(candles, 5, 35, 1);
   const sMacd5351 = macd5351.macd[si], prevMacd5351 = macd5351.macd[si - 1];
-  if (SYMBOL === "R_50") {
+  if (SYMBOL === "R_50" || SYMBOL === "1HZ25V") {
     state.macd5351Val = sMacd5351;
     state.macdVal = sMacd5351;
   }
@@ -5508,6 +5510,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const prefix = SYMBOL === "R_100" ? "V100" : (SYMBOL === "1HZ25V" ? "V25_1S" : (SYMBOL === "R_75" ? "V75" : "V75_1S"));
 
     // Macro Trend Definition: Stoch (100, 1, 1) Level 50
+    const isV25_1s = SYMBOL === "1HZ25V";
+    const buyPullbackLevel = isV25_1s ? 20.0 : 30.0;
+    const sellPullbackLevel = isV25_1s ? 80.0 : 70.0;
+    const buyPullbackThreshold = isV25_1s ? 20.5 : 30.5;
+    const sellPullbackThreshold = isV25_1s ? 79.5 : 69.5;
+
     const stoch100AlignedBuy = sK100 !== null && sK100 >= 50.0;
     const stoch100AlignedSell = sK100 !== null && sK100 <= 50.0;
     const stoch100CrossUp50 = prevK100 !== null && sK100 !== null && prevK100 <= 50.0 && sK100 > 50.0;
@@ -5556,11 +5564,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.v75_1s_stoch100CrossEpochBuy = null;
       state.v75_1s_initialBuyDone = false;
       state.v75_1s_stoch15_pulled_back_30 = false;
+      state.v75_1s_stoch15_pulled_back_20 = false;
     }
     if (!stoch100AlignedSell) {
       state.v75_1s_stoch100CrossEpochSell = null;
       state.v75_1s_initialSellDone = false;
       state.v75_1s_stoch15_pulled_back_70 = false;
+      state.v75_1s_stoch15_pulled_back_80 = false;
     }
 
     const noActiveTrades = !trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending));
@@ -5575,15 +5585,17 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       setupLabel = `${prefix}_INITIAL_STOCH100_STOCH15 (BUY)`;
       state.v75_1s_initialBuyDone = true;
       state.v75_1s_stoch15_pulled_back_30 = false;
+      state.v75_1s_stoch15_pulled_back_20 = false;
     } else if (isInitialSellTrigger) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
       setupLabel = `${prefix}_INITIAL_STOCH100_STOCH15 (SELL)`;
       state.v75_1s_initialSellDone = true;
       state.v75_1s_stoch15_pulled_back_70 = false;
+      state.v75_1s_stoch15_pulled_back_80 = false;
     }
 
-    // B. Re-Entry Triggers (Stoch 100 aligned + Stoch 15,1,1 touches <= 30 / >= 70 including High/Low wick touch, then crosses > 30 UP for BUY / < 70 DOWN for SELL, NO EMA filter)
+    // B. Re-Entry Triggers (Stoch 100 aligned + Stoch 15,1,1 touches <= 20/30 / >= 80/70 including High/Low wick touch, then crosses back; V25-1s filtered by MACD (5,35,1))
     const lastClosedOrTriggeredEpoch = Math.max(state.lastTriggeredEpoch || 0, state.lastClosedTradeEpoch || 0);
     const isPostTradePrev = !lastClosedOrTriggeredEpoch || candles[si - 1].epoch >= lastClosedOrTriggeredEpoch;
     const isPostTradeCurr = !lastClosedOrTriggeredEpoch || candles[si].epoch > lastClosedOrTriggeredEpoch;
@@ -5591,53 +5603,72 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const isBearishCurr = parseFloat(candles[si].close) < parseFloat(candles[si].open);
 
     if (noActiveTrades && !indicatorsSatisfied && isPostTradeCurr) {
-      const buyTouched30Prev = isPostTradePrev && ((prevK1511 !== null && prevK1511 <= 30.5) || (prevMinK1511 !== null && prevMinK1511 <= 30.5));
-      const buyClosed30Curr = sK1511 !== null && sK1511 <= 30.5;
-      const sellTouched70Prev = isPostTradePrev && ((prevK1511 !== null && prevK1511 >= 69.5) || (prevMaxK1511 !== null && prevMaxK1511 >= 69.5));
-      const sellClosed70Curr = sK1511 !== null && sK1511 >= 69.5;
+      const buyTouchedPrev = isPostTradePrev && ((prevK1511 !== null && prevK1511 <= buyPullbackThreshold) || (prevMinK1511 !== null && prevMinK1511 <= buyPullbackThreshold));
+      const buyClosedCurr = sK1511 !== null && sK1511 <= buyPullbackThreshold;
+      const sellTouchedPrev = isPostTradePrev && ((prevK1511 !== null && prevK1511 >= sellPullbackThreshold) || (prevMaxK1511 !== null && prevMaxK1511 >= sellPullbackThreshold));
+      const sellClosedCurr = sK1511 !== null && sK1511 >= sellPullbackThreshold;
+
+      const pullbackArmedFlagBuy = isV25_1s ? "v75_1s_stoch15_pulled_back_20" : "v75_1s_stoch15_pulled_back_30";
+      const pullbackArmedFlagSell = isV25_1s ? "v75_1s_stoch15_pulled_back_80" : "v75_1s_stoch15_pulled_back_70";
 
       if (stoch100AlignedBuy && Boolean(state.v75_1s_initialBuyDone)) {
-        if (buyTouched30Prev || buyClosed30Curr) {
-          state.v75_1s_stoch15_pulled_back_30 = true;
-        } else if (sK1511 !== null && sK1511 >= 65.0) {
-          state.v75_1s_stoch15_pulled_back_30 = false;
+        if (buyTouchedPrev || buyClosedCurr) {
+          state[pullbackArmedFlagBuy] = true;
+        } else if (sK1511 !== null && sK1511 >= (isV25_1s ? 50.0 : 65.0)) {
+          state[pullbackArmedFlagBuy] = false;
         }
       }
       if (stoch100AlignedSell && Boolean(state.v75_1s_initialSellDone)) {
-        if (sellTouched70Prev || sellClosed70Curr) {
-          state.v75_1s_stoch15_pulled_back_70 = true;
-        } else if (sK1511 !== null && sK1511 <= 35.0) {
-          state.v75_1s_stoch15_pulled_back_70 = false;
+        if (sellTouchedPrev || sellClosedCurr) {
+          state[pullbackArmedFlagSell] = true;
+        } else if (sK1511 !== null && sK1511 <= (isV25_1s ? 50.0 : 35.0)) {
+          state[pullbackArmedFlagSell] = false;
         }
       }
 
-      const stoch15CrossUp30 =
-        sK1511 !== null && prevK1511 !== null && sK1511 > 30.0 && sK1511 > prevK1511 && (
-          Boolean(state.v75_1s_stoch15_pulled_back_30) ||
-          buyTouched30Prev ||
-          (sMinK1511 !== null && sMinK1511 <= 30.5 && prevK1511 <= 45.0 && isBullishCurr)
+      const stoch15CrossUpBuy =
+        sK1511 !== null && prevK1511 !== null && sK1511 > buyPullbackLevel && sK1511 > prevK1511 && (
+          Boolean(state[pullbackArmedFlagBuy]) ||
+          buyTouchedPrev ||
+          (sMinK1511 !== null && sMinK1511 <= buyPullbackThreshold && prevK1511 <= (isV25_1s ? 35.0 : 45.0) && isBullishCurr)
         );
 
-      const stoch15CrossDown70 =
-        sK1511 !== null && prevK1511 !== null && sK1511 < 70.0 && sK1511 < prevK1511 && (
-          Boolean(state.v75_1s_stoch15_pulled_back_70) ||
-          sellTouched70Prev ||
-          (sMaxK1511 !== null && sMaxK1511 >= 69.5 && prevK1511 >= 55.0 && isBearishCurr)
+      const stoch15CrossDownSell =
+        sK1511 !== null && prevK1511 !== null && sK1511 < sellPullbackLevel && sK1511 < prevK1511 && (
+          Boolean(state[pullbackArmedFlagSell]) ||
+          sellTouchedPrev ||
+          (sMaxK1511 !== null && sMaxK1511 >= sellPullbackThreshold && prevK1511 >= (isV25_1s ? 65.0 : 55.0) && isBearishCurr)
         );
 
-      const isReentryBuyTrigger = stoch100AlignedBuy && Boolean(state.v75_1s_initialBuyDone) && stoch15CrossUp30;
-      const isReentrySellTrigger = stoch100AlignedSell && Boolean(state.v75_1s_initialSellDone) && stoch15CrossDown70;
+      // MACD (5, 35, 1) Filter for Re-Entry trades on V25 (1s) (BUY blocked if MACD <= 0, SELL blocked if MACD >= 0)
+      const macdFilterBuyPassed = !isV25_1s || (sMacd5351 !== null && sMacd5351 > 0.0);
+      const macdFilterSellPassed = !isV25_1s || (sMacd5351 !== null && sMacd5351 < 0.0);
+
+      const isReentryBuyTrigger = stoch100AlignedBuy && Boolean(state.v75_1s_initialBuyDone) && stoch15CrossUpBuy;
+      const isReentrySellTrigger = stoch100AlignedSell && Boolean(state.v75_1s_initialSellDone) && stoch15CrossDownSell;
 
       if (isReentryBuyTrigger) {
-        indicatorsSatisfied = true;
-        signalDirection = "BUY";
-        setupLabel = `${prefix}_REENTRY_STOCH15_30 (BUY)`;
-        state.v75_1s_stoch15_pulled_back_30 = false;
+        if (macdFilterBuyPassed) {
+          indicatorsSatisfied = true;
+          signalDirection = "BUY";
+          setupLabel = isV25_1s ? `${prefix}_REENTRY_STOCH15_20 (BUY)` : `${prefix}_REENTRY_STOCH15_30 (BUY)`;
+          state[pullbackArmedFlagBuy] = false;
+          state.blockerReason = null;
+        } else {
+          state.blockerReason = `V25 (1s) BUY Re-Entry blocked: MACD (5,35,1) is ${sMacd5351 !== null ? sMacd5351.toFixed(3) : 'null'} <= 0`;
+          console.log(`[${REPO_LABEL}] ⚠️ BUY Re-Entry triggered but BLOCKED by MACD (5,35,1) filter (${sMacd5351 !== null ? sMacd5351.toFixed(3) : 'N/A'} <= 0). Trade prevented.`);
+        }
       } else if (isReentrySellTrigger) {
-        indicatorsSatisfied = true;
-        signalDirection = "SELL";
-        setupLabel = `${prefix}_REENTRY_STOCH15_70 (SELL)`;
-        state.v75_1s_stoch15_pulled_back_70 = false;
+        if (macdFilterSellPassed) {
+          indicatorsSatisfied = true;
+          signalDirection = "SELL";
+          setupLabel = isV25_1s ? `${prefix}_REENTRY_STOCH15_80 (SELL)` : `${prefix}_REENTRY_STOCH15_70 (SELL)`;
+          state[pullbackArmedFlagSell] = false;
+          state.blockerReason = null;
+        } else {
+          state.blockerReason = `V25 (1s) SELL Re-Entry blocked: MACD (5,35,1) is ${sMacd5351 !== null ? sMacd5351.toFixed(3) : 'null'} >= 0`;
+          console.log(`[${REPO_LABEL}] ⚠️ SELL Re-Entry triggered but BLOCKED by MACD (5,35,1) filter (${sMacd5351 !== null ? sMacd5351.toFixed(3) : 'N/A'} >= 0). Trade prevented.`);
+        }
       }
     }
 
@@ -5651,13 +5682,16 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         state.armed = { dir: "BUY", lbl: `${v75Tag} Initial BUY Armed (Stoch 100: ${sK100.toFixed(1)} > 50)`, lvl: currentPrice };
         state.nextPhase = `${v75Tag} Initial BUY Armed — Awaiting Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) fresh cross > 50`;
       } else {
-        const inPullback = Boolean(state.v75_1s_stoch15_pulled_back_30) || (sK1511 !== null && sK1511 <= 30.5) || (sMinK1511 !== null && sMinK1511 <= 30.5);
+        const inPullback = isV25_1s
+          ? (Boolean(state.v75_1s_stoch15_pulled_back_20) || (sK1511 !== null && sK1511 <= 20.5) || (sMinK1511 !== null && sMinK1511 <= 20.5))
+          : (Boolean(state.v75_1s_stoch15_pulled_back_30) || (sK1511 !== null && sK1511 <= 30.5) || (sMinK1511 !== null && sMinK1511 <= 30.5));
+        const macdStatus = isV25_1s ? ` [MACD: ${sMacd5351 !== null ? sMacd5351.toFixed(2) : 'N/A'}${sMacd5351 !== null && sMacd5351 > 0 ? ' > 0 ✓' : ' <= 0 ✗'}]` : '';
         if (inPullback) {
-          state.armed = { dir: "BUY", lbl: `${v75Tag} BUY Pullback Armed (Stoch 15 Touched <= 30, %K: ${sK1511 !== null ? sK1511.toFixed(1) : "N/A"})`, type: "RE_ENTRY", lvl: currentPrice };
-          state.nextPhase = `${v75Tag} BUY Re-Entry Armed — Pullback <= 30 Touched (%K: ${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}). Await Close > 30`;
+          state.armed = { dir: "BUY", lbl: `${v75Tag} BUY Pullback Armed (Stoch 15 Touched <= ${buyPullbackLevel}, %K: ${sK1511 !== null ? sK1511.toFixed(1) : "N/A"})${macdStatus}`, type: "RE_ENTRY", lvl: currentPrice };
+          state.nextPhase = `${v75Tag} BUY Re-Entry Armed — Pullback <= ${buyPullbackLevel} Touched (%K: ${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}). Await Close > ${buyPullbackLevel}${isV25_1s ? ' & MACD > 0' : ''}`;
         } else {
           state.armed = null;
-          state.nextPhase = `${v75Tag} Awaiting BUY Re-Entry — Await Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) High/Low or Close touch <= 30 then cross > 30`;
+          state.nextPhase = `${v75Tag} Awaiting BUY Re-Entry — Await Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) High/Low or Close touch <= ${buyPullbackLevel} then cross > ${buyPullbackLevel}${isV25_1s ? ' (MACD > 0 required)' : ''}`;
         }
       }
     } else if (stoch100AlignedSell) {
@@ -5665,13 +5699,16 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         state.armed = { dir: "SELL", lbl: `${v75Tag} Initial SELL Armed (Stoch 100: ${sK100.toFixed(1)} < 50)`, lvl: currentPrice };
         state.nextPhase = `${v75Tag} Initial SELL Armed — Awaiting Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) fresh cross < 50`;
       } else {
-        const inPullback = Boolean(state.v75_1s_stoch15_pulled_back_70) || (sK1511 !== null && sK1511 >= 69.5) || (sMaxK1511 !== null && sMaxK1511 >= 69.5);
+        const inPullback = isV25_1s
+          ? (Boolean(state.v75_1s_stoch15_pulled_back_80) || (sK1511 !== null && sK1511 >= 79.5) || (sMaxK1511 !== null && sMaxK1511 >= 79.5))
+          : (Boolean(state.v75_1s_stoch15_pulled_back_70) || (sK1511 !== null && sK1511 >= 69.5) || (sMaxK1511 !== null && sMaxK1511 >= 69.5));
+        const macdStatus = isV25_1s ? ` [MACD: ${sMacd5351 !== null ? sMacd5351.toFixed(2) : 'N/A'}${sMacd5351 !== null && sMacd5351 < 0 ? ' < 0 ✓' : ' >= 0 ✗'}]` : '';
         if (inPullback) {
-          state.armed = { dir: "SELL", lbl: `${v75Tag} SELL Pullback Armed (Stoch 15 Touched >= 70, %K: ${sK1511 !== null ? sK1511.toFixed(1) : "N/A"})`, type: "RE_ENTRY", lvl: currentPrice };
-          state.nextPhase = `${v75Tag} SELL Re-Entry Armed — Pullback >= 70 Touched (%K: ${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}). Await Close < 70`;
+          state.armed = { dir: "SELL", lbl: `${v75Tag} SELL Pullback Armed (Stoch 15 Touched >= ${sellPullbackLevel}, %K: ${sK1511 !== null ? sK1511.toFixed(1) : "N/A"})${macdStatus}`, type: "RE_ENTRY", lvl: currentPrice };
+          state.nextPhase = `${v75Tag} SELL Re-Entry Armed — Pullback >= ${sellPullbackLevel} Touched (%K: ${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}). Await Close < ${sellPullbackLevel}${isV25_1s ? ' & MACD < 0' : ''}`;
         } else {
           state.armed = null;
-          state.nextPhase = `${v75Tag} Awaiting SELL Re-Entry — Await Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) High/Low or Close touch >= 70 then cross < 70`;
+          state.nextPhase = `${v75Tag} Awaiting SELL Re-Entry — Await Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) High/Low or Close touch >= ${sellPullbackLevel} then cross < ${sellPullbackLevel}${isV25_1s ? ' (MACD < 0 required)' : ''}`;
         }
       }
     } else {
