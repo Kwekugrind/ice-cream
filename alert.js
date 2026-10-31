@@ -5876,34 +5876,59 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
       const pullbackArmedFlagBuy = isV25_1s ? "v75_1s_stoch15_pulled_back_20" : "v75_1s_stoch15_pulled_back_30";
       const pullbackArmedFlagSell = isV25_1s ? "v75_1s_stoch15_pulled_back_80" : "v75_1s_stoch15_pulled_back_70";
+      const pullbackEpochKeyBuy = isV25_1s ? "v75_1s_pb_epoch_20" : "v75_1s_pb_epoch_30";
+      const pullbackEpochKeySell = isV25_1s ? "v75_1s_pb_epoch_80" : "v75_1s_pb_epoch_70";
 
       if (stoch100AlignedBuy && Boolean(state.v75_1s_initialBuyDone)) {
         if (buyTouchedPrev || buyClosedCurr) {
           state[pullbackArmedFlagBuy] = true;
+          state[pullbackEpochKeyBuy] = m5BoundaryEpoch;
         } else if (sK1511 !== null && sK1511 >= (isV25_1s ? 50.0 : 65.0)) {
           state[pullbackArmedFlagBuy] = false;
+          state[pullbackEpochKeyBuy] = null;
         }
       }
       if (stoch100AlignedSell && Boolean(state.v75_1s_initialSellDone)) {
         if (sellTouchedPrev || sellClosedCurr) {
           state[pullbackArmedFlagSell] = true;
+          state[pullbackEpochKeySell] = m5BoundaryEpoch;
         } else if (sK1511 !== null && sK1511 <= (isV25_1s ? 50.0 : 35.0)) {
           state[pullbackArmedFlagSell] = false;
+          state[pullbackEpochKeySell] = null;
         }
       }
 
+      // Expire pullback latch if more than 2 candles (600 seconds) have elapsed without crossing back
+      if (state[pullbackArmedFlagBuy] && state[pullbackEpochKeyBuy] && (m5BoundaryEpoch - state[pullbackEpochKeyBuy]) > 600) {
+        state[pullbackArmedFlagBuy] = false;
+        state[pullbackEpochKeyBuy] = null;
+      }
+      if (state[pullbackArmedFlagSell] && state[pullbackEpochKeySell] && (m5BoundaryEpoch - state[pullbackEpochKeySell]) > 600) {
+        state[pullbackArmedFlagSell] = false;
+        state[pullbackEpochKeySell] = null;
+      }
+
+      // Strict Fresh Cross Gates:
+      // For BUY: prev candle MUST have closed at/below pullback threshold (or <= 32.0/22.0) OR touched in wick, and current candle closes ABOVE buyPullbackLevel (30.0 / 20.0)
+      const prevNearPullbackBuy = prevK1511 !== null && prevK1511 <= (isV25_1s ? 22.0 : 32.0);
       const stoch15CrossUpBuy =
-        sK1511 !== null && prevK1511 !== null && sK1511 > buyPullbackLevel && sK1511 > prevK1511 && (
-          Boolean(state[pullbackArmedFlagBuy]) ||
-          buyTouchedPrev ||
-          (sMinK1511 !== null && sMinK1511 <= buyPullbackThreshold && prevK1511 <= (isV25_1s ? 35.0 : 45.0) && isBullishCurr)
+        sK1511 !== null && prevK1511 !== null &&
+        sK1511 > buyPullbackLevel && sK1511 > prevK1511 &&
+        (
+          (prevNearPullbackBuy && Boolean(state[pullbackArmedFlagBuy])) ||
+          (buyTouchedPrev && prevNearPullbackBuy) ||
+          (sMinK1511 !== null && sMinK1511 <= buyPullbackThreshold && prevNearPullbackBuy && isBullishCurr)
         );
 
+      // For SELL: prev candle MUST have closed at/above pullback threshold (or >= 68.0/78.0) OR touched in wick, and current candle closes BELOW sellPullbackLevel (70.0 / 80.0)
+      const prevNearPullbackSell = prevK1511 !== null && prevK1511 >= (isV25_1s ? 78.0 : 68.0);
       const stoch15CrossDownSell =
-        sK1511 !== null && prevK1511 !== null && sK1511 < sellPullbackLevel && sK1511 < prevK1511 && (
-          Boolean(state[pullbackArmedFlagSell]) ||
-          sellTouchedPrev ||
-          (sMaxK1511 !== null && sMaxK1511 >= sellPullbackThreshold && prevK1511 >= (isV25_1s ? 65.0 : 55.0) && isBearishCurr)
+        sK1511 !== null && prevK1511 !== null &&
+        sK1511 < sellPullbackLevel && sK1511 < prevK1511 &&
+        (
+          (prevNearPullbackSell && Boolean(state[pullbackArmedFlagSell])) ||
+          (sellTouchedPrev && prevNearPullbackSell) ||
+          (sMaxK1511 !== null && sMaxK1511 >= sellPullbackThreshold && prevNearPullbackSell && isBearishCurr)
         );
 
       // MACD (5, 35, 1) Filter for Re-Entry trades on V25 (1s) (BUY blocked if MACD <= 0, SELL blocked if MACD >= 0)
