@@ -108,14 +108,14 @@ export const INSTRUMENT_PROFILES = {
     gateType: "STOCH100_STOCH15",
     stoch100Params: { k: 100, d: 1, slowing: 1 },
     stoch15Params: { k: 15, d: 1, slowing: 1, method: "Simple" },
-    minTakeProfitPoints: 350.0,
-    minTakeProfitUsd: 3.50,
+    minTakeProfitPoints: 200.0,
+    minTakeProfitUsd: 2.00,
     softwareSlUsd: 2.00,
     trailActivationUsd: 2.20,
     trailBufferUsd: 1.20,
     maxHardStopPoints: 250.0,
     slType: "HARD_POINTS",
-    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Standard TP $3.50 (2 wins = $7.00 Daily Target); Rule 1: Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) arms Rule 2 (post-entry); Rule 2: Immediate exit when Stoch (15,1,1) reverses across Level 50."
+    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Software TP $2.00; Hard Broker TP $2.50 (3 wins = $6.00-$7.00 Daily Target); Rule 1: Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) arms Rule 2 (post-entry); Rule 2: Immediate exit when Stoch (15,1,1) reverses across Level 50."
   },
   "1HZ75V": {
     symbol: "1HZ75V",
@@ -130,14 +130,14 @@ export const INSTRUMENT_PROFILES = {
     gateType: "STOCH100_STOCH15",
     stoch100Params: { k: 100, d: 1, slowing: 1 },
     stoch15Params: { k: 15, d: 1, slowing: 1, method: "Simple" },
-    minTakeProfitPoints: 70.0,
-    minTakeProfitUsd: 3.50,
+    minTakeProfitPoints: 40.0,
+    minTakeProfitUsd: 2.00,
     softwareSlUsd: 2.00,
     trailActivationUsd: 2.20,
     trailBufferUsd: 1.20,
     maxHardStopPoints: 80.0,
     slType: "HARD_POINTS",
-    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Standard TP $3.50 (2 wins = $7.00 Daily Target); Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
+    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Software TP $2.00; Hard Broker TP $2.50 (3 wins = $6.00-$7.00 Daily Target); Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
   },
   "R_100": {
     symbol: "R_100",
@@ -218,14 +218,14 @@ export const INSTRUMENT_PROFILES = {
     gateType: "STOCH100_STOCH25",
     stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", level: 50 },
     stoch25Params: { k: 25, d: 1, slowing: 1, method: "Simple", level: 50 },
-    minTakeProfitPoints: 10.00,
-    minTakeProfitUsd: 5.00,
+    minTakeProfitPoints: 7.00,
+    minTakeProfitUsd: 3.50,
     softwareSlUsd: 3.50,
     trailActivationUsd: 2.20,
     trailBufferUsd: 1.20,
     maxHardStopPoints: 10.00,
     slType: "HARD_POINTS",
-    notes: "0.50 lots cTrader engine; Condition 1: Macro Trend Closed M5 Stoch (100,1,1) cross Level 50; Condition 2: Initial Trigger M5 Stoch (25,1,1 Simple) cross Level 50 within +/- 3 candles tolerance (simultaneous, up to 3 before or after); Re-Entry: Closed M5 Stoch (100,1,1) aligned & no active trade open + M5 Stoch (25,1,1) pulls back and freshly crosses Level 10 (BUY) / Level 90 (SELL); Trade Management: Hard Broker TP $5.00; Software SL -$3.50 (Hard Broker SL -$5.00); Sequential Stoch (25,1,1): Rule 1 touches Level 50 moves Software SL to +$0.30 -> Rule 2 immediate exit on Level 50 reversal (strictly dependent on Rule 1); Opposite Signal Position Flip."
+    notes: "0.50 lots cTrader engine; Condition 1: Macro Trend Closed M5 Stoch (100,1,1) cross Level 50; Condition 2: Initial Trigger M5 Stoch (25,1,1 Simple) cross Level 50 within +/- 3 candles tolerance (simultaneous, up to 3 before or after); Re-Entry: Closed M5 Stoch (100,1,1) aligned & no active trade open + M5 Stoch (25,1,1) pulls back and freshly crosses Level 10 (BUY) / Level 90 (SELL); Trade Management: Software TP $3.50; Hard Broker TP $5.00; Software SL -$3.50 (Hard Broker SL -$5.00); Sequential Stoch (25,1,1): Rule 1 touches Level 50 moves Software SL to +$0.30 -> Rule 2 immediate exit on Level 50 reversal (strictly dependent on Rule 1); Opposite Signal Position Flip."
   },
   "R_50": {
     symbol: "R_50",
@@ -240,14 +240,14 @@ export const INSTRUMENT_PROFILES = {
     gateType: "MACD_STOCH25",
     macdParams: { fast: 5, slow: 35, signal: 1 },
     stoch25Params: { k: 25, d: 1, slowing: 1, method: "Simple", level: 50 },
-    minTakeProfitPoints: 0.75,
-    minTakeProfitUsd: 3.00,
+    minTakeProfitPoints: 0.625,
+    minTakeProfitUsd: 2.50,
     softwareSlUsd: 2.50,
     trailActivationUsd: 2.20,
     trailBufferUsd: 1.20,
     maxHardStopPoints: 1.25,
     slType: "HARD_POINTS",
-    notes: "4.00 lots cTrader engine; Condition 1: Macro Trend Closed M5 MACD (5,35,1) cross Level 0; Condition 2: Initial Trigger M5 Stoch (25,1,1 Simple) cross Level 50 within +/- 2 candles tolerance (simultaneous, up to 2 before or after); Re-Entry: Closed M5 MACD (5,35,1) aligned & no active trade open + M5 Stoch (25,1,1) pulls back and freshly crosses Level 10 (BUY) / Level 90 (SELL); Trade Management: Hard Broker TP $3.00; Software SL -$2.50 (Hard Broker SL -$5.00); Sequential Stoch (25,1,1): Rule 1 touches Level 50 moves Software SL to +$0.30 -> Rule 2 immediate exit on Level 50 reversal (strictly dependent on Rule 1); Opposite Signal Position Flip."
+    notes: "4.00 lots cTrader engine; Condition 1: Macro Trend Closed M5 MACD (5,35,1) cross Level 0; Condition 2: Initial Trigger M5 Stoch (25,1,1 Simple) cross Level 50 within +/- 2 candles tolerance (simultaneous, up to 2 before or after); Re-Entry: Closed M5 MACD (5,35,1) aligned & no active trade open + M5 Stoch (25,1,1) pulls back and freshly crosses Level 10 (BUY) / Level 90 (SELL); Trade Management: Software TP $2.50; Hard Broker TP $3.00; Software SL -$2.50 (Hard Broker SL -$5.00); Sequential Stoch (25,1,1): Rule 1 touches Level 50 moves Software SL to +$0.30 -> Rule 2 immediate exit on Level 50 reversal (strictly dependent on Rule 1); Opposite Signal Position Flip."
   },
   "R_10": {
     symbol: "R_10",
@@ -613,7 +613,7 @@ async function executeTrade(direction, orderContext = {}) {
     try {
       const isHardTpSymbol = (SYMBOL === "R_100" || SYMBOL === "1HZ25V" || SYMBOL === "R_25" || SYMBOL === "R_50" || SYMBOL === "1HZ75V" || SYMBOL === "R_75" || SYMBOL === "R_10");
       const isDynamicRunner = isHardTpSymbol ? false : true;
-      const hardTpUsd = (SYMBOL === "R_100" || SYMBOL === "1HZ25V") ? 10.00 : ((SYMBOL === "R_25" || SYMBOL === "R_10") ? 5.00 : (SYMBOL === "R_50" ? 3.00 : ((SYMBOL === "1HZ75V" || SYMBOL === "R_75") ? 3.50 : null)));
+      const hardTpUsd = (SYMBOL === "R_100" || SYMBOL === "1HZ25V") ? 10.00 : ((SYMBOL === "R_25" || SYMBOL === "R_10") ? 5.00 : (SYMBOL === "R_50" ? 3.00 : ((SYMBOL === "1HZ75V" || SYMBOL === "R_75") ? 2.50 : null)));
       const brokerSlDollars = (SYMBOL === "R_10" || SYMBOL === "R_25" || SYMBOL === "1HZ25V" || SYMBOL === "R_50") ? 5.00 : (Math.abs(SOFTWARE_SL_USD) || 4.00);
       const brokerSlPrice = orderContext.brokerSlPrice || orderContext.slPrice || null;
       const payload = {
@@ -2117,17 +2117,17 @@ async function manageOpenTradesFastPath() {
     if ((SYMBOL === "R_100" || SYMBOL === "1HZ25V") && (tpHit || pnl >= 10.00 || dailyTargetCeilingHit)) {
       reason = "Hard Broker Take Profit ($10.00) reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ") — Secured $10.00 Target!";
     }
-    else if (SYMBOL === "R_25" && (tpHit || pnl >= 5.00 || dailyTargetCeilingHit)) {
-      reason = "Hard Broker Take Profit ($5.00) reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ") — Secured $5.00 Target!";
+    else if (SYMBOL === "R_25" && (tpHit || pnl >= 3.50 || dailyTargetCeilingHit)) {
+      reason = "Software Take Profit ($3.50) reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ") — Secured $3.50 Target!";
     }
-    else if (SYMBOL === "R_50" && (tpHit || pnl >= 3.00 || dailyTargetCeilingHit)) {
-      reason = "Hard Broker Take Profit ($3.00) reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ") — Secured $3.00 Target!";
+    else if (SYMBOL === "R_50" && (tpHit || pnl >= 2.50 || dailyTargetCeilingHit)) {
+      reason = "Software Take Profit ($2.50) reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ") — Secured $2.50 Target!";
     }
     else if (SYMBOL === "R_10" && (tpHit || pnl >= 3.50 || dailyTargetCeilingHit)) {
       reason = "Software Take Profit ($3.50) reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ") — Secured $3.50 Target!";
     }
-    else if ((SYMBOL === "1HZ75V" || SYMBOL === "R_75") && (tpHit || pnl >= 3.50 || dailyTargetCeilingHit)) {
-      reason = "Standard Take Profit ($3.50) reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ") — Secured $3.50 Target!";
+    else if ((SYMBOL === "1HZ75V" || SYMBOL === "R_75") && (tpHit || pnl >= 2.00 || dailyTargetCeilingHit)) {
+      reason = "Software Take Profit ($2.00) reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ") — Secured $2.00 Target!";
     }
     else if (dailyTargetCeilingHit) {
       reason = "Daily Target TP Hit (+ $" + pnl.toFixed(2) + ") — Secured 100% of Daily $" + DAILY_PROFIT_TARGET_USD.toFixed(2) + " Target!";
@@ -2225,7 +2225,7 @@ async function manageOpenTradesFastPath() {
       
       // Update cumulative daily net PnL
       state.dailyNetPnl = (state.dailyNetPnl || 0) + serverPnl;
-      const effectiveDailyTarget = (SYMBOL === "1HZ75V" || SYMBOL === "R_75") ? 6.90 : DAILY_PROFIT_TARGET_USD;
+      const effectiveDailyTarget = (SYMBOL === "1HZ75V" || SYMBOL === "R_75") ? 6.00 : DAILY_PROFIT_TARGET_USD;
       if (state.dailyNetPnl >= effectiveDailyTarget) {
         state.dailyTargetReached = true;
         state.dailyTargetDate = new Date().toISOString().split("T")[0];
@@ -2681,7 +2681,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
               if (rec.profit >= 9.0) t.exitReason = "$10.00 Hard Broker TP";
               else if (rec.profit >= 7.5 && SYMBOL === "R_25") t.exitReason = "$8.00 Hard Broker TP";
               else if (rec.profit >= 6.5) t.exitReason = "+$7.00 Daily Strike TP";
-              else if (rec.profit >= 3.2) t.exitReason = "+$3.50 Standard Take Profit";
+              else if (rec.profit >= 4.5 && (SYMBOL === "R_10" || SYMBOL === "R_25")) t.exitReason = "$5.00 Hard Broker TP";
+              else if (rec.profit >= 3.2) t.exitReason = "+$3.50 Software Take Profit";
+              else if (rec.profit >= 2.4 && (SYMBOL === "R_50" || SYMBOL === "1HZ75V" || SYMBOL === "R_75")) t.exitReason = "+$2.50 Hard Broker TP";
+              else if (rec.profit >= 1.8) t.exitReason = "+$2.00 Software Take Profit";
               else if (rec.profit <= 0.45 && t.lockedPnlFloor && t.lockedPnlFloor >= 0.30) t.exitReason = "+$0.30 Software SL Lock (Stoch 15 Lvl 80/20 Touch)";
               else t.exitReason = "Stoch (15,1,1) Level 50 Profit Exit";
             } else {
