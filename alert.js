@@ -2153,7 +2153,7 @@ async function manageOpenTradesFastPath() {
     else if (fakeoutExitTriggered) {
       reason = "Opposite M15 Fractal Fakeout Exit — Closed at " + currentPrice.toFixed(4) + " ($" + pnl.toFixed(2) + ") to avoid full -$2.50 SL";
     }
-    else if (hardStopBreached) { reason = "Hard SL breached at " + currentPrice.toFixed(4); } 
+    else if (SYMBOL !== "1HZ25V" && hardStopBreached) { reason = "Hard SL breached at " + currentPrice.toFixed(4); } 
     else if (pnl <= CATASTROPHIC_PNL_FLOOR) { reason = "Catastrophic floor hit — PnL $" + pnl.toFixed(2); } 
     else if (SYMBOL !== "1HZ25V" && pnl <= SOFTWARE_SL_USD) { reason = "Software SL hit — PnL $" + pnl.toFixed(2); }
     if (!reason) {
@@ -5821,9 +5821,24 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const hasActiveSell = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "SELL");
     const noActiveTrades = !hasActiveBuy && !hasActiveSell;
 
-    // A. Initial Entry Triggers (Strictly Stoch 100 + Stoch 15,1,1 fresh 50 cross, NO EMA filter)
-    const isInitialBuyTrigger = stoch100AlignedBuy && !state.v75_1s_initialBuyDone && stoch15CrossUp50 && !hasActiveBuy;
-    const isInitialSellTrigger = stoch100AlignedSell && !state.v75_1s_initialSellDone && stoch15CrossDown50 && !hasActiveSell;
+    // If tolerance window (+/- 2 candles = 600s for V25-1s) has elapsed since Stoch 100 crossed 50 without Stoch 15 matching,
+    // bypass initial entry and mark initial done to open Re-Entry mode.
+    if (isV25_1s && stoch100AlignedBuy && state.v75_1s_stoch100CrossEpochBuy && !state.v75_1s_initialBuyDone) {
+      if ((m5BoundaryEpoch - state.v75_1s_stoch100CrossEpochBuy) > 600) {
+        state.v75_1s_initialBuyDone = true;
+        console.log(`[${REPO_LABEL}] Stoch 100 cross BUY window (+/- 2 candles) expired. Bypassing initial BUY, opening for RE-ENTRY.`);
+      }
+    }
+    if (isV25_1s && stoch100AlignedSell && state.v75_1s_stoch100CrossEpochSell && !state.v75_1s_initialSellDone) {
+      if ((m5BoundaryEpoch - state.v75_1s_stoch100CrossEpochSell) > 600) {
+        state.v75_1s_initialSellDone = true;
+        console.log(`[${REPO_LABEL}] Stoch 100 cross SELL window (+/- 2 candles) expired. Bypassing initial SELL, opening for RE-ENTRY.`);
+      }
+    }
+
+    // A. Initial Entry Triggers (Strictly Stoch 100 + Stoch 15,1,1 fresh 50 cross; V25-1s strictly requires MACD 5,35,1 filter)
+    const isInitialBuyTrigger = stoch100AlignedBuy && (!isV25_1s || macdFilterBuy) && !state.v75_1s_initialBuyDone && stoch15CrossUp50 && !hasActiveBuy;
+    const isInitialSellTrigger = stoch100AlignedSell && (!isV25_1s || macdFilterSell) && !state.v75_1s_initialSellDone && stoch15CrossDown50 && !hasActiveSell;
 
     if (isInitialBuyTrigger) {
       indicatorsSatisfied = true;
@@ -6631,8 +6646,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       ? (direction === "BUY" ? entry + (reqPnlSoft / CTRADER_LOT_SIZE) : entry - (reqPnlSoft / CTRADER_LOT_SIZE))
       : (direction === "BUY" ? entry * (1 + reqPnlSoft / (STAKE_USD * MULTIPLIER)) : entry * (1 - reqPnlSoft / (STAKE_USD * MULTIPLIER)));
 
+    const entryCandleHighCurr = (candles && candles[si]) ? parseFloat(candles[si].high) : entry;
+    const entryCandleLowCurr = (candles && candles[si]) ? parseFloat(candles[si].low) : entry;
+
     let sl;
-    if (SYMBOL === "1HZ75V" || SYMBOL === "R_75" || SYMBOL === "R_100" || SYMBOL === "R_25" || SYMBOL === "R_50" || SYMBOL === "1HZ25V") {
+    if (SYMBOL === "1HZ25V") {
+      // Dynamic Entry Candle High/Low Software SL anchor
+      sl = direction === "BUY" ? entryCandleLowCurr : entryCandleHighCurr;
+    } else if (SYMBOL === "1HZ75V" || SYMBOL === "R_75" || SYMBOL === "R_100" || SYMBOL === "R_25" || SYMBOL === "R_50") {
       sl = slCapPrice;
     } else if (PROFILE.slType === "HARD_POINTS") {
       sl = hardStopPrice;
@@ -6772,9 +6793,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       `⏰ Time (UTC): ${timeFormatted}\n\n` +
       `💡 To close manually: send \`/close win\` or \`/close loss\``;
 
-    const brokerHardSlPrice = (SYMBOL === "R_10" || SYMBOL === "R_25" || SYMBOL === "1HZ25V" || SYMBOL === "R_50")
-      ? (direction === "BUY" ? entry - (5.00 / CTRADER_LOT_SIZE) : entry + (5.00 / CTRADER_LOT_SIZE))
-      : sl;
+    const brokerHardSlPrice = (SYMBOL === "1HZ25V")
+      ? (direction === "BUY" ? parseFloat((entryCandleLowCurr - (5.00 / CTRADER_LOT_SIZE)).toFixed(2)) : parseFloat((entryCandleHighCurr + (5.00 / CTRADER_LOT_SIZE)).toFixed(2)))
+      : ((SYMBOL === "R_10" || SYMBOL === "R_25" || SYMBOL === "R_50")
+          ? (direction === "BUY" ? entry - (5.00 / CTRADER_LOT_SIZE) : entry + (5.00 / CTRADER_LOT_SIZE))
+          : sl);
 
     const pendingTradeRecord = {
       id: `${SYMBOL}-${Date.now()}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, brokerSlPrice: brokerHardSlPrice, rr: null, entryType, brokerSlAmount: STAKE_USD,
