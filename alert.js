@@ -7240,10 +7240,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   }
 
   // Real operational blockers override normal scanning status
-  if (state.dailyLossLockout) {
-    healthStatus = "ATTENTION_REQUIRED";
-    blockerReason = `Daily Max Loss Reached ($${(state.dailyNetPnl || 0).toFixed(2)}). Trading locked until 00:00 UTC rollover.`;
-  } else if (state.lastError && (Date.now() - new Date(state.lastErrorTime || 0).getTime() < 30 * 60 * 1000)) {
+  if (state.lastError && (Date.now() - new Date(state.lastErrorTime || 0).getTime() < 30 * 60 * 1000)) {
     healthStatus = "ATTENTION_REQUIRED";
     blockerReason = `Recent Error: ${state.lastError}`;
   }
