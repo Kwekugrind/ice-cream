@@ -326,9 +326,10 @@ const INSTRUMENT_SOFTWARE_SL_MAP = {
   "R_25": -3.50,     // Tea Machine (V25, 400x) — Calibrated Software SL -$3.50
   "1HZ75V": -2.00,   // Coffee (V75-1s, 0.05 lots) — Max 2% loss risk ($2.00)
   "R_75": -2.00,     // Lery's Alerts (V75, 50x) — Max 2% loss risk ($2.00)
+  "R_100": -4.00,    // Milk Machine (V100, 1.00 lot) — Software SL -$4.00
   "1HZ100V": -4.00,  // Ice Cream Legacy (V100-1s, 40x) ($2.50 SL)
   "1HZ25V": -4.00,   // Ice Cream Machine (V25-1s) ($4.00 Software SL, $5.00 Broker Hard SL)
-  "R_50": -2.50,     // OmniSight (V50, 4.00 lots) — Calibrated Software SL -$2.50,     // OmniSight (V50, 4.00 lots) ($2.00 SL)
+  "R_50": -2.50,     // OmniSight (V50, 4.00 lots) — Calibrated Software SL -$2.50
   "R_10": -2.00      // Test Bot (V10, 400x) ($2.00 SL)
 };
 
@@ -2207,6 +2208,18 @@ async function manageOpenTradesFastPath() {
         await sendTelegram(`🎯 *${REPO_LABEL} — DAILY TARGET ACHIEVED!* 🎯\n\nDaily Net Profit: *+$${state.dailyNetPnl.toFixed(2)}*\nBot is now locked in profit protection until 00:00 UTC rollover.`);
       }
 
+      state.openTrade = null;
+      if (state.dailyTargetReached) {
+        state.healthStatus = "FUNCTIONING";
+        state.blockerReason = `Daily Net Target (+${DAILY_PROFIT_TARGET_USD.toFixed(2)}) Secured Today (${(state.dailyNetPnl || 0).toFixed(2)})`;
+        state.nextTrigger = "Idling until 00:00 UTC daily rollover";
+        state.nextPhase = state.nextTrigger;
+      } else {
+        state.blockerReason = null;
+        state.nextTrigger = "Standing by for confirmed closed M5 candle to scan";
+        state.nextPhase = state.nextTrigger;
+      }
+
 
       // Disarm setup upon trade exit to require a fresh key level re-test or fresh indicator reset
       state.armed = null;
@@ -3436,8 +3449,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       // Entry-Hour H1 Adverse Close Exit purged per trader mandate
     }
 
-    // Active Trade Exits for PROFILE_V100_1S_TREND_MACD_STOCH
-    if (STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533") {
+    // Active Trade Exits for PROFILE_V100_1S_TREND_MACD_STOCH & PROFILE_V10_TREND_MACD_STOCH533
+    if (STRATEGY_PROFILE === "PROFILE_V100_1S_TREND_MACD_STOCH" || STRATEGY_PROFILE === "PROFILE_V100_1S_EMA_STOCH533" || STRATEGY_PROFILE === "PROFILE_V10_TREND_MACD_STOCH533") {
       const isBuy = t.direction === "BUY";
 
       // Early Invalidation #1: 3 Consecutive M5 Candles Closed Against Position Immediately After Entry
@@ -4153,6 +4166,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   if (state.dailyTargetReached) {
     console.log(`[${REPO_LABEL}] 🎯 Daily target (+$7.00) already secured today. Idling until 00:00 UTC rollover.`);
     state.lastProcessedEpoch = m5BoundaryEpoch;
+    state.openTrade = null;
+    state.healthStatus = "FUNCTIONING";
+    state.blockerReason = `Daily Net Target (+${DAILY_PROFIT_TARGET_USD.toFixed(2)}) Secured Today (${(state.dailyNetPnl || 0).toFixed(2)})`;
+    state.nextTrigger = "Idling until 00:00 UTC daily rollover";
+    state.nextPhase = state.nextTrigger;
     saveState();
     return;
   }
@@ -6429,7 +6447,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       : (direction === "BUY" ? entry * (1 + reqPnlSoft / (STAKE_USD * MULTIPLIER)) : entry * (1 - reqPnlSoft / (STAKE_USD * MULTIPLIER)));
 
     let sl;
-    if (SYMBOL === "1HZ75V" || SYMBOL === "R_75" || SYMBOL === "R_100" || SYMBOL === "R_25" || SYMBOL === "1HZ25V") {
+    if (SYMBOL === "1HZ75V" || SYMBOL === "R_75" || SYMBOL === "R_100" || SYMBOL === "R_25" || SYMBOL === "R_50" || SYMBOL === "1HZ25V") {
       sl = slCapPrice;
     } else if (PROFILE.slType === "HARD_POINTS") {
       sl = hardStopPrice;
