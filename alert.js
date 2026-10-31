@@ -4628,12 +4628,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const stochFreshCrossUp20 = prevK !== null && sK !== null && prevK <= 20.0 && sK > 20.0;
     const stochFreshCrossDown80 = prevK !== null && sK !== null && prevK >= 80.0 && sK < 80.0;
 
-    const noActiveTrades = !trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending));
+    const hasActiveBuy = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "BUY");
+    const hasActiveSell = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "SELL");
+    const noActiveTrades = !hasActiveBuy && !hasActiveSell;
 
     // Setup 1: Initial Entries (Price > BB 20 Mid & 200 + Fresh %K > 50 for BUY / Price < BB 20 Mid & 200 + Fresh %K < 50 for SELL)
     // NOTE: Initial entries do NOT require EMA 100 vs EMA 200 alignment!
     // INVALIDATION RULE: If M5 Stoch (15,2,5 Simple) %K is already beyond Level 50.0, the setup is invalid and will not trigger.
-    if (isAboveBothEma && state.v75_initialBuyArmed && !state.v75_initialBuyDone && stochFreshCrossUp50 && noActiveTrades) {
+    if (isAboveBothEma && state.v75_initialBuyArmed && !state.v75_initialBuyDone && stochFreshCrossUp50 && !hasActiveBuy) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
       setupLabel = "V75_INITIAL_BREAKOUT_STOCH50 (BUY)";
@@ -4648,7 +4650,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.v75_initialBuyArmed = false;
       state.v75_emaTouched_BUY = false;
       state.ema100BuyArmed = false;
-    } else if (isBelowBothEma && state.v75_initialSellArmed && !state.v75_initialSellDone && stochFreshCrossDown50 && noActiveTrades) {
+    } else if (isBelowBothEma && state.v75_initialSellArmed && !state.v75_initialSellDone && stochFreshCrossDown50 && !hasActiveSell) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
       setupLabel = "V75_INITIAL_BREAKOUT_STOCH50 (SELL)";
@@ -4665,13 +4667,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.ema100SellArmed = false;
     }
     // Setup 2: Retracement Entries (Subsequent trades strictly require EMA 100 > EMA 200 for BUY / EMA 100 < EMA 200 for SELL + EMA 100 retrace touch after last trade + fresh Stoch cross)
-    else if (state.v75_initialBuyDone && currentEma100 !== null && currentEma200 !== null && currentEma100 > currentEma200 && state.v75_emaTouched_BUY && isAboveEma100 && stochFreshCrossUp20 && noActiveTrades) {
+    else if (state.v75_initialBuyDone && currentEma100 !== null && currentEma200 !== null && currentEma100 > currentEma200 && state.v75_emaTouched_BUY && isAboveEma100 && stochFreshCrossUp20 && !hasActiveBuy) {
       indicatorsSatisfied = true;
       signalDirection = "BUY";
       setupLabel = "V75_RETRACE_EMA100_STOCH20 (BUY)";
       state.v75_emaTouched_BUY = false;
       state.ema100BuyArmed = false;
-    } else if (state.v75_initialSellDone && currentEma100 !== null && currentEma200 !== null && currentEma100 < currentEma200 && state.v75_emaTouched_SELL && isBelowEma100 && stochFreshCrossDown80 && noActiveTrades) {
+    } else if (state.v75_initialSellDone && currentEma100 !== null && currentEma200 !== null && currentEma100 < currentEma200 && state.v75_emaTouched_SELL && isBelowEma100 && stochFreshCrossDown80 && !hasActiveSell) {
       indicatorsSatisfied = true;
       signalDirection = "SELL";
       setupLabel = "V75_RETRACE_EMA100_STOCH80 (SELL)";
@@ -4943,7 +4945,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const emaBaselineSell = currentEma100 !== null && currentPrice < currentEma100;
 
     const isInitialBuy = 
-      noActiveTrades &&
+      !hasActiveBuy &&
       !state[initialEntryDoneKey] &&
       stoch200AlignedBuy &&
       emaBaselineBuy &&
@@ -4954,7 +4956,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       );
 
     const isInitialSell = 
-      noActiveTrades &&
+      !hasActiveSell &&
       !state[initialEntryDoneKey] &&
       stoch200AlignedSell &&
       emaBaselineSell &&
@@ -4971,8 +4973,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const stoch15FreshCross25Buy = prevK1525 !== null && sK1525 !== null && prevK1525 <= 25.0 && sK1525 > 25.0;
     const stoch15FreshCross75Sell = prevK1525 !== null && sK1525 !== null && prevK1525 >= 75.0 && sK1525 < 75.0;
 
-    const isReentryBuy = noActiveTrades && state[initialEntryDoneKey] && stoch200AlignedBuy && emaBaselineBuy && stoch15FreshCross25Buy;
-    const isReentrySell = noActiveTrades && state[initialEntryDoneKey] && stoch200AlignedSell && emaBaselineSell && stoch15FreshCross75Sell;
+    const isReentryBuy = !hasActiveBuy && state[initialEntryDoneKey] && stoch200AlignedBuy && emaBaselineBuy && stoch15FreshCross25Buy;
+    const isReentrySell = !hasActiveSell && state[initialEntryDoneKey] && stoch200AlignedSell && emaBaselineSell && stoch15FreshCross75Sell;
 
     // Latch Re-Entry Opportunity while trade is running (for immediate entry upon trade close)
     if (state[initialEntryDoneKey] && stoch200AlignedBuy && emaBaselineBuy && stoch15FreshCross25Buy) {
@@ -5128,13 +5130,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const freshConfluenceBuy = (stoch200CrossUp55 && (sK1525 !== null && sK1525 > 75.0)) || (stoch15CrossUp75 && stoch200InBuyTrend) || (state.v25_1s_reversalArmed === "BUY" && stoch200InBuyTrend && sK1525 !== null && sK1525 >= 75.0);
     const freshConfluenceSell = (stoch200CrossDown45 && (sK1525 !== null && sK1525 < 25.0)) || (stoch15CrossDown25 && stoch200InSellTrend) || (state.v25_1s_reversalArmed === "SELL" && stoch200InSellTrend && sK1525 !== null && sK1525 <= 25.0);
 
-    const noActiveTrades = !trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending));
+    const hasActiveBuy = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "BUY");
+    const hasActiveSell = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "SELL");
+    const noActiveTrades = !hasActiveBuy && !hasActiveSell;
 
     // Initial Entry Evaluation
     if (!state.v25_1s_initialDone) {
       if (freshConfluenceBuy) {
         if (emaBaselineBuy) {
-          if (noActiveTrades) {
+          if (!hasActiveBuy) {
             indicatorsSatisfied = true;
             signalDirection = "BUY";
             setupLabel = (stoch200CrossUp55 && stoch15CrossUp75) ? "V25_1S_INITIAL_SIMULTANEOUS (BUY)" : "V25_1S_INITIAL_CONFLUENCE (BUY)";
@@ -5150,7 +5154,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
       } else if (freshConfluenceSell) {
         if (emaBaselineSell) {
-          if (noActiveTrades) {
+          if (!hasActiveSell) {
             indicatorsSatisfied = true;
             signalDirection = "SELL";
             setupLabel = (stoch200CrossDown45 && stoch15CrossDown25) ? "V25_1S_INITIAL_SIMULTANEOUS (SELL)" : "V25_1S_INITIAL_CONFLUENCE (SELL)";
@@ -5178,11 +5182,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const reentrySellTrigger = state.v25_1s_initialDone && stoch200InSellTrend && stoch15FreshCrossDown75 && emaBaselineSell;
 
     if (!indicatorsSatisfied) {
-      if (reentryBuyTrigger && noActiveTrades) {
+      if (reentryBuyTrigger && !hasActiveBuy) {
         indicatorsSatisfied = true;
         signalDirection = "BUY";
         setupLabel = "V25_1S_REENTRY_STOCH15 (BUY)";
-      } else if (reentrySellTrigger && noActiveTrades) {
+      } else if (reentrySellTrigger && !hasActiveSell) {
         indicatorsSatisfied = true;
         signalDirection = "SELL";
         setupLabel = "V25_1S_REENTRY_STOCH15 (SELL)";
@@ -5394,18 +5398,23 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.v25_stoch25CrossEpochSell = m5BoundaryEpoch;
     }
 
-    // Reset flags upon macro trend dealignment
+    // Reset flags upon macro trend dealignment (DO NOT wipe stoch25 cross epochs here; they allow Stoch to cross 3 candles BEFORE Stoch 100)
     if (!stoch100AlignedBuy) {
       state.v25_stoch100CrossEpochBuy = null;
-      state.v25_stoch25CrossEpochBuy = null;
       state.v25_initialBuyDone = false;
       state.v25_stoch25_pulled_back_10 = false;
     }
     if (!stoch100AlignedSell) {
       state.v25_stoch100CrossEpochSell = null;
-      state.v25_stoch25CrossEpochSell = null;
       state.v25_initialSellDone = false;
       state.v25_stoch25_pulled_back_90 = false;
+    }
+    // Expire Stoch 25 cross epochs only after 3 candles (900s) or on opposite cross
+    if (state.v25_stoch25CrossEpochBuy && ((m5BoundaryEpoch - state.v25_stoch25CrossEpochBuy) > 900 || stoch25CrossDown50)) {
+      state.v25_stoch25CrossEpochBuy = null;
+    }
+    if (state.v25_stoch25CrossEpochSell && ((m5BoundaryEpoch - state.v25_stoch25CrossEpochSell) > 900 || stoch25CrossUp50)) {
+      state.v25_stoch25CrossEpochSell = null;
     }
 
     // If tolerance window (+/- 3 candles = 900 seconds) has elapsed since Stoch 100 crossed 50 without Stoch 25 matching,
@@ -5431,8 +5440,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.v25_initialSellDone = true;
     }
 
-    // Check active trades
-    const noActiveTrades = !trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending));
+    // Check active trades (differentiate direction to enable Opposite Signal Position Flip)
+    const hasActiveBuy = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "BUY");
+    const hasActiveSell = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "SELL");
+    const noActiveTrades = !hasActiveBuy && !hasActiveSell;
     const hasSameDirectionActiveTrade = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === (stoch100AlignedBuy ? "BUY" : "SELL"));
 
     // Tolerance window: Stoch (25, 1, 1) can cross level 50 up to 3 candles before, at the same time, or up to 3 candles after Stoch (100, 1, 1)
@@ -5443,11 +5454,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     const isInitialBuyTrigger = stoch100AlignedBuy && sK2511 !== null && sK2511 > 50.0 &&
       !state.v25_initialBuyDone && buyToleranceSatisfied && (stoch100CrossUp50 || stoch25CrossUp50) &&
-      !hasSameDirectionActiveTrade;
+      !hasActiveBuy;
 
     const isInitialSellTrigger = stoch100AlignedSell && sK2511 !== null && sK2511 < 50.0 &&
       !state.v25_initialSellDone && sellToleranceSatisfied && (stoch100CrossDown50 || stoch25CrossDown50) &&
-      !hasSameDirectionActiveTrade;
+      !hasActiveSell;
 
     if (isInitialBuyTrigger) {
       indicatorsSatisfied = true;
@@ -5467,15 +5478,16 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const lastClosedOrTriggeredEpoch = Math.max(state.lastTriggeredEpoch || 0, state.lastClosedTradeEpoch || 0);
     const isPostTradeCurr = !lastClosedOrTriggeredEpoch || candles[si].epoch > lastClosedOrTriggeredEpoch;
 
-    if (noActiveTrades && !indicatorsSatisfied && isPostTradeCurr) {
-      if (stoch100AlignedBuy && Boolean(state.v25_initialBuyDone)) {
+    // Evaluate Re-Entry (allow evaluation if no same-direction trade open, enabling Opposite Signal Position Flip)
+    if (!indicatorsSatisfied && isPostTradeCurr) {
+      if (stoch100AlignedBuy && Boolean(state.v25_initialBuyDone) && !hasActiveBuy) {
         if ((sK2511 !== null && sK2511 <= 10.5) || (sMinK2511 !== null && sMinK2511 <= 10.5) || (prevK2511 !== null && prevK2511 <= 10.5)) {
           state.v25_stoch25_pulled_back_10 = true;
         } else if (sK2511 !== null && sK2511 >= 50.0) {
           state.v25_stoch25_pulled_back_10 = false;
         }
       }
-      if (stoch100AlignedSell && Boolean(state.v25_initialSellDone)) {
+      if (stoch100AlignedSell && Boolean(state.v25_initialSellDone) && !hasActiveSell) {
         if ((sK2511 !== null && sK2511 >= 89.5) || (sMaxK2511 !== null && sMaxK2511 >= 89.5) || (prevK2511 !== null && prevK2511 >= 89.5)) {
           state.v25_stoch25_pulled_back_90 = true;
         } else if (sK2511 !== null && sK2511 <= 50.0) {
@@ -5578,18 +5590,23 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.v50_stoch25CrossEpochSell = m5BoundaryEpoch;
     }
 
-    // Reset flags upon macro trend dealignment
+    // Reset flags upon macro trend dealignment (DO NOT wipe stoch25 cross epochs here; they allow Stoch to cross 2 candles BEFORE MACD)
     if (!macd5351AlignedBuy) {
       state.v50_macdCrossEpochBuy = null;
-      state.v50_stoch25CrossEpochBuy = null;
       state.v50_initialBuyDone = false;
       state.v50_stoch25_pulled_back_10 = false;
     }
     if (!macd5351AlignedSell) {
       state.v50_macdCrossEpochSell = null;
-      state.v50_stoch25CrossEpochSell = null;
       state.v50_initialSellDone = false;
       state.v50_stoch25_pulled_back_90 = false;
+    }
+    // Expire Stoch 25 cross epochs only after 2 candles (600s) or on opposite cross
+    if (state.v50_stoch25CrossEpochBuy && ((m5BoundaryEpoch - state.v50_stoch25CrossEpochBuy) > 600 || stoch25CrossDown50)) {
+      state.v50_stoch25CrossEpochBuy = null;
+    }
+    if (state.v50_stoch25CrossEpochSell && ((m5BoundaryEpoch - state.v50_stoch25CrossEpochSell) > 600 || stoch25CrossUp50)) {
+      state.v50_stoch25CrossEpochSell = null;
     }
 
     // If tolerance window (+/- 2 candles = 600 seconds) has elapsed since MACD crossed 0 without Stoch 25 matching,
@@ -5615,8 +5632,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.v50_initialSellDone = true;
     }
 
-    // Check active trades
-    const noActiveTrades = !trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending));
+    // Check active trades (differentiate direction to enable Opposite Signal Position Flip)
+    const hasActiveBuy = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "BUY");
+    const hasActiveSell = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "SELL");
+    const noActiveTrades = !hasActiveBuy && !hasActiveSell;
     const hasSameDirectionActiveTrade = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === (macd5351AlignedBuy ? "BUY" : "SELL"));
 
     // Tolerance window: Stoch (25, 1, 1) can cross level 50 up to 2 candles before, at the same time, or up to 2 candles after MACD (5, 35, 1) crosses 0
@@ -5627,11 +5646,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     const isInitialBuyTrigger = macd5351AlignedBuy && sK2511 !== null && sK2511 > 50.0 &&
       !state.v50_initialBuyDone && buyToleranceSatisfied && (macd5351CrossUpZero || stoch25CrossUp50) &&
-      !hasSameDirectionActiveTrade;
+      !hasActiveBuy;
 
     const isInitialSellTrigger = macd5351AlignedSell && sK2511 !== null && sK2511 < 50.0 &&
       !state.v50_initialSellDone && sellToleranceSatisfied && (macd5351CrossDownZero || stoch25CrossDown50) &&
-      !hasSameDirectionActiveTrade;
+      !hasActiveSell;
 
     if (isInitialBuyTrigger) {
       indicatorsSatisfied = true;
@@ -5651,15 +5670,16 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const lastClosedOrTriggeredEpoch = Math.max(state.lastTriggeredEpoch || 0, state.lastClosedTradeEpoch || 0);
     const isPostTradeCurr = !lastClosedOrTriggeredEpoch || candles[si].epoch > lastClosedOrTriggeredEpoch;
 
-    if (noActiveTrades && !indicatorsSatisfied && isPostTradeCurr) {
-      if (macd5351AlignedBuy && Boolean(state.v50_initialBuyDone)) {
+    // Evaluate Re-Entry (allow evaluation if no same-direction trade open, enabling Opposite Signal Position Flip)
+    if (!indicatorsSatisfied && isPostTradeCurr) {
+      if (macd5351AlignedBuy && Boolean(state.v50_initialBuyDone) && !hasActiveBuy) {
         if ((sK2511 !== null && sK2511 <= 10.5) || (sMinK2511 !== null && sMinK2511 <= 10.5) || (prevK2511 !== null && prevK2511 <= 10.5)) {
           state.v50_stoch25_pulled_back_10 = true;
         } else if (sK2511 !== null && sK2511 >= 50.0) {
           state.v50_stoch25_pulled_back_10 = false;
         }
       }
-      if (macd5351AlignedSell && Boolean(state.v50_initialSellDone)) {
+      if (macd5351AlignedSell && Boolean(state.v50_initialSellDone) && !hasActiveSell) {
         if ((sK2511 !== null && sK2511 >= 89.5) || (sMaxK2511 !== null && sMaxK2511 >= 89.5) || (prevK2511 !== null && prevK2511 >= 89.5)) {
           state.v50_stoch25_pulled_back_90 = true;
         } else if (sK2511 !== null && sK2511 <= 50.0) {
@@ -5797,11 +5817,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.v75_1s_stoch15_pulled_back_80 = false;
     }
 
-    const noActiveTrades = !trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending));
+    const hasActiveBuy = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "BUY");
+    const hasActiveSell = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "SELL");
+    const noActiveTrades = !hasActiveBuy && !hasActiveSell;
 
     // A. Initial Entry Triggers (Strictly Stoch 100 + Stoch 15,1,1 fresh 50 cross, NO EMA filter)
-    const isInitialBuyTrigger = stoch100AlignedBuy && !state.v75_1s_initialBuyDone && stoch15CrossUp50 && noActiveTrades;
-    const isInitialSellTrigger = stoch100AlignedSell && !state.v75_1s_initialSellDone && stoch15CrossDown50 && noActiveTrades;
+    const isInitialBuyTrigger = stoch100AlignedBuy && !state.v75_1s_initialBuyDone && stoch15CrossUp50 && !hasActiveBuy;
+    const isInitialSellTrigger = stoch100AlignedSell && !state.v75_1s_initialSellDone && stoch15CrossDown50 && !hasActiveSell;
 
     if (isInitialBuyTrigger) {
       indicatorsSatisfied = true;
@@ -5826,7 +5848,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const isBullishCurr = parseFloat(candles[si].close) > parseFloat(candles[si].open);
     const isBearishCurr = parseFloat(candles[si].close) < parseFloat(candles[si].open);
 
-    if (noActiveTrades && !indicatorsSatisfied && isPostTradeCurr) {
+    if (!indicatorsSatisfied && isPostTradeCurr) {
       const buyTouchedPrev = isPostTradePrev && ((prevK1511 !== null && prevK1511 <= buyPullbackThreshold) || (prevMinK1511 !== null && prevMinK1511 <= buyPullbackThreshold));
       const buyClosedCurr = sK1511 !== null && sK1511 <= buyPullbackThreshold;
       const sellTouchedPrev = isPostTradePrev && ((prevK1511 !== null && prevK1511 >= sellPullbackThreshold) || (prevMaxK1511 !== null && prevMaxK1511 >= sellPullbackThreshold));
@@ -5970,18 +5992,23 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.v10_stoch25CrossEpochSell = m5BoundaryEpoch;
     }
 
-    // Reset flags upon macro trend dealignment
+    // Reset flags upon macro trend dealignment (DO NOT wipe stoch25 cross epochs here; they allow Stoch to cross 2 candles BEFORE Stoch 50)
     if (!stoch50AlignedBuy) {
       state.v10_stoch50CrossEpochBuy = null;
-      state.v10_stoch25CrossEpochBuy = null;
       state.v10_initialBuyDone = false;
       state.v10_stoch25_pulled_back = false;
     }
     if (!stoch50AlignedSell) {
       state.v10_stoch50CrossEpochSell = null;
-      state.v10_stoch25CrossEpochSell = null;
       state.v10_initialSellDone = false;
       state.v10_stoch25_pulled_back = false;
+    }
+    // Expire Stoch 25 cross epochs only after 2 candles (600s) or on opposite cross
+    if (state.v10_stoch25CrossEpochBuy && ((m5BoundaryEpoch - state.v10_stoch25CrossEpochBuy) > 600 || stoch25CrossDown50)) {
+      state.v10_stoch25CrossEpochBuy = null;
+    }
+    if (state.v10_stoch25CrossEpochSell && ((m5BoundaryEpoch - state.v10_stoch25CrossEpochSell) > 600 || stoch25CrossUp50)) {
+      state.v10_stoch25CrossEpochSell = null;
     }
 
     // If tolerance window (+/- 2 candles = 600 seconds) has elapsed since Stoch 50 crossed without Stoch 25 matching,
@@ -6007,8 +6034,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.v10_initialSellDone = true;
     }
 
-    // Check active trades
-    const noActiveTrades = !trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending));
+    // Check active trades (differentiate direction to enable Opposite Signal Position Flip)
+    const hasActiveBuy = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "BUY");
+    const hasActiveSell = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "SELL");
+    const noActiveTrades = !hasActiveBuy && !hasActiveSell;
     const hasSameDirectionActiveTrade = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === (stoch50AlignedBuy ? "BUY" : "SELL"));
 
     // Tolerance window: Stoch (25, 1, 1) can cross level 50 up to 2 candles before, at the same time, or up to 2 candles after Stoch (50, 1, 1) crosses 50
@@ -6019,11 +6048,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     const isInitialBuyTrigger = stoch50AlignedBuy && sK2511 !== null && sK2511 > 50.0 &&
       !state.v10_initialBuyDone && buyToleranceSatisfied && (stoch50CrossUp50 || stoch25CrossUp50) &&
-      !hasSameDirectionActiveTrade;
+      !hasActiveBuy;
 
     const isInitialSellTrigger = stoch50AlignedSell && sK2511 !== null && sK2511 < 50.0 &&
       !state.v10_initialSellDone && sellToleranceSatisfied && (stoch50CrossDown50 || stoch25CrossDown50) &&
-      !hasSameDirectionActiveTrade;
+      !hasActiveSell;
 
     if (isInitialBuyTrigger) {
       indicatorsSatisfied = true;
@@ -6043,13 +6072,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const lastClosedOrTriggeredEpoch = Math.max(state.lastTriggeredEpoch || 0, state.lastClosedTradeEpoch || 0);
     const isPostTradeCurr = !lastClosedOrTriggeredEpoch || candles[si].epoch > lastClosedOrTriggeredEpoch;
 
-    if (noActiveTrades && !indicatorsSatisfied && isPostTradeCurr) {
-      if (stoch50AlignedBuy && Boolean(state.v10_initialBuyDone)) {
+    // Evaluate Re-Entry (allow evaluation if no same-direction trade open, enabling Opposite Signal Position Flip)
+    if (!indicatorsSatisfied && isPostTradeCurr) {
+      if (stoch50AlignedBuy && Boolean(state.v10_initialBuyDone) && !hasActiveBuy) {
         if ((sK2511 !== null && sK2511 <= 50.0) || (sMinK2511 !== null && sMinK2511 <= 50.0) || (prevK2511 !== null && prevK2511 <= 50.0)) {
           state.v10_stoch25_pulled_back = true;
         }
       }
-      if (stoch50AlignedSell && Boolean(state.v10_initialSellDone)) {
+      if (stoch50AlignedSell && Boolean(state.v10_initialSellDone) && !hasActiveSell) {
         if ((sK2511 !== null && sK2511 >= 50.0) || (sMaxK2511 !== null && sMaxK2511 >= 50.0) || (prevK2511 !== null && prevK2511 >= 50.0)) {
           state.v10_stoch25_pulled_back = true;
         }
@@ -6534,6 +6564,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           activeTrade.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
           activeTrade.result = activeTrade.serverPnl >= 0 ? "WIN" : "LOSS";
           activeTrade.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+          activeTrade.exitReason = `Opposite Signal Position Flip (${direction})`;
           state.dailyNetPnl = (state.dailyNetPnl || 0) + activeTrade.serverPnl;
           saveTrades(trades);
           saveState();
