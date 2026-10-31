@@ -115,7 +115,7 @@ export const INSTRUMENT_PROFILES = {
     trailBufferUsd: 1.20,
     maxHardStopPoints: 250.0,
     slType: "HARD_POINTS",
-    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Standard TP $3.50 (2 wins = $7.00 Daily Target); Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
+    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Standard TP $3.50 (2 wins = $7.00 Daily Target); Rule 1: Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) arms Rule 2 (post-entry); Rule 2: Immediate exit when Stoch (15,1,1) reverses across Level 50."
   },
   "1HZ75V": {
     symbol: "1HZ75V",
@@ -1976,7 +1976,7 @@ async function manageOpenTradesFastPath() {
 
     let stoch15Level50ExitReason = null;
     let stoch25Level50ExitReason = null;
-    const isPostEntryM5Bucket = !openTrade.entryEpoch || Math.floor(nowEpoch / 300) > Math.floor(openTrade.entryEpoch / 300) || ((nowEpoch - openTrade.entryEpoch) >= 15 && pnl > 0.40);
+    const isPostEntryM5Bucket = !openTrade.entryEpoch || Math.floor(nowEpoch / 300) > Math.floor(openTrade.entryEpoch / 300);
 
     if (SYMBOL === "R_25" || SYMBOL === "R_50") {
       // =========================================================================
@@ -2147,7 +2147,7 @@ async function manageOpenTradesFastPath() {
     else if ((SYMBOL === "R_25" || SYMBOL === "R_50") && openTrade.stoch25_touched_midline === true && openTrade.lockedPnlFloor && pnl <= openTrade.lockedPnlFloor) {
       reason = "Rule 1 Software SL (+$" + openTrade.lockedPnlFloor.toFixed(2) + " Floor) reached after Stoch (25,1,1) Level 50 Touch — Secured +$" + openTrade.lockedPnlFloor.toFixed(2);
     }
-    else if (openTrade.stoch15_touched_extreme === true && openTrade.lockedPnlFloor && (openTrade.maxUnrealizedPnL || 0) >= 0.65 && pnl <= openTrade.lockedPnlFloor) { 
+    else if (SYMBOL !== "R_75" && SYMBOL !== "1HZ75V" && openTrade.stoch15_touched_extreme === true && openTrade.lockedPnlFloor && (openTrade.maxUnrealizedPnL || 0) >= 0.65 && pnl <= openTrade.lockedPnlFloor) { 
       reason = "Rule 1 Software SL (+$" + openTrade.lockedPnlFloor.toFixed(2) + " Floor) reached after Stoch (15,1,1) Level 80/20 Touch — Secured +$" + openTrade.lockedPnlFloor.toFixed(2) + " (Peak: +$" + (openTrade.maxUnrealizedPnL || 0).toFixed(2) + ")"; 
     }
     else if (fakeoutExitTriggered) {
