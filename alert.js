@@ -6794,16 +6794,18 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       trailingActive: !!activeTrade.trendRidingActive
     };
     blockerReason = `Active Position Open: #${activeTrade.contractId || activeTrade.id} (${activeTrade.direction} @ ${Number(activeTrade.entry).toFixed(2)}, PnL: ${uPnl >= 0 ? "+" : ""}${uPnl.toFixed(2)})`;
-    if (SYMBOL === "R_100" || SYMBOL === "1HZ25V") {
-      nextTrigger = `Managing Position: Hard TP +$10.00 | Entry Candle High/Low Close SL | Stoch (15,1,1) Level 80/20 Touch Move SL to +$0.30 & Level 50 Immediate Exit (Hard SL: -$5.00)`;
+    if (SYMBOL === "R_100") {
+      nextTrigger = `Managing Position: Hard TP +$10.00 | Software SL: -$4.00 | Breakeven Defense Engine Active`;
+    } else if (SYMBOL === "1HZ25V") {
+      nextTrigger = `Managing Position: Hard TP +$10.00 | Entry Candle High/Low Close SL | Breakeven Defense Engine Active`;
     } else if (SYMBOL === "R_25") {
-      nextTrigger = `Managing Position: Hard TP +$5.00 | Sequential Stoch (25,1,1) Rule 1 (Lvl 50 -> +$0.30 SL) & Rule 2 (Lvl 50 Reversal Exit) | Software SL: ${SOFTWARE_SL_USD.toFixed(2)}`;
+      nextTrigger = `Managing Position: Hard TP +$5.00 | Soft TP: +$3.50 | Software SL: -$3.50 | Breakeven Defense Engine Active`;
     } else if (SYMBOL === "R_50") {
-      nextTrigger = `Managing Position: Hard TP +$3.00 | Sequential Stoch (25,1,1) Rule 1 (Lvl 50 -> +$0.30 SL) & Rule 2 (Lvl 50 Reversal Exit) | Software SL: ${SOFTWARE_SL_USD.toFixed(2)}`;
+      nextTrigger = `Managing Position: Target TP +$3.00 | Software SL: -$2.50 | Breakeven Defense Engine Active`;
     } else if (SYMBOL === "1HZ75V" || SYMBOL === "R_75") {
-      nextTrigger = `Managing Position: Standard TP +$3.50 | Stoch (15,1,1) Level 80/20 Touch Move SL to +$0.30 & Level 50 Immediate Exit (SL: ${SOFTWARE_SL_USD.toFixed(2)})`;
+      nextTrigger = `Managing Position: Target TP +$3.50 | Software SL: -$2.00 | Breakeven Defense Engine Active`;
     } else {
-      nextTrigger = `Managing Position: Stoch (15,1,1) Level 80/20 Touch Move SL to +$0.30 & Level 50 Immediate Exit (TP Target: ${TARGET_MIN_PROFIT.toFixed(2)} Net, SL: ${SOFTWARE_SL_USD.toFixed(2)})`;
+      nextTrigger = `Managing Position: Target TP +$${TARGET_MIN_PROFIT.toFixed(2)} | Software SL: -$${SOFTWARE_SL_USD.toFixed(2)} | Breakeven Defense Engine Active`;
     }
   } else if (state.dailyTargetReached) {
     state.openTrade = null;
