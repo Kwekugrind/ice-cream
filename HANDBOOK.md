@@ -9554,3 +9554,37 @@ In its place, the **Closed-M5 Stoch (15,2,5) Level 40/60 Loss Invalidation Exit*
 - **Profit Close on Opposite %K/%D Cross with Level 80 / 20:**
   - For **BUY** trades in profit: If `%K` crosses `%D` in opposite (bearish) direction AND crosses level 80 (`%K < %D` and `%K < 80.0`), close trade immediately.
   - For **SELL** trades in profit: If `%K` crosses `%D` in opposite (bullish) direction AND crosses level 20 (`%K > %D` and `%K > 20.0`), close trade immediately.
+
+---
+
+## 25. TRADER MANDATE (NOV 1, 2026) — VOLATILITY 50 (R_50 OMNISIGHT) STOCH 100 TREND & STOCH (8,1,1) OVERHAUL
+
+### 25.1 Authorized Architecture Specification
+In accordance with direct trader directive, Volatility 50 (`R_50` — OmniSight running under PM2 `omni-v50` on Server 2) has been fully upgraded from MACD (5,35,1) to the high-precision Closed M5 Stoch (100,1,1) + Stoch (8,1,1) Confluence Engine:
+
+1. **Macro Trend Gate:**
+   - Evaluated strictly on confirmed closed M5 candles.
+   - Indicator: `M5 Stoch (100, 1, 1 Simple)`.
+   - Gate Level: **Level 50**.
+   - Bullish Trend: `%K > 50.0` (Arms BUY).
+   - Bearish Trend: `%K < 50.0` (Arms SELL).
+   - Replaces MACD Level 0 gate completely.
+
+2. **Initial Trigger:**
+   - Indicator: `M5 Stoch (8, 1, 1 Simple)`.
+   - Trigger Condition: Fresh cross of Level 50 (`> 50` for BUY, `< 50` for SELL) within **±2 candles** (±600 seconds) of the Stoch 100 Level 50 transition.
+   - If 2 candles pass without Stoch 8 alignment, initial entry is bypassed and Re-Entry mode is armed.
+
+3. **Re-Entry Trigger:**
+   - Evaluated while Stoch (100, 1, 1) remains aligned and no same-direction trade is active:
+   - **BUY Re-Entry:** Stoch (8, 1, 1) pulls back to touch or cross `<= 10.0` (arms pullback latch), then on a confirmed closed M5 candle freshly crosses `> 10.0`.
+   - **SELL Re-Entry:** Stoch (8, 1, 1) pulls back to touch or cross `>= 90.0` (arms pullback latch), then on a confirmed closed M5 candle freshly crosses `< 90.0`.
+
+4. **Trade Management (Sequential Stoch 8):**
+   - **Rule 1 (Midline Profit Lock):** When the trade is in positive floating profit (`currentPnl > 0`) and closed M5 Stoch (8, 1, 1) reaches Level 50 (`>= 50.0` for BUY / `<= 50.0` for SELL), move Software SL to **+$0.30** and engage `stoch8_touched_midline = true`.
+   - **Rule 2 (Reversal Exit):** ONLY AFTER Rule 1 has occurred, if closed M5 Stoch (8, 1, 1) subsequently reverses across Level 50 (`< 50.0` for BUY / `> 50.0` for SELL), liquidate the trade immediately.
+
+5. **Risk & Profit Ceiling:**
+   - **Hard Take Profit:** **+$3.00** (0.75 points on 4.00 lots).
+   - **Software Stop Loss:** **-$2.50** (0.625 points on 4.00 lots).
+   - **Broker Hard SL:** **-$5.00** (1.25 points on 4.00 lots).
