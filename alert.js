@@ -6929,7 +6929,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           nextTrigger = `Awaiting Stoch (25,1,1) %K (${sK2511 !== null ? sK2511.toFixed(1) : "N/A"}) cross > 50 within +/- 3 candles for Initial BUY`;
         } else {
           blockerReason = `BUY Trend Active (Stoch 100: ${sK100.toFixed(1)} > 50). Initial BUY done/bypassed.`;
-          nextTrigger = `Awaiting Stoch (25,1,1) %K (${sK2511 !== null ? sK2511.toFixed(1) : "N/A"}) pullback <= 10 then fresh cross > 10 for BUY Re-Entry`;
+          nextTrigger = `Awaiting Stoch (25,1,1) %K (${sK2511 !== null ? sK2511.toFixed(1) : "N/A"}) pullback <= 30 then fresh cross > 30 for BUY Re-Entry`;
         }
       } else if (stoch100Sell) {
         if (!state.v25_initialSellDone) {
@@ -6937,7 +6937,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           nextTrigger = `Awaiting Stoch (25,1,1) %K (${sK2511 !== null ? sK2511.toFixed(1) : "N/A"}) cross < 50 within +/- 3 candles for Initial SELL`;
         } else {
           blockerReason = `SELL Trend Active (Stoch 100: ${sK100.toFixed(1)} < 50). Initial SELL done/bypassed.`;
-          nextTrigger = `Awaiting Stoch (25,1,1) %K (${sK2511 !== null ? sK2511.toFixed(1) : "N/A"}) pullback >= 90 then fresh cross < 90 for SELL Re-Entry`;
+          nextTrigger = `Awaiting Stoch (25,1,1) %K (${sK2511 !== null ? sK2511.toFixed(1) : "N/A"}) pullback >= 70 then fresh cross < 70 for SELL Re-Entry`;
         }
       } else {
         blockerReason = "Awaiting Stoch 100 trend definition";
