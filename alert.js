@@ -1976,6 +1976,17 @@ async function manageOpenTradesFastPath() {
     openTrade.maxUnrealizedPnL = Math.max(openTrade.maxUnrealizedPnL || 0, pnl);
     const peak = openTrade.maxUnrealizedPnL;
 
+    // 🛡️ Breakeven Protection at 50% TP Progress for VIX 75 (R_75 & 1HZ75V):
+    // Arms ONLY after trade reaches +$1.00 (100 points / 50% of $2.00 TP).
+    // Gives 90 points of breathing room and only protects capital if trade completely reverses to entry (+ $0.10 buffer).
+    if ((SYMBOL === "R_75" || SYMBOL === "1HZ75V") && peak >= 1.00) {
+      if (!openTrade.breakevenArmed) {
+        openTrade.breakevenArmed = true;
+        saveTrades(trades);
+        console.log(`[BREAKEVEN ARMED] ${SYMBOL} #${openTrade.contractId} reached +${peak.toFixed(2)} (50% of TP target) -> Breakeven protection active (+ $0.10 buffer)`);
+      }
+    }
+
     // Fast-path trade monitoring: Focuses strictly on calibrated Take Profit and Stop Loss execution.
     // Intrabar stochastic tick-oscillations and +.30 trailing floors removed to allow trades full breathing room to reach programmed Take Profit.
 
@@ -2031,6 +2042,9 @@ async function manageOpenTradesFastPath() {
     }
     else if ((SYMBOL === "1HZ75V" || SYMBOL === "R_75") && (tpHit || pnl >= 2.00 || dailyTargetCeilingHit)) {
       reason = "Software Take Profit ($2.00) reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ") — Secured $2.00 Target!";
+    }
+    else if ((SYMBOL === "1HZ75V" || SYMBOL === "R_75") && openTrade.breakevenArmed && pnl <= 0.10) {
+      reason = "Breakeven Lock hit (+ $" + pnl.toFixed(2) + ") after reaching 50% TP (+ $" + peak.toFixed(2) + " peak) — Capital Protected!";
     }
     else if (dailyTargetCeilingHit) {
       reason = "Daily Target TP Hit (+ $" + pnl.toFixed(2) + ") — Secured 100% of Daily $" + DAILY_PROFIT_TARGET_USD.toFixed(2) + " Target!";
@@ -3114,7 +3128,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       // - BUY: if closed M5 candle closes below entry candle Low, exit trade.
       // - SELL: if closed M5 candle closes above entry candle High, exit trade.
       // =========================================================================
-      if (SYMBOL === "1HZ25V") {
+      // Option A: Entry Candle High/Low Invalidation SL for 1HZ25V, R_75, and 1HZ75V
+      if (SYMBOL === "1HZ25V" || SYMBOL === "R_75" || SYMBOL === "1HZ75V") {
         let v251sExit = false;
         let v251sExitDetail = "";
         if (isBuy && t.entryCandleLow !== undefined && t.entryCandleLow !== null && cClose < t.entryCandleLow) {
@@ -3127,12 +3142,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
         if (v251sExit) {
           closingContracts.add(t.contractId);
-          console.log("[ENTRY CANDLE SL 1HZ25V] Active " + t.direction + " #" + t.contractId + ": " + v251sExitDetail + ". Current PnL: " + (currentPnl >= 0 ? "+$" : "-$") + Math.abs(currentPnl).toFixed(2) + ". Closing immediately.");
+          console.log("[ENTRY CANDLE SL " + SYMBOL + "] Active " + t.direction + " #" + t.contractId + ": " + v251sExitDetail + ". Current PnL: " + (currentPnl >= 0 ? "+$" : "-$") + Math.abs(currentPnl).toFixed(2) + ". Closing immediately.");
           t.exitReason = v251sExitDetail;
           try {
             const closeRes = await closeContract(t.contractId);
             if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
-              console.error("[SL EXIT ERROR 1HZ25V] Broker close failed for " + t.contractId + ": " + (closeRes.error.message || JSON.stringify(closeRes.error)));
+              console.error("[SL EXIT ERROR " + SYMBOL + "] Broker close failed for " + t.contractId + ": " + (closeRes.error.message || JSON.stringify(closeRes.error)));
               closingContracts.delete(t.contractId);
               continue;
             }
@@ -3154,7 +3169,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             const icon = t.result === "WIN" ? "✅" : "❌";
             const pnlStr = t.serverPnl >= 0 ? "+" + t.serverPnl.toFixed(2) : "-" + Math.abs(t.serverPnl).toFixed(2);
             await sendTelegram(
-              icon + " *[STOP LOSS EXIT] " + SYMBOL_NAME + " — " + REPO_LABEL + "*\n\n" +
+              icon + " *[ENTRY CANDLE SL EXIT] " + SYMBOL_NAME + " — " + REPO_LABEL + "*\n\n" +
               "• Direction: *" + (t.direction === "BUY" ? "🟢 BUY" : "🔴 SELL") + "*\n" +
               "• Exit Reason: *" + v251sExitDetail + "*\n" +
               "• Net P&L: *" + pnlStr + "*\n" +
@@ -3203,15 +3218,20 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           }
         }
       } else if (t.stoch15_touched_extreme === true) {
-        // Step 2 (Rule 2 — Strictly Dependent on Rule 1): Immediate Exit when Stoch (15,1,1) reverses to touch or cross Level 50
+        // Step 2 (Rule 2 — Strictly Dependent on Rule 1): Profit Exit when Stoch (15,1,1) reverses to touch or cross Level 50
+        // Strictly guarded: only exits if trade is in profit (currentPnl >= $0.10) to never cut a trade in loss under 'Profit Exit'
         if (isBuy && ((sK1511 !== null && sK1511 <= 50.0) || (sMinK1511 !== null && sMinK1511 <= 50.0))) {
-          stoch15Exit = true;
-          const trigVal = (sK1511 !== null && sK1511 <= 50.0) ? sK1511.toFixed(1) : sMinK1511.toFixed(1);
-          exitDetail = "Rule 2 Triggered: Stoch (15,1,1) reversed to touch/cross Level 50 (" + trigVal + ") after Rule 1 Level 80 Touch";
+          if (currentPnl >= 0.10) {
+            stoch15Exit = true;
+            const trigVal = (sK1511 !== null && sK1511 <= 50.0) ? sK1511.toFixed(1) : sMinK1511.toFixed(1);
+            exitDetail = "Rule 2 Triggered: Stoch (15,1,1) reversed to touch/cross Level 50 (" + trigVal + ") after Rule 1 Level 80 Touch — Secured +$" + currentPnl.toFixed(2);
+          }
         } else if (!isBuy && ((sK1511 !== null && sK1511 >= 50.0) || (sMaxK1511 !== null && sMaxK1511 >= 50.0))) {
-          stoch15Exit = true;
-          const trigVal = (sK1511 !== null && sK1511 >= 50.0) ? sK1511.toFixed(1) : sMaxK1511.toFixed(1);
-          exitDetail = "Rule 2 Triggered: Stoch (15,1,1) reversed to touch/cross Level 50 (" + trigVal + ") after Rule 1 Level 20 Touch";
+          if (currentPnl >= 0.10) {
+            stoch15Exit = true;
+            const trigVal = (sK1511 !== null && sK1511 >= 50.0) ? sK1511.toFixed(1) : sMaxK1511.toFixed(1);
+            exitDetail = "Rule 2 Triggered: Stoch (15,1,1) reversed to touch/cross Level 50 (" + trigVal + ") after Rule 1 Level 20 Touch — Secured +$" + currentPnl.toFixed(2);
+          }
         }
       }
 
