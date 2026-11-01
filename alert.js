@@ -115,7 +115,7 @@ export const INSTRUMENT_PROFILES = {
     trailBufferUsd: 1.20,
     maxHardStopPoints: 250.0,
     slType: "HARD_POINTS",
-    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Software TP $2.00; Hard Broker TP $2.50 (3 wins = $6.00-$7.00 Daily Target); Rule 1: Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) arms Rule 2 (post-entry); Rule 2: Immediate exit when Stoch (15,1,1) reverses across Level 50."
+    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (strictly confirmed on closed M5 candles) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Software TP $2.00; Hard Broker TP $2.50 (3 wins = $6.00-$7.00 Daily Target); Rule 1: Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) arms Rule 2 (post-entry); Rule 2: Immediate exit when Stoch (15,1,1) reverses across Level 50."
   },
   "1HZ75V": {
     symbol: "1HZ75V",
@@ -137,7 +137,7 @@ export const INSTRUMENT_PROFILES = {
     trailBufferUsd: 1.20,
     maxHardStopPoints: 80.0,
     slType: "HARD_POINTS",
-    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Software TP $2.00; Hard Broker TP $2.50 (3 wins = $6.00-$7.00 Daily Target); Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
+    notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (strictly confirmed on closed M5 candles) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Software TP $2.00; Hard Broker TP $2.50 (3 wins = $6.00-$7.00 Daily Target); Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
   },
   "R_100": {
     symbol: "R_100",
@@ -158,7 +158,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 5.00,
     maxHardStopPoints: 4.00,
     slType: "HARD_POINTS",
-    notes: "1.00 lot cTrader minimum; Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (even slightest High/Low wick touch) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Hard Broker TP $10.00; Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
+    notes: "1.00 lot cTrader minimum; Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (strictly confirmed on closed M5 candles) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Hard Broker TP $10.00; Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
   },
     "1HZ100V": {
     symbol: "1HZ100V",
@@ -2712,67 +2712,24 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const macd2575 = calculateMACD(candles, 25, 75, 1);
   const stoch1558 = calculateStoch(candles, 15, 5, 8);
   const stoch100 = calculateStoch(candles, 100, 1, 1);
-  // Stoch (15,1,1 Simple) for 1HZ75V Coffee Machine + Intrabar High/Low Wick Touch Extremes
+  // Stoch (15,1,1 Simple) — Strictly Confirmed on Closed M5 Candles (Matching Indicator Line 1:1)
   const stoch1511 = calculateStoch(candles, 15, 1, 1, "Simple");
   const sK1511 = stoch1511.k[si], sD1511 = stoch1511.d[si], prevK1511 = stoch1511.k[si - 1], prevD1511 = stoch1511.d[si - 1];
-  function getStoch15WickExtremes(idx) {
-    if (!candles || idx < 14 || idx >= candles.length) return { maxK: null, minK: null };
-    const sl15 = candles.slice(idx - 14, idx + 1);
-    const sl14 = candles.slice(idx - 14, idx);
-    const hh15 = Math.max(...sl15.map(c => parseFloat(c.high)));
-    const ll15 = Math.min(...sl15.map(c => parseFloat(c.low)));
-    const hh14 = Math.max(...sl14.map(c => parseFloat(c.high)));
-    const ll14 = Math.min(...sl14.map(c => parseFloat(c.low)));
-    const cH = parseFloat(candles[idx].high);
-    const cL = parseFloat(candles[idx].low);
-    const cC = parseFloat(candles[idx].close);
-    const closeK = hh15 === ll15 ? 100 : ((cC - ll15) / (hh15 - ll15)) * 100;
-    const highK15 = hh15 === ll15 ? 100 : ((cH - ll15) / (hh15 - ll15)) * 100;
-    const hhPrior = Math.max(hh14, cH);
-    const highK14 = hhPrior === ll14 ? 100 : ((cH - ll14) / (hhPrior - ll14)) * 100;
-    const lowK15 = hh15 === ll15 ? 0 : ((cL - ll15) / (hh15 - ll15)) * 100;
-    const llPrior = Math.min(ll14, cL);
-    const lowK14 = hh14 === llPrior ? 0 : ((cL - llPrior) / (hh14 - llPrior)) * 100;
-    return {
-      maxK: Math.max(closeK, highK15, highK14),
-      minK: Math.min(closeK, lowK15, lowK14)
-    };
-  }
-  const currWick15 = getStoch15WickExtremes(si);
-  const prevWick15 = getStoch15WickExtremes(si - 1);
-  const sMaxK1511 = currWick15.maxK, sMinK1511 = currWick15.minK;
-  const prevMaxK1511 = prevWick15.maxK, prevMinK1511 = prevWick15.minK;
+  const sMaxK1511 = sK1511, sMinK1511 = sK1511;
+  const prevMaxK1511 = prevK1511, prevMinK1511 = prevK1511;
   state.stoch1511Val = sK1511;
-  state.stoch1511MaxVal = sMaxK1511;
-  state.stoch1511MinVal = sMinK1511;
+  state.stoch1511MaxVal = sK1511;
+  state.stoch1511MinVal = sK1511;
 
-  // Stoch (25,1,1 Simple) for R_25 Tea Machine + Intrabar High/Low Wick Touch Extremes
+  // Stoch (25,1,1 Simple) — Strictly Confirmed on Closed M5 Candles (Matching Indicator Line 1:1)
   const stoch2511 = calculateStoch(candles, 25, 1, 1, "Simple");
   const sK2511 = stoch2511.k[si], sD2511 = stoch2511.d[si], prevK2511 = stoch2511.k[si - 1], prevD2511 = stoch2511.d[si - 1];
-  function getStoch25WickExtremes(idx) {
-    if (!candles || idx < 24 || idx >= candles.length) return { maxK: null, minK: null };
-    const sl25 = candles.slice(idx - 24, idx + 1);
-    const hh25 = Math.max(...sl25.map(c => parseFloat(c.high)));
-    const ll25 = Math.min(...sl25.map(c => parseFloat(c.low)));
-    const cH = parseFloat(candles[idx].high);
-    const cL = parseFloat(candles[idx].low);
-    const cC = parseFloat(candles[idx].close);
-    const closeK = hh25 === ll25 ? 50 : ((cC - ll25) / (hh25 - ll25)) * 100;
-    const highK25 = hh25 === ll25 ? 100 : ((cH - ll25) / (hh25 - ll25)) * 100;
-    const lowK25 = hh25 === ll25 ? 0 : ((cL - ll25) / (hh25 - ll25)) * 100;
-    return {
-      maxK: Math.max(closeK, highK25),
-      minK: Math.min(closeK, lowK25)
-    };
-  }
-  const currWick25 = getStoch25WickExtremes(si);
-  const prevWick25 = getStoch25WickExtremes(si - 1);
-  const sMaxK2511 = currWick25.maxK, sMinK2511 = currWick25.minK;
-  const prevMaxK2511 = prevWick25.maxK, prevMinK2511 = prevWick25.minK;
+  const sMaxK2511 = sK2511, sMinK2511 = sK2511;
+  const prevMaxK2511 = prevK2511, prevMinK2511 = prevK2511;
   if (SYMBOL === "R_25" || SYMBOL === "R_10") {
     state.stoch2511Val = sK2511;
-    state.stoch2511MaxVal = sMaxK2511;
-    state.stoch2511MinVal = sMinK2511;
+    state.stoch2511MaxVal = sK2511;
+    state.stoch2511MinVal = sK2511;
     state.stoch1511Val = sK2511;
   }
 
@@ -2935,8 +2892,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         const cClose = parseFloat(candles[si].close);
 
         if (!t.stoch25_touched_midline) {
-          const buyTouched50 = (sK2511 !== null && sK2511 >= 50.0) || (sMaxK2511 !== null && sMaxK2511 >= 50.0);
-          const sellTouched50 = (sK2511 !== null && sK2511 <= 50.0) || (sMinK2511 !== null && sMinK2511 <= 50.0);
+          const buyTouched50 = sK2511 !== null && sK2511 >= 50.0;
+          const sellTouched50 = sK2511 !== null && sK2511 <= 50.0;
           if (isBuy && buyTouched50 && currentPnl > 0) {
             t.stoch25_touched_midline = true;
             t.stoch25_touched_midline_epoch = candles[si].epoch;
@@ -3188,8 +3145,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
       if (!t.stoch15_touched_extreme) {
         // Step 1 (Rule 1): Move Software SL to +$0.30 when Stoch (15,1,1) touches Level 80 (BUY) / Level 20 (SELL)
-        const buyTouched80 = (sK1511 !== null && sK1511 >= 79.5) || (sMaxK1511 !== null && sMaxK1511 >= 79.5);
-        const sellTouched20 = (sK1511 !== null && sK1511 <= 20.5) || (sMinK1511 !== null && sMinK1511 <= 20.5);
+        const buyTouched80 = sK1511 !== null && sK1511 >= 80.0;
+        const sellTouched20 = sK1511 !== null && sK1511 <= 20.0;
         if (isBuy && buyTouched80) {
           t.stoch15_touched_extreme = true;
           t.stoch15_touched_extreme_epoch = candles[si].epoch;
@@ -3220,13 +3177,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       } else if (t.stoch15_touched_extreme === true) {
         // Step 2 (Rule 2 — Strictly Dependent on Rule 1): Profit Exit when Stoch (15,1,1) reverses to touch or cross Level 50
         // Strictly guarded: only exits if trade is in profit (currentPnl >= $0.10) to never cut a trade in loss under 'Profit Exit'
-        if (isBuy && ((sK1511 !== null && sK1511 <= 50.0) || (sMinK1511 !== null && sMinK1511 <= 50.0))) {
+        if (isBuy && sK1511 !== null && sK1511 <= 50.0) {
           if (currentPnl >= 0.10) {
             stoch15Exit = true;
             const trigVal = (sK1511 !== null && sK1511 <= 50.0) ? sK1511.toFixed(1) : sMinK1511.toFixed(1);
             exitDetail = "Rule 2 Triggered: Stoch (15,1,1) reversed to touch/cross Level 50 (" + trigVal + ") after Rule 1 Level 80 Touch — Secured +$" + currentPnl.toFixed(2);
           }
-        } else if (!isBuy && ((sK1511 !== null && sK1511 >= 50.0) || (sMaxK1511 !== null && sMaxK1511 >= 50.0))) {
+        } else if (!isBuy && sK1511 !== null && sK1511 >= 50.0) {
           if (currentPnl >= 0.10) {
             stoch15Exit = true;
             const trigVal = (sK1511 !== null && sK1511 >= 50.0) ? sK1511.toFixed(1) : sMaxK1511.toFixed(1);
@@ -5393,14 +5350,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     // Evaluate Re-Entry (allow evaluation if no same-direction trade open, enabling Opposite Signal Position Flip)
     if (!indicatorsSatisfied && isPostTradeCurr) {
       if (stoch100AlignedBuy && Boolean(state.v25_initialBuyDone) && !hasActiveBuy) {
-        if ((sK2511 !== null && sK2511 <= 30.5) || (sMinK2511 !== null && sMinK2511 <= 30.5) || (prevK2511 !== null && prevK2511 <= 30.5)) {
+        if ((sK2511 !== null && sK2511 <= 30.0) || (prevK2511 !== null && prevK2511 <= 30.0)) {
           state.v25_stoch25_pulled_back_30 = true;
         } else if (sK2511 !== null && sK2511 >= 50.0) {
           state.v25_stoch25_pulled_back_30 = false;
         }
       }
       if (stoch100AlignedSell && Boolean(state.v25_initialSellDone) && !hasActiveSell) {
-        if ((sK2511 !== null && sK2511 >= 69.5) || (sMaxK2511 !== null && sMaxK2511 >= 69.5) || (prevK2511 !== null && prevK2511 >= 69.5)) {
+        if ((sK2511 !== null && sK2511 >= 70.0) || (prevK2511 !== null && prevK2511 >= 70.0)) {
           state.v25_stoch25_pulled_back_70 = true;
         } else if (sK2511 !== null && sK2511 <= 50.0) {
           state.v25_stoch25_pulled_back_70 = false;
@@ -5441,7 +5398,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         state.armed = { dir: "BUY", lbl: `V25 Initial BUY Armed (Stoch 100: ${sK100.toFixed(1)} > 50)`, lvl: currentPrice };
         state.nextPhase = `V25 Initial BUY Armed — Awaiting Stoch (25,1,1) %K (${sK2511 !== null ? sK2511.toFixed(1) : "N/A"}) cross > 50 within +/- 3 candles`;
       } else {
-        const inPullback = Boolean(state.v25_stoch25_pulled_back_30) || (sK2511 !== null && sK2511 <= 30.5) || (sMinK2511 !== null && sMinK2511 <= 30.5);
+        const inPullback = Boolean(state.v25_stoch25_pulled_back_30) || (sK2511 !== null && sK2511 <= 30.0);
         if (inPullback) {
           state.armed = { dir: "BUY", lbl: `V25 BUY Pullback Armed (Stoch 25 Touched <= 30, %K: ${sK2511 !== null ? sK2511.toFixed(1) : "N/A"})`, type: "RE_ENTRY", lvl: currentPrice };
           state.nextPhase = `V25 BUY Re-Entry Armed — Pullback <= 30 Touched (%K: ${sK2511 !== null ? sK2511.toFixed(1) : "N/A"}). Await Cross > 30`;
@@ -5455,7 +5412,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         state.armed = { dir: "SELL", lbl: `V25 Initial SELL Armed (Stoch 100: ${sK100.toFixed(1)} < 50)`, lvl: currentPrice };
         state.nextPhase = `V25 Initial SELL Armed — Awaiting Stoch (25,1,1) %K (${sK2511 !== null ? sK2511.toFixed(1) : "N/A"}) cross < 50 within +/- 3 candles`;
       } else {
-        const inPullback = Boolean(state.v25_stoch25_pulled_back_70) || (sK2511 !== null && sK2511 >= 69.5) || (sMaxK2511 !== null && sMaxK2511 >= 69.5);
+        const inPullback = Boolean(state.v25_stoch25_pulled_back_70) || (sK2511 !== null && sK2511 >= 70.0);
         if (inPullback) {
           state.armed = { dir: "SELL", lbl: `V25 SELL Pullback Armed (Stoch 25 Touched >= 70, %K: ${sK2511 !== null ? sK2511.toFixed(1) : "N/A"})`, type: "RE_ENTRY", lvl: currentPrice };
           state.nextPhase = `V25 SELL Re-Entry Armed — Pullback >= 70 Touched (%K: ${sK2511 !== null ? sK2511.toFixed(1) : "N/A"}). Await Cross < 70`;
@@ -5585,14 +5542,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     // Evaluate Re-Entry (allow evaluation if no same-direction trade open, enabling Opposite Signal Position Flip)
     if (!indicatorsSatisfied && isPostTradeCurr) {
       if (macd5351AlignedBuy && Boolean(state.v50_initialBuyDone) && !hasActiveBuy) {
-        if ((sK2511 !== null && sK2511 <= 10.5) || (sMinK2511 !== null && sMinK2511 <= 10.5) || (prevK2511 !== null && prevK2511 <= 10.5)) {
+        if ((sK2511 !== null && sK2511 <= 10.0) || (prevK2511 !== null && prevK2511 <= 10.0)) {
           state.v50_stoch25_pulled_back_10 = true;
         } else if (sK2511 !== null && sK2511 >= 50.0) {
           state.v50_stoch25_pulled_back_10 = false;
         }
       }
       if (macd5351AlignedSell && Boolean(state.v50_initialSellDone) && !hasActiveSell) {
-        if ((sK2511 !== null && sK2511 >= 89.5) || (sMaxK2511 !== null && sMaxK2511 >= 89.5) || (prevK2511 !== null && prevK2511 >= 89.5)) {
+        if ((sK2511 !== null && sK2511 >= 90.0) || (prevK2511 !== null && prevK2511 >= 90.0)) {
           state.v50_stoch25_pulled_back_90 = true;
         } else if (sK2511 !== null && sK2511 <= 50.0) {
           state.v50_stoch25_pulled_back_90 = false;
@@ -5633,7 +5590,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         state.armed = { dir: "BUY", lbl: `V50 Initial BUY Armed (MACD 5,35,1: ${sMacd5351.toFixed(3)} > 0)`, lvl: currentPrice };
         state.nextPhase = `V50 Initial BUY Armed — Awaiting Stoch (25,1,1) %K (${sK2511 !== null ? sK2511.toFixed(1) : "N/A"}) cross > 50 within +/- 2 candles`;
       } else {
-        const inPullback = Boolean(state.v50_stoch25_pulled_back_10) || (sK2511 !== null && sK2511 <= 10.5) || (sMinK2511 !== null && sMinK2511 <= 10.5);
+        const inPullback = Boolean(state.v50_stoch25_pulled_back_10) || (sK2511 !== null && sK2511 <= 10.0);
         if (inPullback) {
           state.armed = { dir: "BUY", lbl: `V50 BUY Pullback Armed (Stoch 25 Touched <= 10, %K: ${sK2511 !== null ? sK2511.toFixed(1) : "N/A"})`, type: "RE_ENTRY", lvl: currentPrice };
           state.nextPhase = `V50 BUY Re-Entry Armed — Pullback <= 10 Touched (%K: ${sK2511 !== null ? sK2511.toFixed(1) : "N/A"}). Await Cross > 10`;
@@ -5647,7 +5604,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         state.armed = { dir: "SELL", lbl: `V50 Initial SELL Armed (MACD 5,35,1: ${sMacd5351.toFixed(3)} < 0)`, lvl: currentPrice };
         state.nextPhase = `V50 Initial SELL Armed — Awaiting Stoch (25,1,1) %K (${sK2511 !== null ? sK2511.toFixed(1) : "N/A"}) cross < 50 within +/- 2 candles`;
       } else {
-        const inPullback = Boolean(state.v50_stoch25_pulled_back_90) || (sK2511 !== null && sK2511 >= 89.5) || (sMaxK2511 !== null && sMaxK2511 >= 89.5);
+        const inPullback = Boolean(state.v50_stoch25_pulled_back_90) || (sK2511 !== null && sK2511 >= 90.0);
         if (inPullback) {
           state.armed = { dir: "SELL", lbl: `V50 SELL Pullback Armed (Stoch 25 Touched >= 90, %K: ${sK2511 !== null ? sK2511.toFixed(1) : "N/A"})`, type: "RE_ENTRY", lvl: currentPrice };
           state.nextPhase = `V50 SELL Re-Entry Armed — Pullback >= 90 Touched (%K: ${sK2511 !== null ? sK2511.toFixed(1) : "N/A"}). Await Cross < 90`;
@@ -5770,17 +5727,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.v75_1s_stoch15_pulled_back_80 = false;
     }
 
-    // B. Re-Entry Triggers (Stoch 100 aligned + Stoch 15,1,1 touches <= 20/30 / >= 80/70 including High/Low wick touch, then crosses back; V25-1s filtered by MACD (5,35,1))
+    // B. Re-Entry Triggers (Strictly Closed Candle %K — Stoch 100 aligned + Stoch 15,1,1 confirmed on closed candles)
     const lastClosedOrTriggeredEpoch = Math.max(state.lastTriggeredEpoch || 0, state.lastClosedTradeEpoch || 0);
     const isPostTradePrev = !lastClosedOrTriggeredEpoch || candles[si - 1].epoch >= lastClosedOrTriggeredEpoch;
     const isPostTradeCurr = !lastClosedOrTriggeredEpoch || candles[si].epoch > lastClosedOrTriggeredEpoch;
-    const isBullishCurr = parseFloat(candles[si].close) > parseFloat(candles[si].open);
-    const isBearishCurr = parseFloat(candles[si].close) < parseFloat(candles[si].open);
 
     if (!indicatorsSatisfied && isPostTradeCurr) {
-      const buyTouchedPrev = isPostTradePrev && ((prevK1511 !== null && prevK1511 <= buyPullbackThreshold) || (prevMinK1511 !== null && prevMinK1511 <= buyPullbackThreshold));
+      const buyTouchedPrev = isPostTradePrev && (prevK1511 !== null && prevK1511 <= buyPullbackThreshold);
       const buyClosedCurr = sK1511 !== null && sK1511 <= buyPullbackThreshold;
-      const sellTouchedPrev = isPostTradePrev && ((prevK1511 !== null && prevK1511 >= sellPullbackThreshold) || (prevMaxK1511 !== null && prevMaxK1511 >= sellPullbackThreshold));
+      const sellTouchedPrev = isPostTradePrev && (prevK1511 !== null && prevK1511 >= sellPullbackThreshold);
       const sellClosedCurr = sK1511 !== null && sK1511 >= sellPullbackThreshold;
 
       const pullbackArmedFlagBuy = isV25_1s ? "v75_1s_stoch15_pulled_back_20" : "v75_1s_stoch15_pulled_back_30";
@@ -5789,42 +5744,32 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       if (stoch100AlignedBuy && Boolean(state.v75_1s_initialBuyDone)) {
         if (buyTouchedPrev || buyClosedCurr) {
           state[pullbackArmedFlagBuy] = true;
-        } else if (sK1511 !== null && sK1511 > buyPullbackLevel) {
-          // Reset latch if Stoch 15 is already above the pullback level without triggering
+        } else if (sK1511 !== null && sK1511 > 50.0) {
           state[pullbackArmedFlagBuy] = false;
         }
       }
       if (stoch100AlignedSell && Boolean(state.v75_1s_initialSellDone)) {
         if (sellTouchedPrev || sellClosedCurr) {
           state[pullbackArmedFlagSell] = true;
-        } else if (sK1511 !== null && sK1511 < sellPullbackLevel) {
-          // Reset latch if Stoch 15 is already below the pullback level without triggering
+        } else if (sK1511 !== null && sK1511 < 50.0) {
           state[pullbackArmedFlagSell] = false;
         }
       }
 
-      // Re-Entry requires a genuine cross of the instrument's pullback level (Level 30 for V75/V75-1s/V100, Level 20 for V25-1s):
-      // Current candle closes ABOVE buyPullbackLevel, and previous candle was inside/at the pullback zone OR touched in wick
-      const prevInPullbackBuy = (prevK1511 !== null && prevK1511 <= buyPullbackThreshold) || (prevMinK1511 !== null && prevMinK1511 <= buyPullbackThreshold);
+      // Re-Entry requires closed candle %K to cross out of the pullback zone:
+      // Current candle closes ABOVE buyPullbackLevel, and previous candle was inside/at the pullback zone OR armed
+      const prevInPullbackBuy = prevK1511 !== null && prevK1511 <= buyPullbackThreshold;
       const stoch15CrossUpBuy =
         sK1511 !== null && prevK1511 !== null &&
         sK1511 > buyPullbackLevel && sK1511 > prevK1511 &&
-        (
-          (prevInPullbackBuy && Boolean(state[pullbackArmedFlagBuy])) ||
-          buyTouchedPrev ||
-          (sMinK1511 !== null && sMinK1511 <= buyPullbackThreshold && isBullishCurr)
-        );
+        (prevInPullbackBuy || Boolean(state[pullbackArmedFlagBuy]) || buyTouchedPrev);
 
-      // Current candle closes BELOW sellPullbackLevel, and previous candle was inside/at the pullback zone OR touched in wick
-      const prevInPullbackSell = (prevK1511 !== null && prevK1511 >= sellPullbackThreshold) || (prevMaxK1511 !== null && prevMaxK1511 >= sellPullbackThreshold);
+      // Current candle closes BELOW sellPullbackLevel, and previous candle was inside/at the pullback zone OR armed
+      const prevInPullbackSell = prevK1511 !== null && prevK1511 >= sellPullbackThreshold;
       const stoch15CrossDownSell =
         sK1511 !== null && prevK1511 !== null &&
         sK1511 < sellPullbackLevel && sK1511 < prevK1511 &&
-        (
-          (prevInPullbackSell && Boolean(state[pullbackArmedFlagSell])) ||
-          sellTouchedPrev ||
-          (sMaxK1511 !== null && sMaxK1511 >= sellPullbackThreshold && isBearishCurr)
-        );
+        (prevInPullbackSell || Boolean(state[pullbackArmedFlagSell]) || sellTouchedPrev);
 
       // MACD (5, 35, 1) Filter for Re-Entry trades on V25 (1s) (BUY blocked if MACD <= 0, SELL blocked if MACD >= 0)
       const macdFilterBuyPassed = !isV25_1s || (sMacd5351 !== null && sMacd5351 > 0.0);
@@ -5877,7 +5822,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           state.nextPhase = `${v75Tag} BUY Re-Entry Armed — Pullback <= ${buyPullbackLevel} Touched (%K: ${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}). Await Close > ${buyPullbackLevel}${isV25_1s ? ' & MACD > 0' : ''}`;
         } else {
           state.armed = null;
-          state.nextPhase = `${v75Tag} Awaiting BUY Re-Entry — Await Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) High/Low or Close touch <= ${buyPullbackLevel} then cross > ${buyPullbackLevel}${isV25_1s ? ' (MACD > 0 required)' : ''}`;
+          state.nextPhase = `${v75Tag} Awaiting BUY Re-Entry — Await closed M5 Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) pullback <= ${buyPullbackLevel} then fresh cross > ${buyPullbackLevel}${isV25_1s ? ' (MACD > 0 required)' : ''}`;
         }
       }
     } else if (stoch100AlignedSell) {
@@ -5894,7 +5839,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           state.nextPhase = `${v75Tag} SELL Re-Entry Armed — Pullback >= ${sellPullbackLevel} Touched (%K: ${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}). Await Close < ${sellPullbackLevel}${isV25_1s ? ' & MACD < 0' : ''}`;
         } else {
           state.armed = null;
-          state.nextPhase = `${v75Tag} Awaiting SELL Re-Entry — Await Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) High/Low or Close touch >= ${sellPullbackLevel} then cross < ${sellPullbackLevel}${isV25_1s ? ' (MACD < 0 required)' : ''}`;
+          state.nextPhase = `${v75Tag} Awaiting SELL Re-Entry — Await closed M5 Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) pullback >= ${sellPullbackLevel} then fresh cross < ${sellPullbackLevel}${isV25_1s ? ' (MACD < 0 required)' : ''}`;
         }
       }
     } else {
@@ -6042,23 +5987,23 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     // Evaluate Re-Entry (allow evaluation if no same-direction trade open, enabling Opposite Signal Position Flip)
     if (!indicatorsSatisfied && isPostTradeCurr) {
       if (stoch50AlignedBuy && Boolean(state.v10_initialBuyDone) && !hasActiveBuy) {
-        if ((sK2511 !== null && sK2511 <= 50.0) || (sMinK2511 !== null && sMinK2511 <= 50.0) || (prevK2511 !== null && prevK2511 <= 50.0)) {
+        if ((sK2511 !== null && sK2511 <= 50.0) || (prevK2511 !== null && prevK2511 <= 50.0)) {
           state.v10_stoch25_pulled_back = true;
         }
       }
       if (stoch50AlignedSell && Boolean(state.v10_initialSellDone) && !hasActiveSell) {
-        if ((sK2511 !== null && sK2511 >= 50.0) || (sMaxK2511 !== null && sMaxK2511 >= 50.0) || (prevK2511 !== null && prevK2511 >= 50.0)) {
+        if ((sK2511 !== null && sK2511 >= 50.0) || (prevK2511 !== null && prevK2511 >= 50.0)) {
           state.v10_stoch25_pulled_back = true;
         }
       }
 
-      const prevInPullbackBuy = (prevK2511 !== null && prevK2511 <= 50.0) || (prevMinK2511 !== null && prevMinK2511 <= 50.0);
+      const prevInPullbackBuy = prevK2511 !== null && prevK2511 <= 50.0;
       const stoch25CrossUp50Reentry = sK2511 !== null && prevK2511 !== null && sK2511 > 50.0 && (
         (prevInPullbackBuy && Boolean(state.v10_stoch25_pulled_back)) ||
         prevInPullbackBuy
       );
 
-      const prevInPullbackSell = (prevK2511 !== null && prevK2511 >= 50.0) || (prevMaxK2511 !== null && prevMaxK2511 >= 50.0);
+      const prevInPullbackSell = prevK2511 !== null && prevK2511 >= 50.0;
       const stoch25CrossDown50Reentry = sK2511 !== null && prevK2511 !== null && sK2511 < 50.0 && (
         (prevInPullbackSell && Boolean(state.v10_stoch25_pulled_back)) ||
         prevInPullbackSell
@@ -6088,7 +6033,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         state.armed = { dir: "BUY", lbl: `V10 Initial BUY Armed (Stoch 50: ${sK50.toFixed(1)} > 50)`, lvl: currentPrice };
         state.nextPhase = `V10 Initial BUY Armed — Awaiting Stoch (25,1,1) %K (${sK2511 !== null ? sK2511.toFixed(1) : "N/A"}) cross > 50 within +/- 2 candles`;
       } else {
-        const inPullback = Boolean(state.v10_stoch25_pulled_back) || (sK2511 !== null && sK2511 <= 50.0) || (sMinK2511 !== null && sMinK2511 <= 50.0);
+        const inPullback = Boolean(state.v10_stoch25_pulled_back) || (sK2511 !== null && sK2511 <= 50.0);
         if (inPullback) {
           state.armed = { dir: "BUY", lbl: `V10 BUY Pullback Armed (Stoch 25 in Pullback <= 50, %K: ${sK2511 !== null ? sK2511.toFixed(1) : "N/A"})`, type: "RE_ENTRY", lvl: currentPrice };
           state.nextPhase = `V10 BUY Re-Entry Armed — Pullback <= 50 Active (%K: ${sK2511 !== null ? sK2511.toFixed(1) : "N/A"}). Await Cross > 50`;
@@ -6102,7 +6047,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         state.armed = { dir: "SELL", lbl: `V10 Initial SELL Armed (Stoch 50: ${sK50.toFixed(1)} < 50)`, lvl: currentPrice };
         state.nextPhase = `V10 Initial SELL Armed — Awaiting Stoch (25,1,1) %K (${sK2511 !== null ? sK2511.toFixed(1) : "N/A"}) cross < 50 within +/- 2 candles`;
       } else {
-        const inPullback = Boolean(state.v10_stoch25_pulled_back) || (sK2511 !== null && sK2511 >= 50.0) || (sMaxK2511 !== null && sMaxK2511 >= 50.0);
+        const inPullback = Boolean(state.v10_stoch25_pulled_back) || (sK2511 !== null && sK2511 >= 50.0);
         if (inPullback) {
           state.armed = { dir: "SELL", lbl: `V10 SELL Pullback Armed (Stoch 25 in Pullback >= 50, %K: ${sK2511 !== null ? sK2511.toFixed(1) : "N/A"})`, type: "RE_ENTRY", lvl: currentPrice };
           state.nextPhase = `V10 SELL Re-Entry Armed — Pullback >= 50 Active (%K: ${sK2511 !== null ? sK2511.toFixed(1) : "N/A"}). Await Cross < 50`;
@@ -6981,7 +6926,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           nextTrigger = `Awaiting Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) fresh cross > 50 for Initial BUY`;
         } else {
           blockerReason = `BUY Trend Active (Stoch 100: ${sK100.toFixed(1)} > 50). Initial BUY done/bypassed.`;
-          nextTrigger = `Awaiting Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) High/Low or Close touch <= ${buyLvl} then cross > ${buyLvl}${macdNote} for BUY Re-Entry`;
+          nextTrigger = `Awaiting Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) Closed candle pullback <= ${buyLvl} then fresh cross > ${buyLvl}${macdNote} for BUY Re-Entry`;
         }
       } else if (stoch100Sell) {
         if (!state.v75_1s_initialSellDone) {
@@ -6989,7 +6934,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           nextTrigger = `Awaiting Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) fresh cross < 50 for Initial SELL`;
         } else {
           blockerReason = `SELL Trend Active (Stoch 100: ${sK100.toFixed(1)} < 50). Initial SELL done/bypassed.`;
-          nextTrigger = `Awaiting Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) High/Low or Close touch >= ${sellLvl} then cross < ${sellLvl}${macdNote} for SELL Re-Entry`;
+          nextTrigger = `Awaiting Stoch (15,1,1) %K (${sK1511 !== null ? sK1511.toFixed(1) : "N/A"}) Closed candle pullback >= ${sellLvl} then fresh cross < ${sellLvl}${macdNote} for SELL Re-Entry`;
         }
       } else {
         blockerReason = "Awaiting Stoch 100 trend definition";
