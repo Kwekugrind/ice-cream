@@ -218,14 +218,14 @@ export const INSTRUMENT_PROFILES = {
     gateType: "STOCH100_STOCH25",
     stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", level: 50 },
     stoch25Params: { k: 25, d: 1, slowing: 1, method: "Simple", level: 50 },
-    minTakeProfitPoints: 7.00,
-    minTakeProfitUsd: 3.50,
-    softwareSlUsd: 3.50,
-    trailActivationUsd: 2.20,
-    trailBufferUsd: 1.20,
+    minTakeProfitPoints: 6.00,
+    minTakeProfitUsd: 3.00,
+    softwareSlUsd: 2.50,
+    trailActivationUsd: 2.00,
+    trailBufferUsd: 1.00,
     maxHardStopPoints: 10.00,
     slType: "HARD_POINTS",
-    notes: "0.50 lots cTrader engine; Condition 1: Macro Trend Closed M5 Stoch (100,1,1) cross Level 50; Condition 2: Initial Trigger M5 Stoch (25,1,1 Simple) cross Level 50 within +/- 3 candles tolerance (simultaneous, up to 3 before or after); Re-Entry: Closed M5 Stoch (100,1,1) aligned & no active trade open + M5 Stoch (25,1,1) pulls back and freshly crosses Level 30 (BUY) / Level 70 (SELL); Trade Management: Software TP $3.50; Hard Broker TP $5.00; Software SL -$3.50 (Hard Broker SL -$5.00); Sequential Stoch (25,1,1): Rule 1 touches Level 50 moves Software SL to +$0.30 -> Rule 2 immediate exit on Level 50 reversal (strictly dependent on Rule 1); Opposite Signal Position Flip."
+    notes: "0.50 lots cTrader engine; Condition 1: Macro Trend Closed M5 Stoch (100,1,1) cross Level 50 Gate; Condition 2: Initial Trigger M5 Stoch (25,1,1 Simple) cross Level 50 within +/- 3 candles tolerance (simultaneous, up to 3 before or after) with Closed M5 Candle Color Match; Re-Entry: Closed M5 Stoch (100,1,1) aligned & no active trade open + M5 Stoch (25,1,1) pulls back and freshly crosses Level 30 (BUY) / Level 70 (SELL) with Closed M5 Candle Color Match; Trade Management: Software TP $3.00; Hard Broker TP $5.00; Software SL -$2.50 (Hard Broker SL -$5.00); Sequential Stoch (25,1,1): Rule 1 touches Level 50 moves Software SL to +$0.30 in fast-path & Rule 2 Unlocked; Rule 2: Subsequent reversal across Level 50 in profit only (>= +$0.10) -> immediate close; Opposite Signal Position Flip."
   },
   "R_50": {
     symbol: "R_50",
@@ -321,7 +321,7 @@ const CTRADER_LOT_SIZE = Math.max(isNaN(_rawLotSize) ? 0.01 : _rawLotSize, CTRAD
 
 // ── Configurable Software Stop Loss per Instrument Profile ──
 const INSTRUMENT_SOFTWARE_SL_MAP = {
-  "R_25": -3.50,     // Tea Machine (V25, 400x) — Calibrated Software SL -$3.50
+  "R_25": -2.50,     // Tea Machine (V25, 400x) — Calibrated Software SL -$2.50
   "1HZ75V": -2.00,   // Coffee (V75-1s, 0.05 lots) — Max 2% loss risk ($2.00)
   "R_75": -2.00,     // Lery's Alerts (V75, 50x) — Max 2% loss risk ($2.00)
   "R_100": -4.00,    // Milk Machine (V100, 1.00 lot) — Software SL -$4.00
@@ -2032,8 +2032,11 @@ async function manageOpenTradesFastPath() {
     if ((SYMBOL === "R_100" || SYMBOL === "1HZ25V") && (tpHit || pnl >= 10.00 || dailyTargetCeilingHit)) {
       reason = "Hard Broker Take Profit ($10.00) reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ") — Secured $10.00 Target!";
     }
-    else if (SYMBOL === "R_25" && (tpHit || pnl >= 3.50 || dailyTargetCeilingHit)) {
-      reason = "Software Take Profit ($3.50) reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ") — Secured $3.50 Target!";
+    else if (SYMBOL === "R_25" && (tpHit || pnl >= 3.00 || dailyTargetCeilingHit)) {
+      reason = "Software Take Profit ($3.00) reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ") — Secured $3.00 Target!";
+    }
+    else if (openTrade.lockedPnlFloor !== null && openTrade.lockedPnlFloor !== undefined && pnl <= openTrade.lockedPnlFloor) {
+      reason = "Software SL Floor Lock (+$" + openTrade.lockedPnlFloor.toFixed(2) + ") hit at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ") — Protected Profit after Rule 1 Arm!";
     }
     else if ((SYMBOL === "R_50" || SYMBOL === "R_75") && (tpHit || pnl >= 3.00 || dailyTargetCeilingHit)) {
       reason = "Software Take Profit ($3.00) reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ") — Secured $2.50 Target!";
@@ -2939,6 +2942,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           } else if (!isBuy && sK2511 !== null && sK2511 > 50.0) {
             stoch25Exit = true;
             exitDetail = "Rule 2 Triggered: Stoch (25,1,1) reversed above Level 50 (" + sK2511.toFixed(1) + ") after Rule 1 Level 50 Touch";
+          }
+        }
+
+        if (stoch25Exit) {
+          // GUARD: Rule 2 is a profit protection exit, NEVER allow it to exit in a loss!
+          if (currentPnl < 0.10) {
+            console.log("[TRADE MANAGEMENT R_25] Rule 2 signal ignored: current PnL ($" + currentPnl.toFixed(2) + ") < +$0.10. Capital protected by Fast-Path SL.");
+            stoch25Exit = false;
           }
         }
 
@@ -5435,13 +5446,18 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const sellToleranceSatisfied = state.v25_stoch100CrossEpochSell && state.v25_stoch25CrossEpochSell &&
       Math.abs(state.v25_stoch100CrossEpochSell - state.v25_stoch25CrossEpochSell) <= 900;
 
+    // Strict Candle Color Confirmation Rule:
+    // Closed M5 candle must be bullish for BUY and bearish for SELL
+    const isBullishCandle = parseFloat(candles[si].close) > parseFloat(candles[si].open);
+    const isBearishCandle = parseFloat(candles[si].close) < parseFloat(candles[si].open);
+
     const isInitialBuyTrigger = stoch100AlignedBuy && sK2511 !== null && sK2511 > 50.0 &&
       !state.v25_initialBuyDone && buyToleranceSatisfied && (stoch100CrossUp50 || stoch25CrossUp50) &&
-      !hasActiveBuy;
+      !hasActiveBuy && isBullishCandle;
 
     const isInitialSellTrigger = stoch100AlignedSell && sK2511 !== null && sK2511 < 50.0 &&
       !state.v25_initialSellDone && sellToleranceSatisfied && (stoch100CrossDown50 || stoch25CrossDown50) &&
-      !hasActiveSell;
+      !hasActiveSell && isBearishCandle;
 
     if (isInitialBuyTrigger) {
       indicatorsSatisfied = true;
@@ -5488,8 +5504,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         (Boolean(state.v25_stoch25_pulled_back_70) && prevK2511 >= 68.0 && sK2511 < 70.0 && sK2511 < prevK2511)
       );
 
-      const isReentryBuyTrigger = stoch100AlignedBuy && Boolean(state.v25_initialBuyDone) && stoch25CrossUp30;
-      const isReentrySellTrigger = stoch100AlignedSell && Boolean(state.v25_initialSellDone) && stoch25CrossDown70;
+      const isReentryBuyTrigger = stoch100AlignedBuy && Boolean(state.v25_initialBuyDone) && stoch25CrossUp30 && isBullishCandle;
+      const isReentrySellTrigger = stoch100AlignedSell && Boolean(state.v25_initialSellDone) && stoch25CrossDown70 && isBearishCandle;
 
       if (isReentryBuyTrigger) {
         indicatorsSatisfied = true;
@@ -6937,7 +6953,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     } else if (SYMBOL === "1HZ25V") {
       nextTrigger = `Managing Position: Hard TP +$10.00 | Entry Candle High/Low Close SL | Breakeven Defense Engine Active`;
     } else if (SYMBOL === "R_25") {
-      nextTrigger = `Managing Position: Hard TP +$5.00 | Soft TP: +$3.50 | Software SL: -$3.50 | Breakeven Defense Engine Active`;
+      nextTrigger = `Managing Position: Hard TP +$5.00 | Soft TP: +$3.00 | Software SL: -$2.50 | Fast-Path Floor Active`;
     } else if (SYMBOL === "R_50") {
       nextTrigger = `Managing Position: Hard TP +$3.00 | Software SL: -$2.50 | Sequential Stoch (8,1,1) Rule 1 (Lvl 50 in profit -> +$0.30 SL) & Rule 2 (Exit)`;
     } else if (SYMBOL === "1HZ75V" || SYMBOL === "R_75") {
