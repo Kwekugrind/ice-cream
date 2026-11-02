@@ -133,3 +133,9 @@ On confirmed closed M5 candle following entry (post-entry candle), if the Macro 
    * **BUY Trade Early Exit:** When the first two Swing High (Top) fractals formed at/after trade entry satisfy `F2 <= F1` (Lower High or Double Top within 0.05% tolerance). Confirms buyers failed to make a higher high and sellers have established resistance.
    * **SELL Trade Early Exit:** When the first two Swing Low (Bottom) fractals formed at/after trade entry satisfy `F2 >= F1` (Higher Low or Double Bottom within 0.05% tolerance). Confirms sellers failed to make a lower low and buyers have established support.
    * **Action:** Close position immediately at market to truncate adverse risk before hitting full software stop loss. Directional blocking flags are cleared to allow an immediate reversal pivot if opposite entry conditions align.
+
+
+### 2.1 Confirmed Closed Candle Directional Matching Rule (Fleet Mandate)
+To filter out counter-momentum entries and protect capital from false breakouts, **every trade entry (Initial & Re-Entry) strictly requires directional candle confirmation on the closed M5 candle**:
+* **BUY Entry:** The confirming M5 candle must close **BULLISH** (`close > open`). If the candle closes bearish or doji (`close <= open`), the trade is prevented and stands by for a matching bullish close.
+* **SELL Entry:** The confirming M5 candle must close **BEARISH** (`close < open`). If the candle closes bullish or doji (`close >= open`), the trade is prevented and stands by for a matching bearish close.
