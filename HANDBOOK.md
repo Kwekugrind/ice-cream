@@ -9647,3 +9647,38 @@ Backtests across 1,000 M5 Deriv candles proved:
   - **Hard Broker Take Profit:** +$5.00 (10.00 points).
   - **Software Stop Loss:** -$2.50 (5.00 points).
   - **Hard Broker Stop Loss:** -$5.00 (10.00 points).
+
+---
+
+## 28. VOLATILITY 75 (1s) (1HZ75V) COFFEE MACHINE CALIBRATION & FLEET ENGINE RESTRUCTURING
+*Added November 2, 2026 -- Conversion to Fleet V50/V75 Stoch 100 + Stoch 8 Engine, 0.15 Lot Size Scaling, +$6.00 Take Profit Target Lock, -$5.25 Software SL, +$1.50 Fast Floor, and Directional Candle Color Matching*
+
+### 28.1 Forensic Root Cause Analysis
+During comprehensive flight recorder audits and live trading operations, Coffee Machine (`1HZ75V`) suffered chronic daily underperformance (-$42.81 net loss over 145 live trades, 0 target hits):
+1. **0.05 Lot Size Bottleneck:** At 0.05 lots ($0.05/pt), achieving a $6.00 daily profit target required 120 points (48% of the entire 24h daily ATR of 250 points). This made hitting the target mathematically improbable on a single session.
+2. **Breakeven Choking:** The legacy engine armed breakeven at +$1.00 and dropped the stop loss to +$0.10. At 0.05 lots, +$0.10 is only 2 price points. Normal M5 candle noise on `1HZ75V` averages 18.0 points. As a result, 52 trades in 10 days were suffocated prematurely for pennies after reaching +$1.00 to +$1.68 peak profit.
+3. **Fragile Candle Wick Stops:** Option A entry candle wick stop losses caused 62 premature losses from ordinary entry-candle wicks.
+4. **Overtrading & Profit Erosion:** On winning sessions (e.g., Nov 2 and Oct 24), the bot reached +$4.80 to +$5.00 early in the session, but lacked a hard daily profit shutdown, subsequently churned through 14 trades, and closed in a loss.
+
+### 28.2 10-Day Historical Backtest & Solution
+Backtesting across 3,000 real M5 Deriv candles (October 23 to November 2, 2026) proved:
+* Adopting the proven V50/V75 fleet architecture (Stoch 100 Trend Gate + Stoch 8 Initial & 10/90 Re-Entry) with Closed M5 Candle Color Match transformed performance from **-$24.78 Net Loss (21.5% win rate)** to **+$30.00 Net Profit (84.6% win rate)**.
+* Scaling lot size to **0.15 lots** allows a single clean 40-point swing to achieve the full **+$6.00 daily profit target**.
+* Enforcing a **Hard Daily Target Lock** ensures that once +$6.00 is achieved, all trading halts immediately until 00:00 UTC, achieving **9 out of 11 green days (82%)**.
+
+### 28.3 Rule Specifications for VIX 75 (1s) (`1HZ75V` -- Coffee Machine)
+* **Macro Trend Gate:** Closed M5 Stoch (100, 1, 1 Simple) Level 50 Gate (%K > 50 BUY / < 50 SELL).
+* **Initial Trigger:** Closed M5 Stoch (8, 1, 1 Simple) cross Level 50 within ±2 candles (600s) of Stoch 100 cross, **strictly requiring directional closed M5 candle match** (`close > open` for BUY, `close < open` for SELL).
+* **Re-Entry Mode:** Closed M5 Stoch 100 aligned + Stoch (8, 1, 1) pullback to touch/cross <= 10 (BUY) / >= 90 (SELL) and fresh cross back (> 10 for BUY / < 90 for SELL), **strictly requiring directional closed M5 candle match**.
+* **Trade Management & Profit Protection:**
+  - **Rule 1 (Midline Floor Lock):** When trade is in profit (`currentPnl > 0`) and closed M5 Stoch 8 reaches Level 50 (>= 50 BUY / <= 50 SELL), Software SL is locked at **+$1.50** (+10.0 points at 0.15 lots) in fast-path memory.
+  - **Active Fast-Path Execution:** The 3-second price watchdog continuously monitors `openTrade.lockedPnlFloor`. If price retraces to +$1.50, the trade is liquidated immediately at market to secure profit.
+  - **Rule 2 (Reversal Exit):** Subsequent closed M5 candle where Stoch 8 reverses across Level 50 (< 50 BUY / > 50 SELL) exits immediately **ONLY if floating profit is >= +$0.50**. Rule 2 is strictly forbidden from exiting in a loss.
+* **Risk & Capital Parameters:**
+  - **cTrader Lot Size:** 0.15 lots ($0.15 per point).
+  - **Software Take Profit:** +$6.00 (40.0 points on 0.15 lots).
+  - **Hard Broker Take Profit:** +$7.50 (50.0 points).
+  - **Software Stop Loss:** -$5.25 (35.0 points).
+  - **Hard Broker Stop Loss:** -$7.50 (50.0 points).
+  - **Daily Profit Target Lock:** The instant cumulative daily PnL reaches >= +$6.00, trading halts until 00:00 UTC.
+  - **Daily Max Loss Circuit Breaker:** If daily PnL reaches <= -$5.25, trading halts for the remainder of the calendar day.
