@@ -5621,6 +5621,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const hasActiveSell = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "SELL");
     const noActiveTrades = !hasActiveBuy && !hasActiveSell;
 
+    // Price Action Filter: Confirmed Closed M5 Candle Must Match Trade Direction
+    const cOpen = parseFloat(candles[si].open);
+    const cClose = parseFloat(candles[si].close);
+    const isBullishCandle = cClose > cOpen;
+    const isBearishCandle = cClose < cOpen;
+
     // Tolerance window: Stoch (8, 1, 1) can cross level 50 up to 2 candles before, at the same time, or up to 2 candles after Stoch 100 crosses 50
     const buyToleranceSatisfied = state[tag + "_stoch100CrossEpochBuy"] && state[tag + "_stoch8CrossEpochBuy"] &&
       Math.abs(state[tag + "_stoch100CrossEpochBuy"] - state[tag + "_stoch8CrossEpochBuy"]) <= 600;
@@ -5629,11 +5635,18 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     const isInitialBuyTrigger = stoch100AlignedBuy && sK8 !== null && sK8 > 50.0 &&
       !state[tag + "_initialBuyDone"] && buyToleranceSatisfied && (stoch100CrossUp50 || stoch8CrossUp50) &&
-      !hasActiveBuy;
+      isBullishCandle && !hasActiveBuy;
 
     const isInitialSellTrigger = stoch100AlignedSell && sK8 !== null && sK8 < 50.0 &&
       !state[tag + "_initialSellDone"] && sellToleranceSatisfied && (stoch100CrossDown50 || stoch8CrossDown50) &&
-      !hasActiveSell;
+      isBearishCandle && !hasActiveSell;
+
+    if (stoch100AlignedBuy && !state[tag + "_initialBuyDone"] && buyToleranceSatisfied && (stoch100CrossUp50 || stoch8CrossUp50) && !isBullishCandle) {
+      console.log(`[${REPO_LABEL}] ⚠️ Initial BUY triggered on Stoch 8/100 50 cross but BLOCKED: Candle closed Bearish/Doji (O: ${cOpen}, C: ${cClose}). Awaiting Bullish confirmation.`);
+    }
+    if (stoch100AlignedSell && !state[tag + "_initialSellDone"] && sellToleranceSatisfied && (stoch100CrossDown50 || stoch8CrossDown50) && !isBearishCandle) {
+      console.log(`[${REPO_LABEL}] ⚠️ Initial SELL triggered on Stoch 8/100 50 cross but BLOCKED: Candle closed Bullish/Doji (O: ${cOpen}, C: ${cClose}). Awaiting Bearish confirmation.`);
+    }
 
     if (isInitialBuyTrigger) {
       indicatorsSatisfied = true;
@@ -5680,8 +5693,17 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         (Boolean(state[tag + "_stoch8_pulled_back_90"]) && prevK8 >= 88.0 && sK8 < 90.0 && sK8 < prevK8)
       );
 
-      const isReentryBuyTrigger = stoch100AlignedBuy && Boolean(state[tag + "_initialBuyDone"]) && stoch8CrossUp10;
-      const isReentrySellTrigger = stoch100AlignedSell && Boolean(state[tag + "_initialSellDone"]) && stoch8CrossDown90;
+      const isReentryBuyTrigger = stoch100AlignedBuy && Boolean(state[tag + "_initialBuyDone"]) && stoch8CrossUp10 && isBullishCandle;
+      const isReentrySellTrigger = stoch100AlignedSell && Boolean(state[tag + "_initialSellDone"]) && stoch8CrossDown90 && isBearishCandle;
+
+      if (stoch100AlignedBuy && Boolean(state[tag + "_initialBuyDone"]) && stoch8CrossUp10 && !isBullishCandle) {
+        console.log(`[${REPO_LABEL}] ⚠️ BUY Re-Entry triggered on Stoch 8 (%K: ${sK8.toFixed(1)} > 10) but BLOCKED: Candle closed Bearish/Doji (O: ${cOpen}, C: ${cClose}). Awaiting Bullish confirmation.`);
+        state[tag + "_stoch8_pulled_back_10"] = true; // Keep pullback armed
+      }
+      if (stoch100AlignedSell && Boolean(state[tag + "_initialSellDone"]) && stoch8CrossDown90 && !isBearishCandle) {
+        console.log(`[${REPO_LABEL}] ⚠️ SELL Re-Entry triggered on Stoch 8 (%K: ${sK8.toFixed(1)} < 90) but BLOCKED: Candle closed Bullish/Doji (O: ${cOpen}, C: ${cClose}). Awaiting Bearish confirmation.`);
+        state[tag + "_stoch8_pulled_back_90"] = true; // Keep pullback armed
+      }
 
       if (isReentryBuyTrigger) {
         indicatorsSatisfied = true;
@@ -5822,8 +5844,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     // A. Initial Entry Triggers (Strictly Stoch 100 + Stoch 15,1,1 fresh 50 cross; V25-1s strictly requires MACD 5,35,1 filter)
     const macdFilterBuy = sMacd5351 !== null && sMacd5351 > 0.0;
     const macdFilterSell = sMacd5351 !== null && sMacd5351 < 0.0;
-    const isInitialBuyTrigger = stoch100AlignedBuy && (!isV25_1s || macdFilterBuy) && !state.v75_1s_initialBuyDone && stoch15CrossUp50 && !hasActiveBuy;
-    const isInitialSellTrigger = stoch100AlignedSell && (!isV25_1s || macdFilterSell) && !state.v75_1s_initialSellDone && stoch15CrossDown50 && !hasActiveSell;
+    const isBullishCandleFleet = cClose > cOpen;
+    const isBearishCandleFleet = cClose < cOpen;
+    const isInitialBuyTrigger = stoch100AlignedBuy && (!isV25_1s || macdFilterBuy) && !state.v75_1s_initialBuyDone && stoch15CrossUp50 && isBullishCandleFleet && !hasActiveBuy;
+    const isInitialSellTrigger = stoch100AlignedSell && (!isV25_1s || macdFilterSell) && !state.v75_1s_initialSellDone && stoch15CrossDown50 && isBearishCandleFleet && !hasActiveSell;
 
     if (isInitialBuyTrigger) {
       indicatorsSatisfied = true;
@@ -5889,8 +5913,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const macdFilterBuyPassed = !isV25_1s || (sMacd5351 !== null && sMacd5351 > 0.0);
       const macdFilterSellPassed = !isV25_1s || (sMacd5351 !== null && sMacd5351 < 0.0);
 
-      const isReentryBuyTrigger = stoch100AlignedBuy && Boolean(state.v75_1s_initialBuyDone) && stoch15CrossUpBuy;
-      const isReentrySellTrigger = stoch100AlignedSell && Boolean(state.v75_1s_initialSellDone) && stoch15CrossDownSell;
+      const isReentryBuyTrigger = stoch100AlignedBuy && Boolean(state.v75_1s_initialBuyDone) && stoch15CrossUpBuy && isBullishCandleFleet;
+      const isReentrySellTrigger = stoch100AlignedSell && Boolean(state.v75_1s_initialSellDone) && stoch15CrossDownSell && isBearishCandleFleet;
 
       if (isReentryBuyTrigger) {
         if (macdFilterBuyPassed) {
