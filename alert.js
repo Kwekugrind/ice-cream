@@ -123,19 +123,19 @@ export const INSTRUMENT_PROFILES = {
     repoLabel: "Coffee (V75-1s Demo)",
     server: "S1",
     multiplier: 100,
-    lotSize: 0.05,
+    lotSize: 0.15,
     stakeUsd: 5.0,
     commissionUsd: 0.15,
-    strategyProfile: "PROFILE_V75_1S_STOCH100_STOCH15",
-    gateType: "STOCH100_STOCH15",
-    stoch100Params: { k: 100, d: 1, slowing: 1 },
-    stoch15Params: { k: 15, d: 1, slowing: 1, method: "Simple" },
+    strategyProfile: "PROFILE_V75_1S_STOCH100_STOCH8",
+    gateType: "STOCH100_STOCH8",
+    stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", level: 50 },
+    stoch8Params: { k: 8, d: 1, slowing: 1, method: "Simple", levels: [10, 50, 90] },
     minTakeProfitPoints: 40.0,
-    minTakeProfitUsd: 2.00,
-    softwareSlUsd: 2.00,
-    trailActivationUsd: 2.20,
-    trailBufferUsd: 1.20,
-    maxHardStopPoints: 80.0,
+    minTakeProfitUsd: 6.00,
+    softwareSlUsd: 5.25,
+    trailActivationUsd: 4.50,
+    trailBufferUsd: 2.00,
+    maxHardStopPoints: 50.0,
     slType: "HARD_POINTS",
     notes: "Condition 1: Macro Trend Closed M5 Stoch (100,1,1) %K cross Level 50; Condition 2: Initial Trigger M5 Stoch (15,1,1 Simple) %K fresh cross Level 50 (bypassed if already beyond 50 before Stoch 100 cross, opening Re-Entry); Re-Entry: Stoch 100 aligned + M5 Stoch (15,1,1) touches/pulls back to 30 (BUY) / 70 (SELL) (strictly confirmed on closed M5 candles) and crosses > 30 (BUY) / < 70 (SELL) (NO EMA 100 filter); Trade Management: Software TP $2.00; Hard Broker TP $2.50 (3 wins = $6.00-$7.00 Daily Target); Stoch (15,1,1) touch of Level 80 (BUY) / Level 20 (SELL) moves Software SL to +$0.30; immediate exit when Stoch (15,1,1) crosses Level 50."
   },
@@ -308,7 +308,7 @@ const TRADING_SYMBOL = SYMBOL;
 const EXECUTION_MODE = (process.env.EXECUTION_MODE || "ctrader").toLowerCase();
 const CTRADER_MIN_LOT_MAP = {
   "R_75": 0.01,
-  "1HZ75V": 0.05,
+  "1HZ75V": 0.15,
   "R_100": 1.00,
   "1HZ100V": 1.00,
   "1HZ25V": 0.005,
@@ -2801,7 +2801,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       saveState();
       return;
     }
-  } else if (SYMBOL === "R_50" || SYMBOL === "R_75" || STRATEGY_PROFILE === "PROFILE_V50_STOCH100_STOCH8" || STRATEGY_PROFILE === "PROFILE_V75_STOCH100_STOCH8" || STRATEGY_PROFILE === "PROFILE_V50_MACD_STOCH25") {
+  } else if (SYMBOL === "R_50" || SYMBOL === "R_75" || SYMBOL === "1HZ75V" || STRATEGY_PROFILE === "PROFILE_V50_STOCH100_STOCH8" || STRATEGY_PROFILE === "PROFILE_V75_STOCH100_STOCH8" || STRATEGY_PROFILE === "PROFILE_V75_1S_STOCH100_STOCH8" || STRATEGY_PROFILE === "PROFILE_V50_MACD_STOCH25") {
     if (sK100 === null || prevK100 === null || sK8 === null || prevK8 === null) {
       state.lastProcessedEpoch = m5BoundaryEpoch;
       saveState();
@@ -5560,8 +5560,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   // 3.46 VOLATILITY 50 (R_50 OMNISIGHT)
   // STOCH (100,1,1) TREND + STOCH (8,1,1) INITIAL (±2 CANDLES) & 10/90 RE-ENTRY
   // =========================================================================
-  else if (SYMBOL === "R_50" || SYMBOL === "R_75" || STRATEGY_PROFILE === "PROFILE_V50_STOCH100_STOCH8" || STRATEGY_PROFILE === "PROFILE_V75_STOCH100_STOCH8" || STRATEGY_PROFILE === "PROFILE_V50_MACD_STOCH25") {
-    const prefix = SYMBOL === "R_75" ? "V75" : "V50";
+  else if (SYMBOL === "R_50" || SYMBOL === "R_75" || SYMBOL === "1HZ75V" || STRATEGY_PROFILE === "PROFILE_V50_STOCH100_STOCH8" || STRATEGY_PROFILE === "PROFILE_V75_STOCH100_STOCH8" || STRATEGY_PROFILE === "PROFILE_V75_1S_STOCH100_STOCH8" || STRATEGY_PROFILE === "PROFILE_V50_MACD_STOCH25") {
+    const prefix = SYMBOL === "1HZ75V" ? "V75_1S" : (SYMBOL === "R_75" ? "V75" : "V50");
     const tag = prefix.toLowerCase();
 
     // Macro Trend Definition: Stoch (100, 1, 1 Simple) Level 50 Gate
@@ -6678,7 +6678,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       const tpPoints3 = 3.00 / CTRADER_LOT_SIZE; // 0.75 pts on R_50 (4.00 lots) = $3.00 Hard Broker TP
       fibTpPrice = direction === "BUY" ? parseFloat((entry + tpPoints3).toFixed(4)) : parseFloat((entry - tpPoints3).toFixed(4));
     } else if (SYMBOL === "1HZ75V" || SYMBOL === "R_75") {
-      const v75TpPoints = 3.50 / CTRADER_LOT_SIZE; // 70.00 pts on 1HZ75V (0.05 lots) / 350.00 pts on R_75 (0.01 lots) = $3.50 Standard TP
+      const v75TpTargetUsd = SYMBOL === "1HZ75V" ? 6.00 : 3.00;
+      const v75TpPoints = v75TpTargetUsd / CTRADER_LOT_SIZE; // 40.00 pts on 1HZ75V (0.15 lots) / 300.00 pts on R_75 (0.01 lots)
       fibTpPrice = direction === "BUY" ? parseFloat((entry + v75TpPoints).toFixed(2)) : parseFloat((entry - v75TpPoints).toFixed(2));
     } else if (isDynamicRunner) {
       fibTpPrice = null;
@@ -6957,7 +6958,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     } else if (SYMBOL === "R_50") {
       nextTrigger = `Managing Position: Hard TP +$3.00 | Software SL: -$2.50 | Sequential Stoch (8,1,1) Rule 1 (Lvl 50 in profit -> +$0.30 SL) & Rule 2 (Exit)`;
     } else if (SYMBOL === "1HZ75V" || SYMBOL === "R_75") {
-      nextTrigger = `Managing Position: Target TP +$3.50 | Software SL: -$2.00 | Breakeven Defense Engine Active`;
+      if (SYMBOL === "1HZ75V") {
+        nextTrigger = `Managing Position: Target TP +$6.00 (40.0 pts) | Software SL: -$5.25 | Fast Floor +$1.50 & Rule 2 Profit Guard`;
+      } else {
+        nextTrigger = `Managing Position: Target TP +$3.50 | Software SL: -$2.00 | Breakeven Defense Engine Active`;
+      }
     } else {
       nextTrigger = `Managing Position: Target TP +$${TARGET_MIN_PROFIT.toFixed(2)} | Software SL: -$${SOFTWARE_SL_USD.toFixed(2)} | Breakeven Defense Engine Active`;
     }
