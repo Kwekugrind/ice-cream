@@ -42,7 +42,7 @@ All active trading bots operate with a standard **$5.00 Stake**, engineered for 
   * **VIX 25 (1s) (`1HZ25V`):** Hard Broker TP **+$10.00**, Entry Candle High/Low Stop Loss, Breakeven at +$5.00.
   * **VIX 75 (`R_75`):** Target TP **+$3.50**, Soft SL -$2.00, Breakeven at +$1.75.
   * **VIX 75 (1s) (`1HZ75V`):** Target TP **+$3.50**, Soft SL -$2.00, Breakeven at +$1.75.
-  * **VIX 25 (`R_25`):** Hard TP **+$5.00**, Soft TP **+$3.50**, Soft SL -$3.50, Breakeven at +$2.50.
+  * **VIX 25 (`R_25`):** Hard TP **+$5.00**, Soft TP **+$3.00**, Soft SL -$2.50, Fast-Path Floor Lock +$0.30 at Rule 1 Arm.
   * **VIX 50 (`R_50`):** Target TP **+$3.00**, Soft SL -$2.50, Breakeven at +$1.50.
   * **VIX 10 (`R_10`):** Target TP **+$3.50**, Hard Broker TP **+$5.00**, Soft SL -$3.50, Breakeven at +$1.75.
 * **Software Stop Loss (-$2.00 on `R_75`, `1HZ75V` / -$2.50 on `R_50` / -$3.50 on `R_25`, `R_10` / -$4.00 on `R_100` / Dynamic Entry Candle High-Low Close SL on `1HZ25V` & `R_10`):** Strict capital protection. For `1HZ25V`, static Software SL is replaced by closed M5 candle past Entry Candle Low (BUY) / High (SELL). Executed in fast-path watchdog and closed M5 scan.
@@ -113,7 +113,7 @@ On confirmed closed M5 candle following entry (post-entry candle), if the Macro 
 |---|---|---|---|---|
 | **Stoch 100 / Stoch (15,1,1)** | `R_75`, `1HZ75V`, `R_100` | BUY: Stoch 100 < 50.0<br>SELL: Stoch 100 > 50.0 | Closed M5 Stoch (15,1,1) Level 50 opposite cross in loss | Liquidate trade immediately. Arm opposite direction (`reversalArmed`). Flip `trendDir`. Breakeven Defense Engine protects running profits. |
 | **Stoch 100 / Stoch (15,1,1) + MACD** | `1HZ25V` (Ice Cream) | BUY: Stoch 100 < 50.0<br>SELL: Stoch 100 > 50.0 | BUY: Close < Entry Low<br>SELL: Close > Entry High | Liquidate immediately on entry candle extreme close. Breakeven Defense Engine active. |
-| **Stoch 100 / Stoch (25,1,1)** | `R_25` (Tea Machine) | BUY: Stoch 100 < 50.0<br>SELL: Stoch 100 > 50.0 | Closed M5 Stoch (25,1,1) Level 50 opposite cross in loss | Liquidate trade immediately. Downside protected by -$3.50 Software SL / -$5.00 Hard SL. Breakeven Defense Engine active. |
+| **Stoch 100 / Stoch (25,1,1)** | `R_25` (Tea Machine) | BUY: Stoch 100 < 50.0<br>SELL: Stoch 100 > 50.0 | Closed M5 Stoch (25,1,1) Level 50 reversal (profit >= +$0.10 only) | Liquidate trade immediately. Protected by Fast-Path +$0.30 Floor / -$2.50 Software SL / -$5.00 Hard SL. |
 | **Stoch (100,1,1) / Stoch (8,1,1)** | `R_50` (OmniSight) | BUY: Stoch 100 < 50.0<br>SELL: Stoch 100 > 50.0 | Closed M5 Stoch (8,1,1) Level 50 reversal across 50 after Rule 1 | Liquidate trade immediately. Downside protected by -$2.50 Software SL / -$5.00 Hard SL. Sequential Stoch (8,1,1) Rule 1 & Rule 2 active. |
 | **Stoch (50,1,1) / Stoch (25,1,1)** | `R_10` (Test Bot) | BUY: Stoch 50 < 50.0<br>SELL: Stoch 50 > 50.0 | Closed M5 Stoch (25,1,1) Level 50 opposite cross in loss | Liquidate trade immediately. Downside protected by -$3.50 Software SL / -$5.00 Hard SL. Breakeven Defense Engine active. |
 

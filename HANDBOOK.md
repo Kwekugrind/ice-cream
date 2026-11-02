@@ -9616,3 +9616,34 @@ Backtesting across 1,000 continuous M5 candles (Deriv live tick history) demonst
   - **Hard Take Profit:** +$3.00 (300.0 points on 0.01 lots).
   - **Software Stop Loss:** -$2.50 (250.0 points).
   - **Hard Broker Stop Loss:** -$5.00 (500.0 points).
+
+---
+
+## 27. VOLATILITY 25 (R_25) TEA MACHINE CALIBRATION & PROFIT PROTECTION ENGINE
+*Added November 2, 2026 -- Fast-Path Real-Time Floor Lock Enforcement, Rule 2 Profit Guard, Candle Color Match, and +$3.00 / -$2.50 Risk Recalibration*
+
+### 27.1 Forensic Root Cause Analysis
+During live operations on November 2, 2026, Tea Machine (`R_25`) generated 3 full Take Profit wins (+$10.28 total), yet suffered net losses because Trades #3, #4, #5, and #6 suffered massive profit collapses:
+* **Trade #3:** Ran to **+$2.99** peak profit (within 1 point of $3.50 TP target), then retraced all the way to **-$1.52** under Rule 2 exit.
+* **Trade #6:** Ran to **+$2.51** peak profit, then retraced all the way to **-$0.87** under Rule 2 exit.
+* **The Glitch:** Rule 1 armed in memory (`t.lockedPnlFloor = 0.30`), but the continuous 3-second fast-path price loop only checked the `-$3.50` stop loss and failed to execute the floor lock. Subsequently, when the trade dipped into negative territory, Rule 2 triggered on the closed M5 candle without checking if the trade was in profit, crystallizing unnecessary losses.
+
+### 27.2 Backtest Verification & Strategy Calibration
+Backtests across 1,000 M5 Deriv candles proved:
+* Fast Stochastic (8, 1, 1) is too reactive for Volatility 25's lower tick velocity, causing 42 trades and -$16.96 drawdown.
+* Stochastic (25, 1, 1) captures the true cyclical swing structure of V25 with an **83.3% win rate** (15W / 3L, +$23.95 net profit).
+* Calibrating fast-path profit protection and enforcing closed candle color matching eliminates premature profit decay and counter-trend traps.
+
+### 27.3 Rule Specifications for VIX 25 (`R_25` -- Tea Machine)
+* **Macro Trend Gate:** Closed M5 Stoch (100, 1, 1 Simple) Level 50 Gate (%K > 50 BUY / < 50 SELL).
+* **Initial Trigger:** Closed M5 Stoch (25, 1, 1 Simple) cross Level 50 within ±3 candles of Stoch 100 cross, **strictly requiring directional candle match** (`close > open` for BUY, `close < open` for SELL).
+* **Re-Entry Mode:** Closed M5 Stoch 100 aligned + Stoch (25, 1, 1) pullback to <= 30 (BUY) / >= 70 (SELL) and fresh cross > 30 (BUY) / < 70 (SELL), **strictly requiring directional candle match**.
+* **Trade Management & Profit Protection:**
+  - **Rule 1 (Midline Arm):** When trade is in profit (`currentPnl > 0`) and closed M5 Stoch 25 reaches Level 50 (>= 50 BUY / <= 50 SELL), Software SL is locked at **+$0.30** in fast-path memory.
+  - **Active Fast-Path Execution:** The 3-second price watchdog continuously monitors `openTrade.lockedPnlFloor`. If price retraces to +$0.30, the trade is liquidated immediately at market to protect capital.
+  - **Rule 2 (Reversal Exit):** Subsequent closed M5 candle where Stoch 25 reverses across Level 50 (< 50 BUY / > 50 SELL) exits immediately **ONLY if floating profit is >= +$0.10**. Rule 2 is strictly forbidden from exiting in a loss.
+* **Risk Parameters:**
+  - **Software Take Profit:** +$3.00 (6.00 points on 0.50 lots).
+  - **Hard Broker Take Profit:** +$5.00 (10.00 points).
+  - **Software Stop Loss:** -$2.50 (5.00 points).
+  - **Hard Broker Stop Loss:** -$5.00 (10.00 points).
