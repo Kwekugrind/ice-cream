@@ -9588,3 +9588,31 @@ In accordance with direct trader directive, Volatility 50 (`R_50` — OmniSight 
    - **Hard Take Profit:** **+$3.00** (0.75 points on 4.00 lots).
    - **Software Stop Loss:** **-$2.50** (0.625 points on 4.00 lots).
    - **Broker Hard SL:** **-$5.00** (1.25 points on 4.00 lots).
+
+
+---
+
+## 26. VOLATILITY 75 (`R_75` — LERY'S ALERTS) OVERHAUL: STOCH (100,1,1) + STOCH (8,1,1) ARCHITECTURE
+
+### 26.1 Forensic Investigation Summary (2026-11-02 Audit)
+Following live operational analysis where Volatility 75 completed 9 trades resulting in 3 wins and 6 losses (-$5.67 Net Loss), a root cause investigation identified five fatal failure modes in the legacy Stoch (15,1,1) 30/70 setup:
+1. **Monodirectional SELL Bias Lock:** The slow Macro Stoch 100 Gate locked the bot into SELL mode during major 300–500 point intraday rallies.
+2. **Counter-Trend Chop Whiplash:** Stoch 15 entered pullbacks at 30/70, which fired mid-move into rising candles rather than catching true turning points.
+3. **Breakeven Lag:** Breakeven required reaching +$1.00 (50% TP); trades peaked at +$0.51 to +$0.83 and reversed all the way to -$2.00 losses without defense.
+4. **Fragile Option A Invalidation:** 1-candle entry wick closes prematurely stopped trades at -$1.77.
+5. **1:1 RR Deficit:** $2.00 TP vs -$2.00 SL failed mathematically at a 33% win rate.
+
+### 26.2 The Proven Solution (V50 Architecture Applied to V75)
+Backtesting across 1,000 continuous M5 candles (Deriv live tick history) demonstrated that adopting the exact V50 engine configuration transformed performance from **-$16.47 Net Loss** to **+$21.71 Net Profit** with a **79.4% win rate** (27 Wins / 7 Losses) and hitting the $6.00 daily profit target on 3 out of 4 days.
+
+### 26.3 Rule Specifications for VIX 75 (`R_75`)
+* **Macro Trend Gate:** Closed M5 Stoch (100, 1, 1 Simple) Level 50 Gate (%K > 50 BUY / < 50 SELL).
+* **Initial Trigger:** Closed M5 Stoch (8, 1, 1 Simple) cross Level 50 within ±2 candles (600s) of Stoch 100 transition across 50. If window expires without cross, initial is bypassed and Re-Entry opens.
+* **Re-Entry Mode:** Closed M5 Stoch 100 aligned + Stoch (8, 1, 1) pullback to touch/cross <= 10 (BUY) / >= 90 (SELL) and freshly cross back (> 10 for BUY / < 90 for SELL).
+* **Trade Management:** Sequential Stoch (8, 1, 1):
+  - **Rule 1:** When trade is in profit (`currentPnl > 0`) and closed M5 Stoch 8 reaches Level 50 (>= 50 BUY / <= 50 SELL), move Software SL to +$0.30 lock.
+  - **Rule 2:** Strictly dependent on Rule 1; subsequent closed M5 candle where Stoch 8 reverses across Level 50 (< 50 BUY / > 50 SELL) exits immediately.
+* **Risk Parameters:**
+  - **Hard Take Profit:** +$3.00 (300.0 points on 0.01 lots).
+  - **Software Stop Loss:** -$2.50 (250.0 points).
+  - **Hard Broker Stop Loss:** -$5.00 (500.0 points).
