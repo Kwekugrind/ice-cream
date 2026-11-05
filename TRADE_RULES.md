@@ -1,141 +1,69 @@
 # OMNISIGHT FLEET TRADE RULES COMPENDIUM
-### Version 9.1 -- October 2026 Authoritative Trading Rules & Parameter Specification (Removal of Stoch %K/%D Opposite Cross Early Exit; Fleet-Wide Adoption of Closed-M5 Stoch (15,2,5) Level 40/60 Invalidation Exit in Loss; VIX 100 Hard Broker TP $10.00, Move SL to +$0.50 at $5.00 Profit)
+### Version 10.0 -- November 2026 Authoritative Trading Rules: Universal 5-Gate Fractal Breakout Engine
 
 ---
 
 ## 1. FLEET ROSTER & STRATEGY MATRIX
 
-All active trading bots operate with a standard **$5.00 Stake**, engineered for a **$100.00 Live Account Balance** to target **$7.00 Net Daily Profit per bot** ($49.00/day total fleet quota; $10.00 target for VIX 100). Risk is strictly governed by a **-$2.00 Software Stop Loss** (-$4.00 on `R_100`; -$5.00 Hard Broker SL limit).
+All 7 active trading bots operate with a standard **$5.00 Stake**, engineered for a **$100.00 Live Account Balance** to target **$7.00 Net Daily Profit per bot** ($49.00/day total fleet quota). Risk is strictly governed by the **Entry Candle Invalidation Stop Loss** (closed M5 candle beyond entry candle Low for BUY / High for SELL), protected by a catastrophic broker safety floor (-$10.00).
 
-| Bot Label | PM2 Name | Server | Directory Path | Symbol | Symbol ID | Lot Size | Stake | Strategy Gate | Base TP ($3.50 Net) | Daily Strike TP | Calibrated Soft SL |
+| Bot Label | PM2 Name | Server | Directory Path | Symbol | Symbol ID | Lot Size | Stake | Strategy Gate | Base TP | Main Stop Loss | Early Exit |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| **Lery's Alerts** | `lery-v75` | S1 | `~/trading-bots/Lery-s-Alerts` | Volatility 75 | `R_75` | 0.01 Lots | $5.00 | M5 Stoch (100,1,1 Simple) Level 50 Trend + Stoch (8,1,1 Simple) Level 50 Initial (±2 candles) & 10/90 Re-Entry + Hard TP $3.00 + Sequential Stoch (8,1,1) Rule 1 (+$0.30 SL) & Rule 2 Exit | 300.0 pts ($3.00 TP) | 500.0 pts | -$2.50 |
-| **Coffee Machine** | `coffee-v75-1s` | S1 | `~/trading-bots/coffee` | Volatility 75 (1s) | `1HZ75V` | 0.15 Lots | $5.00 | M5 Stoch 100 Trend + Stoch (8,1,1 Simple) Level 50 Initial (±2c) & 10/90 Re-Entry + Directional Candle Match + Soft TP $6.00 (40.0 pts) / Hard TP $7.50 + Soft SL -$5.25 + Sequential Rule 1 Floor Lock (+$1.50) & Rule 2 Profit Guard Exit + Daily Target Lock at +$6.00 | 40.0 pts ($6.00 TP) | 50.0 pts ($7.50 Hard TP) | -$5.25 |
-| **Milk Machine** | `milk-v100` | S1 | `~/trading-bots/milk` | Volatility 100 | `R_100` | 1.00 Lot | $5.00 | M5 Stoch 100 Trend + Stoch (15,1,1 Simple) Fresh Level 50 Cross Initial & Option A (70/30) Re-Entry (Strictly Confirmed Closed M5 Candle) + Hard TP $10.00 + Breakeven Defense Engine | 10.00 pts ($10.00 TP) | 10.00 pts | -$4.00 |
-| **Tea Machine** | `tea-v25` | S1 | `~/trading-bots/tea` | Volatility 25 | `R_25` | 0.50 Lots | $5.00 | M5 Stoch 100 Trend + Stoch (25,1,1) Level 50 Initial (±3 candles) & Option A (70/30) Re-Entry (Strictly Confirmed Closed M5 Candle) + Hard TP $5.00 (Soft TP $3.50) + Breakeven Defense Engine | 10.00 pts ($5.00 TP) | 10.00 pts | -$3.50 |
-| **Ice Cream** | `ice-cream-100-1s` | S2 | `~/trading-bots/ice-cream` | Volatility 25 (1s) | `1HZ25V` | 0.005 Lots | $5.00 | M5 Stoch 100 Trend + Stoch (15,1,1) Fresh Level 50 Cross Initial & Level 20/80 Re-Entry (Strictly Confirmed Closed M5 Candle) + M5 MACD (5,35,1) Re-Entry Filter + Hard TP $10.00 + Entry Candle High/Low Close Software SL + Breakeven Defense Engine | 2000.0 pts ($10.00 TP) | Dynamic Entry Candle High/Low | Entry Candle Close SL |
-| **OmniSight** | `omni-v50` | S2 | `~/trading-bots/OmniSight` | Volatility 50 | `R_50` | 4.00 Lots | $5.00 | M5 Stoch (100,1,1) Level 50 Trend + Stoch (8,1,1) Level 50 Initial (±2 candles) & 10/90 Re-Entry + Hard TP $3.00 + Sequential Stoch (8,1,1) Rule 1 (+$0.30 SL) & Rule 2 Exit | 0.75 pt ($3.00 TP) | 1.25 pt | -$2.50 |
-| **Test Bot** | `test-v10` | S2 | `~/trading-bots/Test-Bot` | Volatility 10 | `R_10` | 0.50 Lots | $5.00 | M5 Stoch (50,1,1 Simple) Level 50 Trend + Stoch (25,1,1 Simple) Level 50 Initial (±2 candles) & Option A (70/30) Re-Entry (Strictly Confirmed Closed M5 Candle) + Target TP $3.50 (Broker Hard TP $5.00) + Software SL -$3.50 + Breakeven Defense Engine | 7.00 pts ($3.50 Soft TP) | 10.00 pts ($5.00 Hard TP) | -$3.50 |
+| **Lery's Alerts** | `lery-v75` | S1 | `~/trading-bots/Lery-s-Alerts` | Volatility 75 | `R_75` | 0.01 Lots | $5.00 | Universal 5-Gate Fractal Breakout | $3.50 | Entry Candle Invalidation | Stoch 8 Level 50 Opposite Cross |
+| **Coffee Machine** | `coffee-v75-1s` | S1 | `~/trading-bots/coffee` | Volatility 75 (1s) | `1HZ75V` | 0.15 Lots | $5.00 | Universal 5-Gate Fractal Breakout | $6.00 | Entry Candle Invalidation | Stoch 8 Level 50 Opposite Cross |
+| **Milk Machine** | `milk-v100` | S1 | `~/trading-bots/milk` | Volatility 100 | `R_100` | 1.00 Lot | $5.00 | Universal 5-Gate Fractal Breakout | $10.00 | Entry Candle Invalidation | Stoch 8 Level 50 Opposite Cross |
+| **Tea Machine** | `tea-v25` | S1 | `~/trading-bots/tea` | Volatility 25 | `R_25` | 0.50 Lots | $5.00 | Universal 5-Gate Fractal Breakout | $5.00 | Entry Candle Invalidation | Stoch 8 Level 50 Opposite Cross |
+| **Ice Cream** | `ice-cream-100-1s` | S2 | `~/trading-bots/ice-cream` | Volatility 25 (1s) | `1HZ25V` | 0.005 Lots | $5.00 | Universal 5-Gate Fractal Breakout | $10.00 | Entry Candle Invalidation | Stoch 8 Level 50 Opposite Cross |
+| **OmniSight** | `omni-v50` | S2 | `~/trading-bots/OmniSight` | Volatility 50 | `R_50` | 4.00 Lots | $5.00 | Universal 5-Gate Fractal Breakout | $3.00 | Entry Candle Invalidation | Stoch 8 Level 50 Opposite Cross |
+| **Test Bot** | `test-v10` | S2 | `~/trading-bots/Test-Bot` | Volatility 10 | `R_10` | 0.50 Lots | $5.00 | Universal 5-Gate Fractal Breakout | $3.50 | Entry Candle Invalidation | Stoch 8 Level 50 Opposite Cross |
 
 ---
 
-## 2. STRATEGY PROFILE RULES & INDICATOR MATRIX
+## 2. UNIVERSAL 5-GATE FRACTAL BREAKOUT STRATEGY SPECIFICATION
 
-* **Entry Execution Mandate:** Fibonacci Grid Touch/Crossover is **NOT REQUIRED FOR ENTRY** on any instrument in the fleet. Entries are governed strictly by calibrated M5 EMA, Stochastic, CCI, and MACD indicators as detailed in Section 1 and `HANDBOOK.md` Section 9.
-* **Take Profit Target Mandate:** The Daily Fibonacci Grid (0%, 50%, 79%, 100%, -50%, 161.8%) serves as the technical **Take Profit Target Grid** for active trades, enforced with a minimum **$4.00 Net Take Profit Target Floor** ($7.00 Extended Target Alignment) and managed by the Two-Tier Dynamic Trailing Stop Ratchet + Closed-M5 Stoch (15, 2, 5) Midline Profit Exit when in profit.
+### Gate 1: Macro Trend Gate -- Closed M5 Stochastic (100, 1, 1 Simple)
+* **BUY Mode:** Closed M5 Stoch 100 %K > 50.0.
+* **SELL Mode:** Closed M5 Stoch 100 %K < 50.0.
+* **Invalidation:** If Stoch 100 crosses opposite Level 50, the current setup is invalidated and the engine flips to watch for opposite signals.
 
----
+### Gate 2: Entry Triggers -- Closed M5 Stochastic (8, 1, 1 Simple)
+1. **Initial Trigger (Trend Reversal Entry):**
+   * Occurs when Stoch (100, 1, 1) crosses Level 50.
+   * If Stoch (8, 1, 1) crosses Level 50 in the same direction within ±2 M5 closed candles of the Stoch 100 transition, an Initial Trigger is armed.
+   * The setup searches for a fractal breakout. It expires when Stoch 8 crosses below Level 10 (BUY) / above Level 90 (SELL), switching the engine to Re-Entry Mode.
+2. **Re-Entry Mode (Trend Continuation Pullback):**
+   * Operates as long as Stoch 100 remains aligned on the same side of Level 50.
+   * **BUY Re-Entry:** Stoch (8, 1, 1) pulls back to touch or close <= 10.0. Arms re-entry breakout watch.
+   * **SELL Re-Entry:** Stoch (8, 1, 1) pulls back to touch or close >= 90.0. Arms re-entry breakout watch.
+   * Remains active as long as Stoch 100 remains on trend side; refreshes if Stoch 8 touches the extreme again.
 
-## 3. UNIFIED CENTRALIZED TRADE MANAGEMENT & CAPITAL PROTECTION ENGINE
+### Gate 3: M5 Fractal Candle Breakout Trigger
+* **BUY Entry:** Trigger trade when an M5 candle closes **ABOVE the close price** of the candle on which the most recent HIGH (UP) M5 fractal was drawn (`close > fractal.close`).
+* **SELL Entry:** Trigger trade when an M5 candle closes **BELOW the close price** of the candle on which the most recent LOW (DOWN) M5 fractal was drawn (`close < fractal.close`).
+* **No Timeframe Restriction:** No expiration count is imposed as long as Stoch 100 remains aligned.
 
-* **Breakeven Defense Engine (Fleet-Wide: All 7 Bots):**
-  * Once unrealized profit reaches **50% of the target TP**, the Breakeven Defense Engine arms.
-  * A **+$0.10 buffer** is locked above entry price to guarantee commissions and exchange fees are completely guarded.
-  * Active trades enjoy generous breathing room to achieve their full TP targets without premature trailing-stop exits.
-* **Option A (70/30) Re-Entry Specification (Fleet-Wide Across All Re-Entry Channels):**
-  * Evaluated strictly on **confirmed closed M5 candle logs** (`candles[si].epoch > t.entryEpoch`):
-  * **BUY Re-Entry:** `Stoch %K` must pull back to `<= 30.0` and subsequently confirm a fresh cross `> 30.0` on a closed M5 candle while macro trend remains bullish.
-  * **SELL Re-Entry:** `Stoch %K` must pull back to `>= 70.0` and subsequently confirm a fresh cross `< 70.0` on a closed M5 candle while macro trend remains bearish.
-  * Zero intrabar/intra-candle execution: entry fires only once the M5 candle closes and confirms the cross.
-* **Instrument-Specific Take Profit & Risk Calibration Matrix:**
-  * **VIX 100 (`R_100`):** Hard Broker TP **+$10.00**, Soft SL -$4.00, Breakeven at +$5.00.
-  * **VIX 25 (1s) (`1HZ25V`):** Hard Broker TP **+$10.00**, Entry Candle High/Low Stop Loss, Breakeven at +$5.00.
-  * **VIX 75 (`R_75`):** Target TP **+$3.50**, Soft SL -$2.00, Breakeven at +$1.75.
-  * **VIX 75 (1s) (`1HZ75V`):** Soft TP **+$6.00** (40.0 pts), Hard Broker TP **+$7.50**, Soft SL **-$5.25**, Fast Floor Lock **+$1.50** at Rule 1 Arm, Daily Target Lock at **+$6.00**.
-  * **VIX 25 (`R_25`):** Hard TP **+$5.00**, Soft TP **+$3.00**, Soft SL -$2.50, Fast-Path Floor Lock +$0.30 at Rule 1 Arm.
-  * **VIX 50 (`R_50`):** Target TP **+$3.00**, Soft SL -$2.50, Breakeven at +$1.50.
-  * **VIX 10 (`R_10`):** Target TP **+$3.50**, Hard Broker TP **+$5.00**, Soft SL -$3.50, Breakeven at +$1.75.
-* **Software Stop Loss (-$5.25 on `1HZ75V` / -$2.50 on `R_75`, `R_50` / -$3.50 on `R_25`, `R_10` / -$4.00 on `R_100` / Dynamic Entry Candle High-Low Close SL on `1HZ25V` & `R_10`):** Strict capital protection. For `1HZ25V`, static Software SL is replaced by closed M5 candle past Entry Candle Low (BUY) / High (SELL). Executed in fast-path watchdog and closed M5 scan.
-* **Hard Broker Stop Loss (-$5.00):** Native broker-level multiplier safety floor.
-* **The Incubation Zone ($0.00 to $2.19):** Full breathing room. Zero premature trailing stops. Trades navigate normal M5 wicks freely.
-* **Tier 1 Breakeven Capital Shield (Peak $\ge +\$2.20$):** Floor locked at **+$1.00 net** ($1.20 breathing buffer). Guarantees all commissions are covered in pure profit.
-* **Tier 2 Half-Target Quota Lock (Peak $\ge +\$3.50$):** Floor locked at **+$2.20 net** ($1.30 breathing buffer). Guarantees at least 31% of daily quota. Two such trades hit the full $7.00 daily goal.
-* **Tier 3 Pre-Target Runner (Peak $\ge +\$5.00$):** Floor locked at **+$3.80 net** ($1.20 buffer).
-* **Tier 4 Daily Target Strike Ceiling (Instant Cash-Out):**
-  The second floating profit completes the daily quota or reaches +$7.00 standalone, the bot cashes out immediately.
-* **Daily Target Lock (+$7.00):** Transitions bot into `IDLE_DAILY_TARGET_REACHED` until 00:00 UTC rollover.
-* **Continuous Trading Execution Mandate:** The artificial -$4.00 daily loss halt has been completely abolished. Trading bots evaluate market structure continuously across all sessions without premature daily freezes.
-* **Tier 4 Super Runner Ratchet (Peak $\ge \$12.00$):** Locks in at least **80% of peak profit** (capping maximum giveback to `$2.50`):
-  $\text{lockedPnlFloor} = \max(+\$7.50, \text{maxUnrealizedPnL} \times 0.80, \text{maxUnrealizedPnL} - \$2.50)$
-* **Hard Take Profit / Super Runner Cash-out Ceiling (+$20.00):** Instant market cash-out upon touching `+$20.00` floating profit.
-* **Fleet-Wide Closed-M5 Stoch (15,2,5) Level 40/60 Loss Invalidation Exit:**
-  The sensitive `"Stoch %K/%D Opposite Cross Early Exit"` has been completely abolished across all bots in the fleet. It is replaced by the calibrated Level 40/60 Invalidation rule, evaluated **STRICTLY when trade is in loss ($\text{currentPnl} < 0$) on confirmed closed M5 candle**:
-  * **BUY trades in loss:** Exits immediately if Stoch (15,2,5) %K crosses below **60.0** (`prevK >= 60.0 && currK < 60.0`).
-  * **SELL trades in loss:** Exits immediately if Stoch (15,2,5) %K crosses above **40.0** (`prevK <= 40.0 && currK > 40.0`).
-  * **State Cleanup:** Triggers full broker contract liquidation, resets `state.openTrade = null`, and invokes `onTradeClosedCleanup(candles[si].epoch)`.
-* **Runner Immunity & Oscillator Profit Exit Abolition:** 
-  Trades in profit are immune to mid-trend oscillator exits. Oscillator boundary crosses are evaluated **STRICTLY as early loss invalidations when in adverse position ($\text{currentPnl} < 0$)**. Profitable positions are managed exclusively by the Tiered Dynamic Ratchet and macro trend invalidations (Stoch 200).
+### Gate 4: Directional Candle Confirmation
+* The confirmed closed M5 candle triggering the signal must physically match trade direction:
+  * **BUY Signal:** Closed M5 candle must be **Bullish** (`close > open`).
+  * **SELL Signal:** Closed M5 candle must be **Bearish** (`close < open`).
+
+### Gate 5: Trade Management & Capital Protection
+1. **Primary Invalidation Stop Loss (Main SL):**
+   * **BUY:** If confirmed M5 candle closes below the **LOW** of the candle on which the trade was executed, close trade immediately.
+   * **SELL:** If confirmed M5 candle closes above the **HIGH** of the candle on which the trade was executed, close trade immediately.
+2. **Early Trade Exit (Opposite Stoch 8 Midline Cross):**
+   * To prevent premature stop-outs from sensitive breakeven locks on high-volatility instruments (e.g. VIX 100), all intrabar breakeven logic has been eliminated.
+   * When in trade, if confirmed closed M5 Stoch 8 crosses opposite Level 50 (`prevK8 >= 50 && currK8 < 50` for BUY, `prevK8 <= 50 && currK8 > 50` for SELL), close trade immediately.
+3. **Position Flipping:**
+   * While a trade is open, continuous monitoring is active. If a valid opposite signal is confirmed, immediately close current trade and execute the new trade without delay.
+4. **Catastrophic Broker SL Floor:**
+   * Hard broker SL floor (-$10.00 / wide distance buffer) guards against extreme slippage or network disconnection.
 
 ---
 
-## 4. GOOGLE AI STUDIO DEPLOYMENT & REPOSITORY SYNC PROTOCOL
-
-* **Direct AI Studio Push:** All code changes are committed from Google AI Studio and pushed using `scripts/sync-to-github.sh` and `scripts/auto-sync.sh`.
-* **Zero Direct Server Edits:** Never edit code directly on live servers. Server daemons run `pull-trades.sh` every 5 minutes and overwrite direct server edits with origin main.
-
----
-
-## 5. UNIVERSAL M5 EMA 100 DIRECTIONAL FILTER & CONTINUOUS RE-ENTRY ENGINE
-
-* **Universal M5 EMA 100 Filter Across All 7 Bots:**
-  * **BUY Orders (Initial & Re-Entry):** Strictly permitted **ONLY** when current M5 candle price is **ABOVE** M5 EMA 100 (`currentPrice > currentEma100`). If price is below or equal to EMA 100, BUY triggers are blocked.
-  * **SELL Orders (Initial & Re-Entry):** Strictly permitted **ONLY** when current M5 candle price is **BELOW** M5 EMA 100 (`currentPrice < currentEma100`). If price is above or equal to EMA 100, SELL triggers are blocked.
-  * **Live Engine Verification:** Both the continuous M5 slow-path scan and the immediate fast-path re-entry engine actively enforce this rule before placing any order.
-
-* **Continuous Signal Search & Immediate Re-Entry Execution:**
-  * While a trade is active, the engine continues evaluating every closed M5 candle to detect qualifying re-entry setups.
-  * Qualifying setups are latched in `state.activeReentryOpportunity`.
-  * The instant an active trade exits (via take profit, dynamic ratchet, or software SL), the fast-path watchdog executes `checkAndExecuteImmediateReentry()` immediately without waiting up to 5 minutes for the next candle boundary.
-
-* **Fleet Monitor Re-Entry Mode Telemetry:**
-  * When an initial trade has executed and closed, the bot transitions to **RE-ENTRY WATCH** status (`state.isReentryMode = true`).
-  * If the market has not pulled back into the trigger zone, `state.armed` is explicitly `null` (not static "ARMED"), displaying `Awaiting Re-Entry Signal` (purple status).
-  * When price enters the active pullback zone and aligns with EMA 100, `state.armed` engages with `type: "RE_ENTRY"`.
-
----
-
-## 6. STRICT AI SYSTEM DISCIPLINE & CAPITAL PROTECTION MANDATE
+## 3. STRICT AI SYSTEM DISCIPLINE & CAPITAL PROTECTION MANDATE
 
 > [!] **CRITICAL AI OPERATIONAL DIRECTIVE (LIVE CAPITAL SAFETY):**
 > 1. **Zero Assumptions Policy:** The AI engineering engine must **NEVER make assumptions, extrapolate, or guess user intent** regarding trading rules, indicators, target engines, or strategy profiles. If any instruction is underspecified, ambiguous, or unclear, the AI MUST HALT execution and ask the trader for explicit clarification.
 > 2. **Strict Instruction Adherence:** The AI must adhere 100% strictly to explicit user instructions. Do NOT add, remove, "optimize", or strip strategy components or target engines beyond what was explicitly requested.
 > 3. **Real Capital Responsibility:** Acknowledging that live financial capital is at stake, all code modifications, indicator gates, and execution logic must undergo mandatory verification and strictly preserve system stability and capital safety.
-
----
-
-## 7. FLEET-WIDE STOP & REVERSAL INVALIDATION ENGINE & IMMEDIATE REVERSAL PIVOT
-
-### 7.1 Authoritative Specification Across All Applicable Bots
-
-On confirmed closed M5 candle following entry (post-entry candle), if the Macro Trend Stochastic crosses opposite Level 50 AND the trigger Stochastic %K crosses %D in the opposite direction, the open trade **MUST CLOSE IMMEDIATELY** to truncate losses before hitting the full software stop loss.
-
-| Bot Profile / Asset | Symbols | Macro Invalidation Condition | Oscillator Invalidation Condition | Immediate Reversal Action |
-|---|---|---|---|---|
-| **Stoch 100 / Stoch (15,1,1)** | `R_75`, `1HZ75V`, `R_100` | BUY: Stoch 100 < 50.0<br>SELL: Stoch 100 > 50.0 | Closed M5 Stoch (15,1,1) Level 50 opposite cross in loss | Liquidate trade immediately. Arm opposite direction (`reversalArmed`). Flip `trendDir`. Breakeven Defense Engine protects running profits. |
-| **Stoch 100 / Stoch (15,1,1) + MACD** | `1HZ25V` (Ice Cream) | BUY: Stoch 100 < 50.0<br>SELL: Stoch 100 > 50.0 | BUY: Close < Entry Low<br>SELL: Close > Entry High | Liquidate immediately on entry candle extreme close. Breakeven Defense Engine active. |
-| **Stoch 100 / Stoch (25,1,1)** | `R_25` (Tea Machine) | BUY: Stoch 100 < 50.0<br>SELL: Stoch 100 > 50.0 | Closed M5 Stoch (25,1,1) Level 50 reversal (profit >= +$0.10 only) | Liquidate trade immediately. Protected by Fast-Path +$0.30 Floor / -$2.50 Software SL / -$5.00 Hard SL. |
-| **Stoch (100,1,1) / Stoch (8,1,1)** | `R_50` (OmniSight) | BUY: Stoch 100 < 50.0<br>SELL: Stoch 100 > 50.0 | Closed M5 Stoch (8,1,1) Level 50 reversal across 50 after Rule 1 | Liquidate trade immediately. Downside protected by -$2.50 Software SL / -$5.00 Hard SL. Sequential Stoch (8,1,1) Rule 1 & Rule 2 active. |
-| **Stoch (50,1,1) / Stoch (25,1,1)** | `R_10` (Test Bot) | BUY: Stoch 50 < 50.0<br>SELL: Stoch 50 > 50.0 | Closed M5 Stoch (25,1,1) Level 50 opposite cross in loss | Liquidate trade immediately. Downside protected by -$3.50 Software SL / -$5.00 Hard SL. Breakeven Defense Engine active. |
-
-### 7.2 Same-Cycle Reversal Execution Protocol
-
-1. **State Reset & Direction Flip:**
-   * Upon invalidation liquidation, the bot executes `state.openTrade = null` and `onTradeClosedCleanup()`.
-   * Directional lock flags (`initialEntryDone`, `initialBuyDone`, `initialSellDone`) are immediately cleared (`false`).
-   * Main trend direction flips to the opposite side (`trendDir = isBuy ? "SELL" : "BUY"`).
-   * Directional reversal arm flag engages (`reversalArmed = isBuy ? "SELL" : "BUY"`).
-2. **Same-Candle Memory Refresh:**
-   * Immediately following active trade exit evaluation, `runSlowPathScan` reloads `trades = loadTrades()` and recalculates `openTrades`.
-   * Active entry gates evaluate `noActiveTrades = true` on the **exact same scan cycle**, allowing the bot to enter the reversal trade on the exact closed candle that confirmed the reversal without waiting 5 minutes.
-3. **2-Opposing-Fractals Structural Reversal Exit (Double Top/Lower High on BUY, Double Bottom/Higher Low on SELL):**
-   * **Scope:** `1HZ75V` (Coffee Machine), `R_25` (Tea Machine), `R_100` (Milk Machine), and `R_50` (OmniSight).
-   * **Execution Watchdog:** Evaluated on every confirmed closed M5 candle strictly when in floating loss (`currentPnl < 0`) and not an active runner (`!isRunner`).
-   * **BUY Trade Early Exit:** When the first two Swing High (Top) fractals formed at/after trade entry satisfy `F2 <= F1` (Lower High or Double Top within 0.05% tolerance). Confirms buyers failed to make a higher high and sellers have established resistance.
-   * **SELL Trade Early Exit:** When the first two Swing Low (Bottom) fractals formed at/after trade entry satisfy `F2 >= F1` (Higher Low or Double Bottom within 0.05% tolerance). Confirms sellers failed to make a lower low and buyers have established support.
-   * **Action:** Close position immediately at market to truncate adverse risk before hitting full software stop loss. Directional blocking flags are cleared to allow an immediate reversal pivot if opposite entry conditions align.
-
-
-### 2.1 Confirmed Closed Candle Directional Matching Rule (Fleet Mandate)
-To filter out counter-momentum entries and protect capital from false breakouts, **every trade entry (Initial & Re-Entry) strictly requires directional candle confirmation on the closed M5 candle**:
-* **BUY Entry:** The confirming M5 candle must close **BULLISH** (`close > open`). If the candle closes bearish or doji (`close <= open`), the trade is prevented and stands by for a matching bullish close.
-* **SELL Entry:** The confirming M5 candle must close **BEARISH** (`close < open`). If the candle closes bullish or doji (`close >= open`), the trade is prevented and stands by for a matching bearish close.
