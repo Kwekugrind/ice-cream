@@ -1,6 +1,49 @@
 
 // ==================== UNIVERSAL M5 BILL WILLIAMS FRACTAL DETECTION ====================
 // Scans backwards from si - 2 to find the most recent completed 5-bar Bill Williams fractal pivot
+
+// ==================== FRACTAL DETECTION BY SPECIFIC TYPE ====================
+// Scans backwards from si - 2 to find the most recent completed 5-bar Bill Williams fractal pivot of targetType ('UP' or 'DOWN')
+export function getMostRecentM5FractalByType(candles, currentIndex, targetType) {
+  if (!candles || currentIndex < 4) return null;
+  for (let k = currentIndex - 2; k >= 2; k--) {
+    const high = parseFloat(candles[k].high);
+    const low = parseFloat(candles[k].low);
+    const isUp = high > parseFloat(candles[k - 1].high) &&
+                 high > parseFloat(candles[k - 2].high) &&
+                 high > parseFloat(candles[k + 1].high) &&
+                 high > parseFloat(candles[k + 2].high);
+    const isDown = low < parseFloat(candles[k - 1].low) &&
+                   low < parseFloat(candles[k - 2].low) &&
+                   low < parseFloat(candles[k + 1].low) &&
+                   low < parseFloat(candles[k + 2].low);
+
+    if (targetType === 'UP' && isUp) {
+      return {
+        type: 'UP',
+        pivotIndex: k,
+        pivotEpoch: candles[k].epoch,
+        high,
+        low,
+        close: parseFloat(candles[k].close),
+        open: parseFloat(candles[k].open)
+      };
+    }
+    if (targetType === 'DOWN' && isDown) {
+      return {
+        type: 'DOWN',
+        pivotIndex: k,
+        pivotEpoch: candles[k].epoch,
+        high,
+        low,
+        close: parseFloat(candles[k].close),
+        open: parseFloat(candles[k].open)
+      };
+    }
+  }
+  return null;
+}
+
 export function getMostRecentM5Fractal(candles, currentIndex) {
   for (let k = currentIndex - 2; k >= 2; k--) {
     const high = parseFloat(candles[k].high);
@@ -1607,6 +1650,8 @@ const ENGINE_VERSION = "v6.7-gateway-resilience-hardened";
 const CODE_TIMESTAMP = "2026-10-21T07:45:00Z";
 
 const ALLOWED_STATE_KEYS = new Set([
+  "initialSellArmed",
+  "initialBuyArmed",
   "stoch8_pulled_back_90",
   "stoch8_pulled_back_10",
   "initialSellDone",
@@ -2020,13 +2065,7 @@ async function manageOpenTradesFastPath() {
     // 🛡️ Breakeven Protection at 50% TP Progress for VIX 75 (R_75 & 1HZ75V):
     // Arms ONLY after trade reaches +$1.00 (100 points / 50% of $2.00 TP).
     // Gives 90 points of breathing room and only protects capital if trade completely reverses to entry (+ $0.10 buffer).
-    if (SYMBOL === "R_75" && peak >= 1.00) {
-      if (!openTrade.breakevenArmed) {
-        openTrade.breakevenArmed = true;
-        saveTrades(trades);
-        console.log(`[BREAKEVEN ARMED] ${SYMBOL} #${openTrade.contractId} reached +${peak.toFixed(2)} (50% of TP target) -> Breakeven protection active (+ $0.10 buffer)`);
-      }
-    }
+    // Breakeven logic removed per user mandate: early exit strictly governed by Stoch 8 Level 50 opposite cross on closed M5 candles.
 
     // Fast-path trade monitoring: Focuses strictly on calibrated Take Profit and Stop Loss execution.
     // Intrabar stochastic tick-oscillations and +.30 trailing floors removed to allow trades full breathing room to reach programmed Take Profit.
@@ -2077,9 +2116,7 @@ async function manageOpenTradesFastPath() {
     else if (SYMBOL === "R_25" && (tpHit || pnl >= 3.00 || dailyTargetCeilingHit)) {
       reason = "Software Take Profit ($3.00) reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ") — Secured $3.00 Target!";
     }
-    else if (openTrade.lockedPnlFloor !== null && openTrade.lockedPnlFloor !== undefined && pnl <= openTrade.lockedPnlFloor) {
-      reason = "Software SL Floor Lock (+$" + openTrade.lockedPnlFloor.toFixed(2) + ") hit at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ") — Protected Profit after Rule 1 Arm!";
-    }
+    // Floor lock check removed to prevent premature wick stop-outs; early exit strictly governed by Stoch 8 Level 50 opposite cross on closed M5.
     else if ((SYMBOL === "R_50" || SYMBOL === "R_75") && (tpHit || pnl >= 3.00 || dailyTargetCeilingHit)) {
       reason = "Software Take Profit ($3.00) reached at " + currentPrice.toFixed(4) + " (+ $" + pnl.toFixed(2) + ") — Secured $2.50 Target!";
     }
@@ -2986,43 +3023,34 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
 
     // =========================================================================
-    // 🏆 SEQUENTIAL STOCH (8,1,1) TRADE MANAGEMENT (RULE 1 FLOOR LOCK -> RULE 2 EXIT)
-    // Non-conflicting profit protection:
-    // Rule 1: Stoch 8 touches Level 50 in profit -> Arm Software SL Floor Lock
-    // Rule 2: Stoch 8 reverses across Level 50 -> Close trade to protect profit (guarded >= +$0.10)
+    // 🛡️ STOCH (8,1,1) LEVEL 50 OPPOSITE CROSS EARLY TRADE EXIT
+    // Replaces breakeven/floor lock logic across expensive instruments and the fleet.
+    // Early exit executes on confirmed closed M5 candle when Stoch 8 crosses opposite Level 50:
+    // - BUY: Stoch 8 crosses below Level 50 (prevK8 >= 50 && sK8 < 50, or reverses < 50 after reaching >= 50)
+    // - SELL: Stoch 8 crosses above Level 50 (prevK8 <= 50 && sK8 > 50, or reverses > 50 after reaching <= 50)
     // =========================================================================
     let stoch8Exit = false;
     let stoch8ExitDetail = "";
-    const floorLockAmount = (SYMBOL === "1HZ75V") ? 1.50 : ((SYMBOL === "R_100") ? 1.00 : 0.30);
-    const minRule2Profit = (SYMBOL === "1HZ75V") ? 0.50 : 0.10;
 
-    if (!t.stoch8_touched_50) {
-      const buyTouched50 = sK8 !== null && sK8 >= 50.0;
-      const sellTouched50 = sK8 !== null && sK8 <= 50.0;
-      if (isBuy && buyTouched50 && currentPnl > 0) {
-        t.stoch8_touched_50 = true;
-        t.stoch8_touched_50_epoch = candles[si].epoch;
-        if (!t.lockedPnlFloor || t.lockedPnlFloor < floorLockAmount) {
-          t.lockedPnlFloor = floorLockAmount;
+    if (isBuy && sK8 !== null && sK8 >= 50.0) {
+      t.stoch8_reached_favorable_50 = true;
+    } else if (!isBuy && sK8 !== null && sK8 <= 50.0) {
+      t.stoch8_reached_favorable_50 = true;
+    }
+
+    if (isPostEntry) {
+      if (isBuy && sK8 !== null && prevK8 !== null) {
+        const isOppositeCross = (prevK8 >= 50.0 && sK8 < 50.0) || (Boolean(t.stoch8_reached_favorable_50) && sK8 < 50.0);
+        if (isOppositeCross) {
+          stoch8Exit = true;
+          stoch8ExitDetail = `Stoch (8,1,1) Opposite Cross Exit: %K crossed below Level 50 (${sK8.toFixed(1)} < 50) on closed M5 candle`;
         }
-        saveTrades(trades);
-        console.log(`[TRADE MANAGEMENT ${SYMBOL}] Rule 1 Armed: BUY #${t.contractId} Stoch (8,1,1) reached Level 50 (%K: ${sK8.toFixed(1)}) -> Floor lock +$${floorLockAmount.toFixed(2)} active & Rule 2 unlocked.`);
-      } else if (!isBuy && sellTouched50 && currentPnl > 0) {
-        t.stoch8_touched_50 = true;
-        t.stoch8_touched_50_epoch = candles[si].epoch;
-        if (!t.lockedPnlFloor || t.lockedPnlFloor < floorLockAmount) {
-          t.lockedPnlFloor = floorLockAmount;
+      } else if (!isBuy && sK8 !== null && prevK8 !== null) {
+        const isOppositeCross = (prevK8 <= 50.0 && sK8 > 50.0) || (Boolean(t.stoch8_reached_favorable_50) && sK8 > 50.0);
+        if (isOppositeCross) {
+          stoch8Exit = true;
+          stoch8ExitDetail = `Stoch (8,1,1) Opposite Cross Exit: %K crossed above Level 50 (${sK8.toFixed(1)} > 50) on closed M5 candle`;
         }
-        saveTrades(trades);
-        console.log(`[TRADE MANAGEMENT ${SYMBOL}] Rule 1 Armed: SELL #${t.contractId} Stoch (8,1,1) reached Level 50 (%K: ${sK8.toFixed(1)}) -> Floor lock +$${floorLockAmount.toFixed(2)} active & Rule 2 unlocked.`);
-      }
-    } else if (t.stoch8_touched_50 === true) {
-      if (isBuy && sK8 !== null && sK8 < 50.0 && currentPnl >= minRule2Profit) {
-        stoch8Exit = true;
-        stoch8ExitDetail = `Rule 2 Triggered: Stoch (8,1,1) reversed below Level 50 (${sK8.toFixed(1)}) after Rule 1 Arm — Secured +$${currentPnl.toFixed(2)}`;
-      } else if (!isBuy && sK8 !== null && sK8 > 50.0 && currentPnl >= minRule2Profit) {
-        stoch8Exit = true;
-        stoch8ExitDetail = `Rule 2 Triggered: Stoch (8,1,1) reversed above Level 50 (${sK8.toFixed(1)}) after Rule 1 Arm — Secured +$${currentPnl.toFixed(2)}`;
       }
     }
 
@@ -3487,34 +3515,65 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   // =========================================================================
   // UNIVERSAL FLEET STRATEGY ENGINE (ALL 7 INSTRUMENTS)
-  // GATE 1: Macro Trend Gate — Closed M5 Stoch (100,1,1 Simple) Level 50
-  // GATE 2: Entry Triggers — Closed M5 Stoch (8,1,1 Simple):
-  //         1. Initial Trigger: Stoch 8 Level 50 cross within ±2 candles of Stoch 100 transition
-  //         2. Re-Entry Mode: Stoch 8 Pullback (<=10 BUY / >=90 SELL) & Cross back (>10 / <90)
-  // GATE 3: Directional Candle Confirmation: BUY = Bullish (C > O), SELL = Bearish (C < O)
-  // GATE 4: Fractal Check on Re-Entry: BUY = Most recent M5 fractal is DOWN, SELL = Most recent M5 fractal is UP
+  // GATE 1: Macro Trend Gate — Closed M5 Stoch (100, 1, 1 Simple) Level 50
+  // GATE 2: Entry Triggers — Closed M5 Stoch (8, 1, 1 Simple)
+  //   1. Initial Entry:
+  //      - Stoch 100 crosses Level 50. If Stoch 8 crosses Level 50 in same direction within ±2 candles (<=600s),
+  //        Initial Entry is armed (state.initialBuyArmed / state.initialSellArmed).
+  //      - Trigger condition:
+  //        * SELL: Closed M5 candle closes below the close price of the most recent LOW (DOWN) M5 fractal candle.
+  //        * BUY: Closed M5 candle closes above the close price of the most recent HIGH (UP) M5 fractal candle.
+  //      - Expiration:
+  //        * SELL: Expires to Re-Entry mode when Stoch 8 crosses above Level 90 (>= 90.0).
+  //        * BUY: Expires to Re-Entry mode when Stoch 8 crosses below Level 10 (<= 10.0).
+  //      - Invalidation:
+  //        * If Stoch 100 crosses opposite Level 50, setup is invalidated immediately and switches direction.
+  //   2. Re-Entry Mode:
+  //      - Operates while Stoch 100 remains aligned on that side of Level 50 (post-initial).
+  //      - Pullback arming:
+  //        * SELL: Stoch 8 touches/closes >= 90.0 (state.stoch8_pulled_back_90 = true).
+  //        * BUY: Stoch 8 touches/closes <= 10.0 (state.stoch8_pulled_back_10 = true).
+  //        * When Stoch 8 touches extreme again, the process repeats / refreshes.
+  //      - Trigger condition:
+  //        * SELL: Closed M5 candle closes below the close price of the most recent LOW (DOWN) M5 fractal candle.
+  //        * BUY: Closed M5 candle closes above the close price of the most recent HIGH (UP) M5 fractal candle.
+  // GATE 3: Directional Candle Confirmation: BUY = Bullish (C > O), SELL = Bearish (C < O).
   // =========================================================================
 
-  // Gate 1: Macro Trend Gate — Closed M5 Stoch (100,1,1 Simple)
+  // Gate 1: Macro Trend Gate — Closed M5 Stoch (100, 1, 1 Simple)
   const stoch100AlignedBuy = sK100 !== null && sK100 > 50.0;
   const stoch100AlignedSell = sK100 !== null && sK100 < 50.0;
   const stoch100CrossUp50 = prevK100 !== null && sK100 !== null && prevK100 <= 50.0 && sK100 > 50.0;
   const stoch100CrossDown50 = prevK100 !== null && sK100 !== null && prevK100 >= 50.0 && sK100 < 50.0;
 
-  // Gate 2: Stoch (8,1,1 Simple) Triggers
+  // Gate 2: Stoch (8, 1, 1 Simple) Triggers
   const stoch8CrossUp50 = prevK8 !== null && sK8 !== null && prevK8 <= 50.0 && sK8 > 50.0;
   const stoch8CrossDown50 = prevK8 !== null && sK8 !== null && prevK8 >= 50.0 && sK8 < 50.0;
 
-  // Track Stoch 100 cross epoch
+  // Track Stoch 100 cross epoch and handle direction flips / invalidation
   if (stoch100CrossUp50) {
     state.stoch100CrossEpochBuy = m5BoundaryEpoch;
     state.initialBuyDone = false;
+    state.initialBuyArmed = false;
     state.stoch8_pulled_back_10 = false;
+    // Invalidate opposite SELL setups
+    state.initialSellArmed = false;
+    state.stoch8_pulled_back_90 = false;
+    state.stoch100CrossEpochSell = null;
+    state.initialSellDone = false;
+    console.log(`[${REPO_LABEL}] 🔄 Macro Trend Transition: Stoch (100,1,1) crossed UP > 50.0. SELL setups invalidated; watching for Initial BUY.`);
   }
   if (stoch100CrossDown50) {
     state.stoch100CrossEpochSell = m5BoundaryEpoch;
     state.initialSellDone = false;
+    state.initialSellArmed = false;
     state.stoch8_pulled_back_90 = false;
+    // Invalidate opposite BUY setups
+    state.initialBuyArmed = false;
+    state.stoch8_pulled_back_10 = false;
+    state.stoch100CrossEpochBuy = null;
+    state.initialBuyDone = false;
+    console.log(`[${REPO_LABEL}] 🔄 Macro Trend Transition: Stoch (100,1,1) crossed DOWN < 50.0. BUY setups invalidated; watching for Initial SELL.`);
   }
 
   // Track Stoch 8 cross epoch
@@ -3525,15 +3584,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.stoch8CrossEpochSell = m5BoundaryEpoch;
   }
 
-  // Reset flags upon macro trend dealignment
+  // If Macro Trend not aligned, invalidate armed setups
   if (!stoch100AlignedBuy) {
     state.stoch100CrossEpochBuy = null;
-    state.initialBuyDone = false;
+    state.initialBuyArmed = false;
     state.stoch8_pulled_back_10 = false;
   }
   if (!stoch100AlignedSell) {
     state.stoch100CrossEpochSell = null;
-    state.initialSellDone = false;
+    state.initialSellArmed = false;
     state.stoch8_pulled_back_90 = false;
   }
 
@@ -3545,32 +3604,43 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.stoch8CrossEpochSell = null;
   }
 
-  // Initial Trigger Window Expiration: If 2 candles pass after Stoch 100 cross without Stoch 8 matching,
-  // automatically switch to Re-Entry Mode.
-  if (stoch100AlignedBuy && state.stoch100CrossEpochBuy && !state.initialBuyDone) {
+  // Gate 2.1: Condition 2 Evaluation (Stoch 8 cross within ±2 candles of Stoch 100 transition)
+  const buyToleranceSatisfied = state.stoch100CrossEpochBuy && state.stoch8CrossEpochBuy &&
+    Math.abs(state.stoch100CrossEpochBuy - state.stoch8CrossEpochBuy) <= 600;
+  const sellToleranceSatisfied = state.stoch100CrossEpochSell && state.stoch8CrossEpochSell &&
+    Math.abs(state.stoch100CrossEpochSell - state.stoch8CrossEpochSell) <= 600;
+
+  // Arm Initial Setup when Condition 1 and Condition 2 are satisfied
+  if (stoch100AlignedBuy && !state.initialBuyDone && !state.initialBuyArmed && buyToleranceSatisfied && (stoch100CrossUp50 || stoch8CrossUp50)) {
+    state.initialBuyArmed = true;
+    console.log(`[${REPO_LABEL}] 🎯 Initial BUY Setup Armed: Stoch 100 > 50 & Stoch 8 crossed > 50 within ±2 candles. Now watching for M5 close > recent High Fractal candle close.`);
+  }
+  if (stoch100AlignedSell && !state.initialSellDone && !state.initialSellArmed && sellToleranceSatisfied && (stoch100CrossDown50 || stoch8CrossDown50)) {
+    state.initialSellArmed = true;
+    console.log(`[${REPO_LABEL}] 🎯 Initial SELL Setup Armed: Stoch 100 < 50 & Stoch 8 crossed < 50 within ±2 candles. Now watching for M5 close < recent Low Fractal candle close.`);
+  }
+
+  // If 2 candles pass after Stoch 100 cross without Condition 2 arming initial setup, switch to Re-Entry Mode
+  if (stoch100AlignedBuy && state.stoch100CrossEpochBuy && !state.initialBuyDone && !state.initialBuyArmed) {
     if ((m5BoundaryEpoch - state.stoch100CrossEpochBuy) > 600) {
       state.initialBuyDone = true;
-      console.log(`[${REPO_LABEL}] Stoch (100,1,1) BUY transition window (±2 candles) expired. Switching to Re-Entry Mode.`);
+      console.log(`[${REPO_LABEL}] Stoch (100,1,1) BUY transition window (±2 candles) expired without Stoch 8 cross. Switching to Re-Entry Mode.`);
     }
   }
-  if (stoch100AlignedSell && state.stoch100CrossEpochSell && !state.initialSellDone) {
+  if (stoch100AlignedSell && state.stoch100CrossEpochSell && !state.initialSellDone && !state.initialSellArmed) {
     if ((m5BoundaryEpoch - state.stoch100CrossEpochSell) > 600) {
       state.initialSellDone = true;
-      console.log(`[${REPO_LABEL}] Stoch (100,1,1) SELL transition window (±2 candles) expired. Switching to Re-Entry Mode.`);
+      console.log(`[${REPO_LABEL}] Stoch (100,1,1) SELL transition window (±2 candles) expired without Stoch 8 cross. Switching to Re-Entry Mode.`);
     }
   }
 
-  // Startup recovery
-  if (stoch100AlignedBuy && state.initialBuyDone === undefined) {
+  // Startup recovery fallback
+  if (stoch100AlignedBuy && state.initialBuyDone === undefined && !state.initialBuyArmed) {
     state.initialBuyDone = true;
   }
-  if (stoch100AlignedSell && state.initialSellDone === undefined) {
+  if (stoch100AlignedSell && state.initialSellDone === undefined && !state.initialSellArmed) {
     state.initialSellDone = true;
   }
-
-  // Active trades by direction (enabling Position Flipping on opposite signal)
-  const hasActiveBuy = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "BUY");
-  const hasActiveSell = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "SELL");
 
   // Gate 3: Directional Candle Confirmation
   const cOpen = parseFloat(candles[si].open);
@@ -3578,109 +3648,98 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const isBullishCandle = cClose > cOpen;
   const isBearishCandle = cClose < cOpen;
 
-  // Gate 2.1: Initial Trigger Evaluation (±2 closed M5 candles of Stoch 100 transition)
-  const buyToleranceSatisfied = state.stoch100CrossEpochBuy && state.stoch8CrossEpochBuy &&
-    Math.abs(state.stoch100CrossEpochBuy - state.stoch8CrossEpochBuy) <= 600;
-  const sellToleranceSatisfied = state.stoch100CrossEpochSell && state.stoch8CrossEpochSell &&
-    Math.abs(state.stoch100CrossEpochSell - state.stoch8CrossEpochSell) <= 600;
+  // Active trades by direction (enabling Position Flipping on opposite signal)
+  const hasActiveBuy = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "BUY");
+  const hasActiveSell = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "SELL");
 
-  const isInitialBuyTrigger = stoch100AlignedBuy && sK8 !== null && sK8 > 50.0 &&
-    !state.initialBuyDone && buyToleranceSatisfied && (stoch100CrossUp50 || stoch8CrossUp50) &&
-    isBullishCandle && !hasActiveBuy;
+  // Get most recent High (UP) and Low (DOWN) fractals
+  const recentHighFractal = getMostRecentM5FractalByType(candles, si, 'UP');
+  const recentLowFractal = getMostRecentM5FractalByType(candles, si, 'DOWN');
 
-  const isInitialSellTrigger = stoch100AlignedSell && sK8 !== null && sK8 < 50.0 &&
-    !state.initialSellDone && sellToleranceSatisfied && (stoch100CrossDown50 || stoch8CrossDown50) &&
-    isBearishCandle && !hasActiveSell;
-
-  if (stoch100AlignedBuy && !state.initialBuyDone && buyToleranceSatisfied && (stoch100CrossUp50 || stoch8CrossUp50) && !isBullishCandle) {
-    console.log(`[${REPO_LABEL}] ⚠️ Gate 3 Blocked Initial BUY: Candle closed Bearish/Doji (O: ${cOpen}, C: ${cClose}). Awaiting Bullish confirmation.`);
-  }
-  if (stoch100AlignedSell && !state.initialSellDone && sellToleranceSatisfied && (stoch100CrossDown50 || stoch8CrossDown50) && !isBearishCandle) {
-    console.log(`[${REPO_LABEL}] ⚠️ Gate 3 Blocked Initial SELL: Candle closed Bullish/Doji (O: ${cOpen}, C: ${cClose}). Awaiting Bearish confirmation.`);
-  }
-
-  if (isInitialBuyTrigger) {
-    indicatorsSatisfied = true;
-    signalDirection = "BUY";
-    setupLabel = `${SYMBOL}_INITIAL_STOCH100_STOCH8 (BUY)`;
-    state.initialBuyDone = true;
-    state.stoch8_pulled_back_10 = false;
-  } else if (isInitialSellTrigger) {
-    indicatorsSatisfied = true;
-    signalDirection = "SELL";
-    setupLabel = `${SYMBOL}_INITIAL_STOCH100_STOCH8 (SELL)`;
-    state.initialSellDone = true;
-    state.stoch8_pulled_back_90 = false;
+  // --- INITIAL BUY SETUP MONITORING ---
+  if (state.initialBuyArmed && stoch100AlignedBuy) {
+    // Expiration check: Stoch 8 crosses below level 10 -> switch to Re-Entry Mode
+    if (sK8 !== null && sK8 <= 10.0) {
+      state.initialBuyArmed = false;
+      state.initialBuyDone = true;
+      state.stoch8_pulled_back_10 = true;
+      console.log(`[${REPO_LABEL}] ⏳ Initial BUY Setup expired (Stoch 8 touched <= 10.0: ${sK8.toFixed(1)}). Switched to Re-Entry Mode (Pullback Armed).`);
+    } else if (recentHighFractal) {
+      const targetClose = recentHighFractal.close;
+      if (cClose > targetClose && isBullishCandle && !hasActiveBuy) {
+        indicatorsSatisfied = true;
+        signalDirection = "BUY";
+        setupLabel = `${SYMBOL}_INITIAL_FRACTAL_BREAK (BUY)`;
+        state.initialBuyArmed = false;
+        state.initialBuyDone = true;
+        state.stoch8_pulled_back_10 = false;
+        console.log(`[${REPO_LABEL}] 🚀 Initial BUY Triggered: M5 close (${cClose.toFixed(4)}) > High Fractal candle close (${targetClose.toFixed(4)}). Directional candle confirmed.`);
+      }
+    }
   }
 
-  // Gate 2.2: Re-Entry Mode (Trend Continuation Pullback)
+  // --- INITIAL SELL SETUP MONITORING ---
+  if (state.initialSellArmed && stoch100AlignedSell) {
+    // Expiration check: Stoch 8 crosses above level 90 -> switch to Re-Entry Mode
+    if (sK8 !== null && sK8 >= 90.0) {
+      state.initialSellArmed = false;
+      state.initialSellDone = true;
+      state.stoch8_pulled_back_90 = true;
+      console.log(`[${REPO_LABEL}] ⏳ Initial SELL Setup expired (Stoch 8 touched >= 90.0: ${sK8.toFixed(1)}). Switched to Re-Entry Mode (Pullback Armed).`);
+    } else if (recentLowFractal) {
+      const targetClose = recentLowFractal.close;
+      if (cClose < targetClose && isBearishCandle && !hasActiveSell) {
+        indicatorsSatisfied = true;
+        signalDirection = "SELL";
+        setupLabel = `${SYMBOL}_INITIAL_FRACTAL_BREAK (SELL)`;
+        state.initialSellArmed = false;
+        state.initialSellDone = true;
+        state.stoch8_pulled_back_90 = false;
+        console.log(`[${REPO_LABEL}] 🚀 Initial SELL Triggered: M5 close (${cClose.toFixed(4)}) < Low Fractal candle close (${targetClose.toFixed(4)}). Directional candle confirmed.`);
+      }
+    }
+  }
+
+  // --- RE-ENTRY MODE (TREND CONTINUATION FRACTAL BREAK) ---
   const lastClosedOrTriggeredEpoch = Math.max(state.lastTriggeredEpoch || 0, state.lastClosedTradeEpoch || 0);
   const isPostTradeCurr = !lastClosedOrTriggeredEpoch || candles[si].epoch > lastClosedOrTriggeredEpoch;
 
   if (!indicatorsSatisfied && isPostTradeCurr) {
-    if (stoch100AlignedBuy && Boolean(state.initialBuyDone) && !hasActiveBuy) {
+    // BUY Re-Entry
+    if (stoch100AlignedBuy && Boolean(state.initialBuyDone) && !state.initialBuyArmed) {
+      // Pullback arming / refreshing
       if ((sK8 !== null && sK8 <= 10.0) || (prevK8 !== null && prevK8 <= 10.0)) {
         state.stoch8_pulled_back_10 = true;
-      } else if (sK8 !== null && sK8 >= 50.0) {
-        state.stoch8_pulled_back_10 = false;
+      }
+
+      if (state.stoch8_pulled_back_10 && recentHighFractal) {
+        const targetClose = recentHighFractal.close;
+        if (cClose > targetClose && isBullishCandle && !hasActiveBuy) {
+          indicatorsSatisfied = true;
+          signalDirection = "BUY";
+          setupLabel = `${SYMBOL}_REENTRY_FRACTAL_BREAK (BUY)`;
+          state.stoch8_pulled_back_10 = false;
+          console.log(`[${REPO_LABEL}] 🚀 Re-Entry BUY Triggered: M5 close (${cClose.toFixed(4)}) > High Fractal candle close (${targetClose.toFixed(4)}). Pullback <= 10 confirmed.`);
+        }
       }
     }
-    if (stoch100AlignedSell && Boolean(state.initialSellDone) && !hasActiveSell) {
+
+    // SELL Re-Entry
+    if (stoch100AlignedSell && Boolean(state.initialSellDone) && !state.initialSellArmed) {
+      // Pullback arming / refreshing
       if ((sK8 !== null && sK8 >= 90.0) || (prevK8 !== null && prevK8 >= 90.0)) {
         state.stoch8_pulled_back_90 = true;
-      } else if (sK8 !== null && sK8 <= 50.0) {
-        state.stoch8_pulled_back_90 = false;
       }
-    }
 
-    const stoch8CrossUp10 = sK8 !== null && prevK8 !== null && (
-      (prevK8 <= 10.0 && sK8 > 10.0) ||
-      (Boolean(state.stoch8_pulled_back_10) && prevK8 <= 12.0 && sK8 > 10.0 && sK8 > prevK8)
-    );
-
-    const stoch8CrossDown90 = sK8 !== null && prevK8 !== null && (
-      (prevK8 >= 90.0 && sK8 < 90.0) ||
-      (Boolean(state.stoch8_pulled_back_90) && prevK8 >= 88.0 && sK8 < 90.0 && sK8 < prevK8)
-    );
-
-    const isReentryBuyTrigger = stoch100AlignedBuy && Boolean(state.initialBuyDone) && stoch8CrossUp10 && isBullishCandle && !hasActiveBuy;
-    const isReentrySellTrigger = stoch100AlignedSell && Boolean(state.initialSellDone) && stoch8CrossDown90 && isBearishCandle && !hasActiveSell;
-
-    if (stoch100AlignedBuy && Boolean(state.initialBuyDone) && stoch8CrossUp10 && !isBullishCandle) {
-      console.log(`[${REPO_LABEL}] ⚠️ Gate 3 Blocked BUY Re-Entry: Candle closed Bearish/Doji (O: ${cOpen}, C: ${cClose}). Awaiting Bullish confirmation.`);
-      state.stoch8_pulled_back_10 = true;
-    }
-    if (stoch100AlignedSell && Boolean(state.initialSellDone) && stoch8CrossDown90 && !isBearishCandle) {
-      console.log(`[${REPO_LABEL}] ⚠️ Gate 3 Blocked SELL Re-Entry: Candle closed Bullish/Doji (O: ${cOpen}, C: ${cClose}). Awaiting Bearish confirmation.`);
-      state.stoch8_pulled_back_90 = true;
-    }
-
-    // Gate 4: Fractal Check for Re-Entry Trades
-    if (isReentryBuyTrigger) {
-      const recentFractal = getMostRecentM5Fractal(candles, si);
-      if (recentFractal && recentFractal.type === "UP") {
-        console.log(`[${REPO_LABEL}] ⚠️ Gate 4 Fractal Check: BUY Re-Entry skipped. Most recent M5 fractal is UP (${recentFractal.price} at epoch ${recentFractal.pivotEpoch}). Awaiting DOWN fractal.`);
-        state.blockerReason = `BUY Re-Entry skipped: Most recent M5 fractal is UP (${recentFractal.price})`;
-        state.stoch8_pulled_back_10 = true;
-      } else {
-        indicatorsSatisfied = true;
-        signalDirection = "BUY";
-        setupLabel = `${SYMBOL}_REENTRY_STOCH8_10 (BUY)`;
-        state.stoch8_pulled_back_10 = false;
-        state.blockerReason = null;
-      }
-    } else if (isReentrySellTrigger) {
-      const recentFractal = getMostRecentM5Fractal(candles, si);
-      if (recentFractal && recentFractal.type === "DOWN") {
-        console.log(`[${REPO_LABEL}] ⚠️ Gate 4 Fractal Check: SELL Re-Entry skipped. Most recent M5 fractal is DOWN (${recentFractal.price} at epoch ${recentFractal.pivotEpoch}). Awaiting UP fractal.`);
-        state.blockerReason = `SELL Re-Entry skipped: Most recent M5 fractal is DOWN (${recentFractal.price})`;
-        state.stoch8_pulled_back_90 = true;
-      } else {
-        indicatorsSatisfied = true;
-        signalDirection = "SELL";
-        setupLabel = `${SYMBOL}_REENTRY_STOCH8_90 (SELL)`;
-        state.stoch8_pulled_back_90 = false;
-        state.blockerReason = null;
+      if (state.stoch8_pulled_back_90 && recentLowFractal) {
+        const targetClose = recentLowFractal.close;
+        if (cClose < targetClose && isBearishCandle && !hasActiveSell) {
+          indicatorsSatisfied = true;
+          signalDirection = "SELL";
+          setupLabel = `${SYMBOL}_REENTRY_FRACTAL_BREAK (SELL)`;
+          state.stoch8_pulled_back_90 = false;
+          console.log(`[${REPO_LABEL}] 🚀 Re-Entry SELL Triggered: M5 close (${cClose.toFixed(4)}) < Low Fractal candle close (${targetClose.toFixed(4)}). Pullback >= 90 confirmed.`);
+        }
       }
     }
   }
@@ -3689,36 +3748,48 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   state.isReentryMode = Boolean(state.initialBuyDone || state.initialSellDone);
 
   if (stoch100AlignedBuy) {
-    if (!state.initialBuyDone) {
-      state.armed = { dir: "BUY", lbl: `Initial BUY Armed (Stoch 100: ${sK100.toFixed(1)} > 50)` };
-      state.nextPhase = `Initial BUY Armed — Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) cross > 50 within ±2 candles`;
-      state.nextTrigger = `Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) cross > 50 within ±2 candles`;
+    if (state.initialBuyArmed) {
+      const targetStr = recentHighFractal ? `close > ${recentHighFractal.close.toFixed(2)}` : 'close > High Fractal close';
+      state.armed = { dir: "BUY", lbl: `Initial BUY Armed (Await ${targetStr})` };
+      state.nextPhase = `Initial BUY Armed — Awaiting M5 candle ${targetStr} (Expires if Stoch 8 <= 10)`;
+      state.nextTrigger = `Awaiting M5 ${targetStr} + Bullish Candle (Expires on Stoch 8 <= 10)`;
+    } else if (!state.initialBuyDone) {
+      state.armed = { dir: "BUY", lbl: `Initial BUY Watching (Stoch 100: ${sK100.toFixed(1)} > 50)` };
+      state.nextPhase = `Initial BUY Watching — Awaiting Stoch 8 cross > 50 within ±2 candles`;
+      state.nextTrigger = `Awaiting Stoch 8 cross > 50 within ±2 candles`;
     } else {
       const inPullback = Boolean(state.stoch8_pulled_back_10) || (sK8 !== null && sK8 <= 10.0);
       if (inPullback) {
-        state.armed = { dir: "BUY", lbl: `BUY Pullback Armed (Stoch 8 Touched <= 10, %K: ${sK8 !== null ? sK8.toFixed(1) : "N/A"})` };
-        state.nextPhase = `BUY Re-Entry Armed — Pullback <= 10 Touched (%K: ${sK8 !== null ? sK8.toFixed(1) : "N/A"}). Await Cross > 10`;
-        state.nextTrigger = `Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) cross > 10 + Bullish Candle + Down Fractal`;
+        const targetStr = recentHighFractal ? `close > ${recentHighFractal.close.toFixed(2)}` : 'close > High Fractal close';
+        state.armed = { dir: "BUY", lbl: `BUY Re-Entry Armed (Stoch 8 <= 10 Touched | Await ${targetStr})` };
+        state.nextPhase = `BUY Re-Entry Armed — Stoch 8 <= 10 Touched. Awaiting M5 candle ${targetStr}`;
+        state.nextTrigger = `Awaiting M5 ${targetStr} + Bullish Candle`;
       } else {
         state.armed = null;
-        state.nextPhase = `Awaiting BUY Re-Entry — Await Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) pullback to <= 10 then fresh cross > 10`;
+        state.nextPhase = `Awaiting BUY Pullback — Await Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) pullback <= 10`;
         state.nextTrigger = `Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) pullback <= 10`;
       }
     }
   } else if (stoch100AlignedSell) {
-    if (!state.initialSellDone) {
-      state.armed = { dir: "SELL", lbl: `Initial SELL Armed (Stoch 100: ${sK100.toFixed(1)} < 50)` };
-      state.nextPhase = `Initial SELL Armed — Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) cross < 50 within ±2 candles`;
-      state.nextTrigger = `Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) cross < 50 within ±2 candles`;
+    if (state.initialSellArmed) {
+      const targetStr = recentLowFractal ? `close < ${recentLowFractal.close.toFixed(2)}` : 'close < Low Fractal close';
+      state.armed = { dir: "SELL", lbl: `Initial SELL Armed (Await ${targetStr})` };
+      state.nextPhase = `Initial SELL Armed — Awaiting M5 candle ${targetStr} (Expires if Stoch 8 >= 90)`;
+      state.nextTrigger = `Awaiting M5 ${targetStr} + Bearish Candle (Expires on Stoch 8 >= 90)`;
+    } else if (!state.initialSellDone) {
+      state.armed = { dir: "SELL", lbl: `Initial SELL Watching (Stoch 100: ${sK100.toFixed(1)} < 50)` };
+      state.nextPhase = `Initial SELL Watching — Awaiting Stoch 8 cross < 50 within ±2 candles`;
+      state.nextTrigger = `Awaiting Stoch 8 cross < 50 within ±2 candles`;
     } else {
       const inPullback = Boolean(state.stoch8_pulled_back_90) || (sK8 !== null && sK8 >= 90.0);
       if (inPullback) {
-        state.armed = { dir: "SELL", lbl: `SELL Pullback Armed (Stoch 8 Touched >= 90, %K: ${sK8 !== null ? sK8.toFixed(1) : "N/A"})` };
-        state.nextPhase = `SELL Re-Entry Armed — Pullback >= 90 Touched (%K: ${sK8 !== null ? sK8.toFixed(1) : "N/A"}). Await Cross < 90`;
-        state.nextTrigger = `Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) cross < 90 + Bearish Candle + Up Fractal`;
+        const targetStr = recentLowFractal ? `close < ${recentLowFractal.close.toFixed(2)}` : 'close < Low Fractal close';
+        state.armed = { dir: "SELL", lbl: `SELL Re-Entry Armed (Stoch 8 >= 90 Touched | Await ${targetStr})` };
+        state.nextPhase = `SELL Re-Entry Armed — Stoch 8 >= 90 Touched. Awaiting M5 candle ${targetStr}`;
+        state.nextTrigger = `Awaiting M5 ${targetStr} + Bearish Candle`;
       } else {
         state.armed = null;
-        state.nextPhase = `Awaiting SELL Re-Entry — Await Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) pullback to >= 90 then fresh cross < 90`;
+        state.nextPhase = `Awaiting SELL Pullback — Await Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) pullback >= 90`;
         state.nextTrigger = `Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) pullback >= 90`;
       }
     }
@@ -4119,7 +4190,48 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   } else {
     state.openTrade = null;
-    if (STRATEGY_PROFILE === "PROFILE_V75_EMA_STOCH15") {
+    if (STRATEGY_PROFILE === "PROFILE_UNIVERSAL_STOCH100_STOCH8" || state.strategyProfile === "PROFILE_UNIVERSAL_STOCH100_STOCH8" || true) {
+      const stoch100Buy = sK100 !== null && sK100 >= 50.0;
+      const stoch100Sell = sK100 !== null && sK100 < 50.0;
+      const isReentry = Boolean(state.isReentryMode || state.initialBuyDone || state.initialSellDone);
+
+      if (state.nextTrigger) {
+        nextTrigger = state.nextTrigger;
+      }
+
+      if (stoch100Buy) {
+        if (!isReentry) {
+          blockerReason = `Macro Trend Bullish (Stoch 100: ${sK100 ? sK100.toFixed(1) : 'N/A'} > 50)`;
+          if (!nextTrigger) {
+            nextTrigger = `Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) cross > 50 within ±2 candles for Initial BUY`;
+          }
+        } else {
+          blockerReason = `BUY Re-Entry Mode Active (Stoch 100: ${sK100 ? sK100.toFixed(1) : 'N/A'} > 50)`;
+          if (!nextTrigger) {
+            nextTrigger = state.stoch8_pulled_back_10
+              ? `BUY Re-Entry Armed: Awaiting M5 candle close > High Fractal candle close`
+              : `Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) pullback <= 10 for BUY Re-Entry`;
+          }
+        }
+      } else if (stoch100Sell) {
+        if (!isReentry) {
+          blockerReason = `Macro Trend Bearish (Stoch 100: ${sK100 ? sK100.toFixed(1) : 'N/A'} < 50)`;
+          if (!nextTrigger) {
+            nextTrigger = `Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) cross < 50 within ±2 candles for Initial SELL`;
+          }
+        } else {
+          blockerReason = `SELL Re-Entry Mode Active (Stoch 100: ${sK100 ? sK100.toFixed(1) : 'N/A'} < 50)`;
+          if (!nextTrigger) {
+            nextTrigger = state.stoch8_pulled_back_90
+              ? `SELL Re-Entry Armed: Awaiting M5 candle close < Low Fractal candle close`
+              : `Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) pullback >= 90 for SELL Re-Entry`;
+          }
+        }
+      } else {
+        blockerReason = "Awaiting Stoch (100,1,1) macro trend definition";
+        if (!nextTrigger) nextTrigger = "Awaiting Stoch (100,1,1) cross 50.0";
+      }
+    } else if (STRATEGY_PROFILE === "PROFILE_V75_EMA_STOCH15") {
       const priceAboveBoth = currentEma100 !== null && currentEma200 !== null && currentPrice > currentEma100 && currentPrice > currentEma200;
       const priceBelowBoth = currentEma100 !== null && currentEma200 !== null && currentPrice < currentEma100 && currentPrice < currentEma200;
       if (priceAboveBoth) {
