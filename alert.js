@@ -2092,7 +2092,7 @@ async function manageOpenTradesFastPath() {
     }
 
     // 🛡️ Fractal Open Intrabar Touch Stop Loss Check
-    const activeSlPrice = openTrade.sl || openTrade.fractalOpenSl || null;
+    const activeSlPrice = SYMBOL === "R_100" ? (openTrade.sl || openTrade.fractalOpenSl || null) : null;
     let touchSlBreached = false;
     if (activeSlPrice !== null && !isNaN(activeSlPrice)) {
       touchSlBreached = isBuy ? currentPrice <= activeSlPrice : currentPrice >= activeSlPrice;
@@ -2978,8 +2978,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       let invalidationExit = false;
       let invalidationDetail = "";
 
-      const slTargetPrice = t.sl || t.fractalOpenSl || null;
-      if (slTargetPrice !== null && !isNaN(slTargetPrice)) {
+      const slTargetPrice = SYMBOL === "R_100" ? (t.sl || t.fractalOpenSl || null) : null;
+      if (SYMBOL === "R_100" && slTargetPrice !== null && !isNaN(slTargetPrice)) {
         if (isBuy && cLow <= slTargetPrice) {
           invalidationExit = true;
           invalidationDetail = `Fractal Open Touch SL: M5 Low (${cLow.toFixed(4)}) touched SL (${parseFloat(slTargetPrice).toFixed(4)})`;
@@ -2988,12 +2988,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
           invalidationDetail = `Fractal Open Touch SL: M5 High (${cHigh.toFixed(4)}) touched SL (${parseFloat(slTargetPrice).toFixed(4)})`;
         }
       } else {
-        if (isBuy && t.entryCandleLow !== undefined && t.entryCandleLow !== null && cLow <= t.entryCandleLow) {
+        if (isBuy && t.entryCandleLow !== undefined && t.entryCandleLow !== null && cClose < t.entryCandleLow) {
           invalidationExit = true;
-          invalidationDetail = `Entry Candle Low Touch SL: M5 Low (${cLow.toFixed(4)}) touched Low (${parseFloat(t.entryCandleLow).toFixed(4)})`;
-        } else if (!isBuy && t.entryCandleHigh !== undefined && t.entryCandleHigh !== null && cHigh >= t.entryCandleHigh) {
+          invalidationDetail = `Entry Candle Invalidation SL: M5 candle closed at ${cClose.toFixed(4)} below Entry Candle Low (${parseFloat(t.entryCandleLow).toFixed(4)})`;
+        } else if (!isBuy && t.entryCandleHigh !== undefined && t.entryCandleHigh !== null && cClose > t.entryCandleHigh) {
           invalidationExit = true;
-          invalidationDetail = `Entry Candle High Touch SL: M5 High (${cHigh.toFixed(4)}) touched High (${parseFloat(t.entryCandleHigh).toFixed(4)})`;
+          invalidationDetail = `Entry Candle Invalidation SL: M5 candle closed at ${cClose.toFixed(4)} above Entry Candle High (${parseFloat(t.entryCandleHigh).toFixed(4)})`;
         }
       }
 
@@ -3025,7 +3025,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             state.dailyTargetDate = todayStr;
           }
 
-          if (state.dailyNetPnl <= -3.50 || (state.dailyConsecutiveLosses >= 2)) {
+          if (SYMBOL === "R_100" && (state.dailyNetPnl <= -3.50 || (state.dailyConsecutiveLosses >= 2))) {
             state.dailyMaxLossReached = true;
             state.dailyMaxLossDate = todayStr;
             console.log(`[DAILY LOSS GUARD ${SYMBOL}] Daily loss limit (-$3.50 or 2 consecutive losses) reached (${state.dailyNetPnl.toFixed(2)}). Capital protected until 00:00 UTC rollover.`);
@@ -3972,7 +3972,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     // Anchor Stop Loss directly to triggering Fractal Candle Open Price (Fractal Open Touch SL)
     let sl;
-    if (triggerFractalOpen !== null && triggerFractalOpen !== undefined && !isNaN(triggerFractalOpen)) {
+    if (SYMBOL === "R_100" && triggerFractalOpen !== null && triggerFractalOpen !== undefined && !isNaN(triggerFractalOpen)) {
       sl = triggerFractalOpen;
       console.log(`[${REPO_LABEL}] 🎯 Anchoring Stop Loss to triggering Fractal Candle Open (${sl.toFixed(4)}). Intrabar Touch execution active.`);
     } else if (SYMBOL === "1HZ25V") {
@@ -4123,7 +4123,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       : parseFloat((entry + (10.00 / CTRADER_LOT_SIZE)).toFixed(2));
 
     const pendingTradeRecord = {
-      id: `${SYMBOL}-${Date.now()}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, fractalOpenSl: triggerFractalOpen, brokerSlPrice: sl, rr: null, entryType, brokerSlAmount: STAKE_USD,
+      id: `${SYMBOL}-${Date.now()}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, fractalOpenSl: triggerFractalOpen, brokerSlPrice: SYMBOL === "R_100" ? sl : brokerHardSlPrice, rr: null, entryType, brokerSlAmount: STAKE_USD,
       lots: CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE, is_ctrader: EXECUTION_MODE === "ctrader",
       entryEpoch: m5BoundaryEpoch, purchaseTimeEpoch: m5BoundaryEpoch, purchase_time: m5BoundaryEpoch,
       entryCandleHigh: (candles && candles[si]) ? parseFloat(candles[si].high) : entry,
