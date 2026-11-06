@@ -507,7 +507,7 @@ const INITIAL_TRIGGER_EXEC = PROFILE.initialTriggerExec || "CLOSE";
 const ENTRY_BREAKOUT_TYPE = PROFILE.entryBreakoutType || "HIGH_LOW";
 const SL_REFERENCE_TYPE = PROFILE.slReferenceType || "FRACTAL_BODY_ANCHOR";
 const SL_EXECUTION_TYPE = PROFILE.slExecutionType || "CLOSE";
-const STOCH8_EARLY_EXIT_ENABLED = PROFILE.stoch8EarlyExit !== undefined ? Boolean(PROFILE.stoch8EarlyExit) : true;
+const STOCH8_EARLY_EXIT_ENABLED = false; // Superseded by Supertrend (21, 1, 0) direction flip exit
 const DAILY_TARGET_LOCK_ENABLED = PROFILE.dailyTargetLockEnabled !== undefined ? Boolean(PROFILE.dailyTargetLockEnabled) : true;
 
 export function getFractalBreakoutTarget(fractal, direction, breakoutTypeOverride = null) {
@@ -585,10 +585,7 @@ export function deriveCalibratedStopLossPrice(entryPrice, direction, entryCandle
   return parseFloat(candidateSl.toFixed(4));
 }
 
-// Continuous Dollar Trailing Stop Settings (High Activation + Wide Buffer Calibration)
-const TRAIL_ACTIVATION_USD = PROFILE.trailActivationUsd || 2.20; // Activated once profit reaches +$3.00 net
-const TRAIL_BUFFER_USD = 1.20;     // Trail $1.50 behind peak unrealized profit
-const TRAIL_INITIAL_FLOOR_USD = 1.00; // Initial guaranteed lock at activation (+$3.00 peak - $1.50 buffer = +$1.50)
+// Legacy trailing constants removed; profit management governed strictly by Supertrend (21, 1, 0) direction flip
 
 const STOCH_MIDLINE_FALLBACK_SYMBOLS = ["R_50"];
 
@@ -625,7 +622,7 @@ function getFriendlyStrategyName() {
     : (INITIAL_GATE_MODE === "STOCH8_POST_2C"
         ? `Stoch 100 + Stoch 8 (0..+2c) + Fractal ${INITIAL_BREAKOUT_TYPE} (CLOSE)`
         : `Stoch 100 + Stoch 8 (±2c) + Fractal ${INITIAL_BREAKOUT_TYPE} (CLOSE)`);
-  return `Initial: ${initDesc} | Re-Entry: Stoch 8 (10/90) + Fractal ${ENTRY_BREAKOUT_TYPE} (CLOSE) | SL: ${SL_REFERENCE_TYPE} (${SL_EXECUTION_TYPE}) | Stoch8 Exit: ${STOCH8_EARLY_EXIT_ENABLED ? "ON" : "OFF"} | TP: $${(PROFILE.takeProfitUsd || PROFILE.minTakeProfitUsd || 7.00).toFixed(2)}`;
+  return `Initial: ${initDesc} | Re-Entry: Stoch 8 (10/90) + Fractal ${ENTRY_BREAKOUT_TYPE} (CLOSE) | SL: ${SL_REFERENCE_TYPE} (${SL_EXECUTION_TYPE}) | Profit: Supertrend (21, 1, 0) Direction Flip`;
 }
 
 function toAsciiJson(obj) {
@@ -851,21 +848,21 @@ async function getOpenPortfolio() {
 async function executeTrade(direction, orderContext = {}) {
   if (EXECUTION_MODE === "ctrader") {
     try {
-      const hardTpUsd = PROFILE.takeProfitUsd || PROFILE.minTakeProfitUsd || 7.00;
       // Software SL is evaluated strictly on M5 candle CLOSE in software.
-      // Broker SL order sent to cTrader is purely catastrophic Hard SL placed behind Software SL:
+      // Broker SL order sent to cTrader is purely catastrophic Hard SL placed behind Software SL.
+      // Take Profit is managed strictly in software by Supertrend (21, 1, 0) direction flip exit (no broker-level TP cap).
       const brokerSlPrice = orderContext.brokerSlPrice || orderContext.brokerHardSlPrice || null;
       const payload = {
         symbol: SYMBOL_NAME || SYMBOL,
         side: direction,
         lots: CTRADER_LOT_SIZE,
         slPrice: brokerSlPrice,
-        tpPrice: orderContext.tpPrice || orderContext.fibTpPrice || null,
+        tpPrice: null,
         slUsd: brokerSlPrice ? null : 10.00,
-        tpUsd: (orderContext.tpPrice || orderContext.fibTpPrice) ? null : hardTpUsd,
+        tpUsd: null,
         comment: `${REPO_LABEL} cTrader`
       };
-      console.log(`[CTRADER ORDER] Sending ${direction} order: ${CTRADER_LOT_SIZE} lots on ${SYMBOL_NAME || SYMBOL} (SL: ${payload.slPrice || payload.slUsd}, TP: ${payload.tpPrice || payload.tpUsd})`);
+      console.log(`[CTRADER ORDER] Sending ${direction} order: ${CTRADER_LOT_SIZE} lots on ${SYMBOL_NAME || SYMBOL} (Broker Hard SL: ${payload.slPrice || payload.slUsd}, Dynamic Supertrend Profit Exit)`);
       let lastError = null;
       const maxAttempts = 3;
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -905,7 +902,7 @@ async function executeTrade(direction, orderContext = {}) {
       amount: STAKE_USD, 
       basis: "stake", 
       multiplier: MULTIPLIER, 
-      limit_order: { stop_loss: slDollars, take_profit: SYMBOL === "R_100" ? 10.00 : SERVER_TP_USD } 
+      limit_order: { stop_loss: slDollars } // Dynamic Supertrend Profit Exit: no broker TP cap 
     }
   };
   const data = await gatewayFetch("/buy", "POST", payload);
@@ -2370,38 +2367,23 @@ async function manageOpenTradesFastPath() {
     // 🛡️ Breakeven Protection at 50% TP Progress for VIX 75 (R_75 & 1HZ75V):
     // Arms ONLY after trade reaches +$1.00 (100 points / 50% of $2.00 TP).
     // Gives 90 points of breathing room and only protects capital if trade completely reverses to entry (+ $0.10 buffer).
-    // Breakeven logic removed per user mandate: early exit strictly governed by Stoch 8 Level 50 opposite cross on closed M5 candles.
+    // Fast-path trade monitoring: Monitors catastrophic broker hard stop and daily profit target ceiling.
+    // Dynamic profit management is strictly governed by Supertrend (21, 1, 0) direction flip on confirmed M5 close.
+    // Old fixed dollar take profits ($7.00/etc.) and M15 support/resistance targets have been completely removed.
 
-    // Fast-path trade monitoring: Focuses strictly on calibrated Take Profit and Stop Loss execution.
-    // Intrabar stochastic tick-oscillations and +.30 trailing floors removed to allow trades full breathing room to reach programmed Take Profit.
-
-    // Calibrated Per-Profile Take Profit & Daily Target Strike Ceiling
-    const calibratedTpUsd = PROFILE.takeProfitUsd || PROFILE.minTakeProfitUsd || 7.00;
     const remainingToDailyTarget = Math.max(0, DAILY_PROFIT_TARGET_USD - (state.dailyNetPnl || 0));
     const dailyTargetCeilingHit = DAILY_TARGET_LOCK_ENABLED && remainingToDailyTarget > 0 && pnl >= remainingToDailyTarget && (state.dailyNetPnl || 0) + pnl >= DAILY_PROFIT_TARGET_USD;
 
-    const activeTpTarget = openTrade.tpPrice || openTrade.fibTpPrice || null;
-    let tpHit = false;
-    if (activeTpTarget) {
-      tpHit = isBuy ? currentPrice >= activeTpTarget : currentPrice <= activeTpTarget;
-    }
-    const tpUsdReached = !activeTpTarget && (pnl >= calibratedTpUsd);
-
     // 🛡️ Unified Fractal Candle Open/Close Software Stop Loss vs Catastrophic Broker Hard SL:
     // Software SL (openTrade.sl) is evaluated and executed strictly on confirmed M5 candle CLOSE in runSlowPathScan.
-    // The fast-path pulse only checks Take Profit and catastrophic broker hard stop (openTrade.brokerSlPrice).
+    // Fast-path pulse only checks catastrophic broker hard stop (openTrade.brokerSlPrice) as a safeguard.
     const brokerHardSl = (typeof openTrade.brokerSlPrice === "number" && openTrade.brokerSlPrice > 0)
       ? openTrade.brokerSlPrice
       : deriveHardStopPrice(openTrade.entry, openTrade.direction, openTrade.lots, openTrade.sl);
     const hardStopBreached = isBuy ? currentPrice <= brokerHardSl : currentPrice >= brokerHardSl;
 
     let reason = null;
-    if (tpHit) {
-      const tpTargetLabel = isBuy ? "M15 Resistance Target" : "M15 Support Target";
-      reason = `${tpTargetLabel} reached at ${currentPrice.toFixed(4)} (TP: ${Number(activeTpTarget).toFixed(4)}, PnL: +$${pnl.toFixed(2)})`;
-    } else if (tpUsdReached) {
-      reason = `Calibrated Take Profit ($${calibratedTpUsd.toFixed(2)}) reached at ${currentPrice.toFixed(4)} (+$${pnl.toFixed(2)})`;
-    } else if (dailyTargetCeilingHit) {
+    if (dailyTargetCeilingHit) {
       reason = `Daily Target TP Hit (+$${pnl.toFixed(2)}) — Secured 100% of Daily +$${DAILY_PROFIT_TARGET_USD.toFixed(2)} Target!`;
     } else if (hardStopBreached) {
       reason = `Emergency Broker Hard SL breached at ${currentPrice.toFixed(4)} (Hard SL: ${brokerHardSl.toFixed(4)}, PnL: -$${Math.abs(pnl).toFixed(2)})`;
@@ -3401,81 +3383,6 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       continue;
     }
 
-    // =========================================================================
-    // 🛡️ STOCH (8,1,1) LEVEL 50 OPPOSITE CROSS EARLY TRADE EXIT (PER-SYMBOL SCOPED)
-    // Enabled ONLY when STOCH8_EARLY_EXIT_ENABLED === true (R_100 and 1HZ75V).
-    // Disabled on R_75, R_25, 1HZ25V, R_50, R_10 per 24-day empirical calibration.
-    // =========================================================================
-    let stoch8Exit = false;
-    let stoch8ExitDetail = "";
-
-    if (isBuy && sK8 !== null && sK8 >= 50.0) {
-      t.stoch8_reached_favorable_50 = true;
-    } else if (!isBuy && sK8 !== null && sK8 <= 50.0) {
-      t.stoch8_reached_favorable_50 = true;
-    }
-
-    if (STOCH8_EARLY_EXIT_ENABLED && isPostEntry && currentPnl > 0) {
-      if (isBuy && sK8 !== null && prevK8 !== null) {
-        const isOppositeCross = (prevK8 >= 50.0 && sK8 < 50.0) || (Boolean(t.stoch8_reached_favorable_50) && sK8 < 50.0);
-        if (isOppositeCross) {
-          stoch8Exit = true;
-          stoch8ExitDetail = `Stoch (8,1,1) Opposite Cross Profit Exit: %K crossed below Level 50 (${sK8.toFixed(1)} < 50) on closed M5 candle`;
-        }
-      } else if (!isBuy && sK8 !== null && prevK8 !== null) {
-        const isOppositeCross = (prevK8 <= 50.0 && sK8 > 50.0) || (Boolean(t.stoch8_reached_favorable_50) && sK8 > 50.0);
-        if (isOppositeCross) {
-          stoch8Exit = true;
-          stoch8ExitDetail = `Stoch (8,1,1) Opposite Cross Profit Exit: %K crossed above Level 50 (${sK8.toFixed(1)} > 50) on closed M5 candle`;
-        }
-      }
-    }
-
-    if (stoch8Exit) {
-      closingContracts.add(t.contractId);
-      console.log(`[PROFIT EXIT ${SYMBOL}] Active ${t.direction} #${t.contractId}: ${stoch8ExitDetail}. Current PnL: +$${currentPnl.toFixed(2)}. Closing immediately.`);
-      t.exitReason = stoch8ExitDetail;
-      try {
-        const closeRes = await closeContract(t.contractId);
-        if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
-          console.error(`[PROFIT EXIT ERROR ${SYMBOL}] Broker close failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
-          closingContracts.delete(t.contractId);
-          continue;
-        }
-        const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
-        t.serverPnl = (closeRes && closeRes.sell?.profit) ?? (settled !== null ? settled.profit : parseFloat(currentPnl.toFixed(2)));
-        t.resultSource = (closeRes && closeRes.sell?.profit !== undefined) ? "server_close_confirmed" : (settled !== null ? "deriv_settled_official" : "estimated_fallback");
-        t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
-        t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
-        state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
-        if (DAILY_TARGET_LOCK_ENABLED && state.dailyNetPnl >= DAILY_PROFIT_TARGET_USD) {
-          state.dailyTargetReached = true;
-          state.dailyTargetDate = todayStr;
-        }
-        state.openTrade = null;
-        onTradeClosedCleanup(candles[si].epoch);
-        saveTrades(trades);
-        saveState();
-
-        const icon = t.result === "WIN" ? "✅" : "❌";
-        const pnlStr = t.serverPnl >= 0 ? "+" + t.serverPnl.toFixed(2) : "-" + Math.abs(t.serverPnl).toFixed(2);
-        await sendTelegram(
-          icon + " *[PROFIT EXIT] " + SYMBOL_NAME + " — " + REPO_LABEL + "*\n\n" +
-          "• Direction: *" + (t.direction === "BUY" ? "🟢 BUY" : "🔴 SELL") + "*\n" +
-          "• Exit Trigger: *" + stoch8ExitDetail + "*\n" +
-          "• Stoch (8,1,1): *%K " + (sK8 ? sK8.toFixed(1) : "N/A") + "*\n" +
-          "• Net P&L: *" + pnlStr + "*\n" +
-          "• Daily Net Total: *" + state.dailyNetPnl.toFixed(2) + "*\n" +
-          "• Contract: `" + t.contractId + "`"
-        );
-      } catch (e) {
-        console.error("[PROFIT EXIT] Exception closing " + t.contractId + ":", e.message);
-        closingContracts.delete(t.contractId);
-        continue;
-      }
-      closingContracts.delete(t.contractId);
-      continue;
-    }
   }
 
     // ── REFRESH TRADES AFTER EXITS TO ENABLE SAME-CANDLE REVERSAL TRADES ──
@@ -4047,14 +3954,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
     const entry = currentPrice;
 
-    // Dynamic M15 Support/Resistance Take Profit Target (Allows winning trades to run to structural S/R on M15)
-    const minDistancePts = (PROFILE.minTakeProfitUsd || 3.00) / CTRADER_LOT_SIZE;
-    const fallbackPts = (PROFILE.takeProfitUsd || 7.00) / CTRADER_LOT_SIZE;
-    const tpDigits = SYMBOL === "R_50" ? 4 : 2;
-    const rawM15Target = findNextM15SupportResistanceTarget(m15Candles, direction, entry, minDistancePts, fallbackPts);
-    const tpPrice = parseFloat(rawM15Target.toFixed(tpDigits));
-    const fibTpPrice = tpPrice;
-    const isDynamicRunner = false;
+    // Dynamic Profit Management: Supertrend (21, 1, 0) Direction Flip Exit
+    // Position rides full trend; liquidates immediately when Supertrend flips direction on M5 close while in profit.
+    const tpPrice = null;
+    const fibTpPrice = null;
+    const isDynamicRunner = true;
 
     // Calibrated Per-Profile Stop Loss Anchor (Strictly Validated on SL Side of Entry)
     const activeFractal = triggeredFractalForSl || (direction === "BUY" ? recentHighFractal : recentLowFractal);
@@ -4193,8 +4097,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       trailingActive: !!activeTrade.trendRidingActive
     };
     blockerReason = `Active Position Open: #${activeTrade.contractId || activeTrade.id} (${activeTrade.direction} @ ${Number(activeTrade.entry).toFixed(2)}, PnL: ${uPnl >= 0 ? "+" : ""}${uPnl.toFixed(2)})`;
-    const activeTpUsd = PROFILE.takeProfitUsd || PROFILE.minTakeProfitUsd || 7.00;
-    nextTrigger = `Managing Position: Target TP +$${activeTpUsd.toFixed(2)} | SL: ${activeTrade.sl ? Number(activeTrade.sl).toFixed(2) : "N/A"} (${SL_REFERENCE_TYPE} / ${SL_EXECUTION_TYPE}) | Stoch 8 Early Exit: ${STOCH8_EARLY_EXIT_ENABLED ? "ON" : "OFF"}`;
+    nextTrigger = `Managing Position: Supertrend (21, 1, 0) Direction Flip Exit | SL: ${activeTrade.sl ? Number(activeTrade.sl).toFixed(2) : "N/A"} (${SL_REFERENCE_TYPE} / ${SL_EXECUTION_TYPE})`;
   } else if (state.dailyTargetReached) {
     state.openTrade = null;
     healthStatus = "FUNCTIONING";
@@ -4337,12 +4240,8 @@ async function checkIntrabarInitialTouchEntry(currentM5Boundary) {
   state.lastTriggeredSetup = entryType;
   state.lastTriggeredEpoch = currentM5Boundary;
 
-  const calibratedTpUsd = PROFILE.takeProfitUsd || PROFILE.minTakeProfitUsd || 7.00;
-  const tpPoints = calibratedTpUsd / CTRADER_LOT_SIZE;
-  const tpDigits = SYMBOL === "R_50" ? 4 : 2;
-  const tpPrice = direction === "BUY"
-    ? parseFloat((entry + tpPoints).toFixed(tpDigits))
-    : parseFloat((entry - tpPoints).toFixed(tpDigits));
+  const tpPrice = null;
+  const fibTpPrice = null;
 
   const provisionalCandle = {
     low: Math.min(entry, prevClose, setup.targetPrice),
@@ -4361,7 +4260,7 @@ async function checkIntrabarInitialTouchEntry(currentM5Boundary) {
     `• Gate 1 (Macro Trend): *M5 Stoch (100,1,1) ${direction === "BUY" ? ">50 [BULLISH]" : "<50 [BEARISH]"}*\n` +
     `• Gate 2 (Initial Mode): *${INITIAL_GATE_MODE}* (Intrabar Touch Armed)\n` +
     `• Gate 3 (Fractal Trigger): *${entryType}* (Target: ${setup.targetPrice.toFixed(4)})\n` +
-    `• Gate 4 (Profit & Exit): *+$${calibratedTpUsd.toFixed(2)} TP* | *Stoch 8 Lvl 50 Early Exit: ${STOCH8_EARLY_EXIT_ENABLED ? "ON" : "OFF"}*\n` +
+    `• Gate 4 (Profit Management): *Supertrend (21, 1, 0) Direction Flip Exit*\n` +
     `• Gate 5 (Stop Loss): *${sl.toFixed(4)}* (${SL_REFERENCE_TYPE} / ${SL_EXECUTION_TYPE} — finalized at M5 close)\n` +
     `• Daily Target Progress: *$${(state.dailyNetPnl || 0).toFixed(2)} / $${DAILY_PROFIT_TARGET_USD.toFixed(2)} (${DAILY_TARGET_LOCK_ENABLED ? "Lock ON" : "Uncapped"})*`;
 
@@ -4372,7 +4271,7 @@ async function checkIntrabarInitialTouchEntry(currentM5Boundary) {
     `Setup: *${escapeMarkdown(entryType)}*\n` +
     `📍 Entry: *${entry.toFixed(4)}* (Fractal Target: ${setup.targetPrice.toFixed(4)})\n` +
     `🛑 Calibrated SL: *${sl.toFixed(4)}* (${SL_REFERENCE_TYPE} / ${SL_EXECUTION_TYPE})\n` +
-    `🎯 Take Profit: *${tpPrice.toFixed(4)} (+$${calibratedTpUsd.toFixed(2)} Target | Stoch 8 Early Exit: ${STOCH8_EARLY_EXIT_ENABLED ? "ON" : "OFF"})*\n\n` +
+    `🎯 Profit Management: *Supertrend (21, 1, 0) Direction Flip Exit (Trailing Profit)*\n\n` +
     `💰 Stake: $${STAKE_USD} | Mode: ${EXECUTION_MODE === "ctrader" ? `cTrader CFD (${CTRADER_LOT_SIZE} lots)` : `Multiplier ${MULTIPLIER}x`}\n\n` +
     `📐 *Technical Confluence Verification:*\n` +
     confluenceLines + `\n` +
@@ -4390,12 +4289,14 @@ async function checkIntrabarInitialTouchEntry(currentM5Boundary) {
     entryCandleLow: provisionalCandle.low,
     slReferenceType: SL_REFERENCE_TYPE,
     slExecutionType: SL_EXECUTION_TYPE,
-    stoch8EarlyExit: STOCH8_EARLY_EXIT_ENABLED,
+    profitManagementMode: "SUPERTREND_DIRECTION_FLIP",
+    supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
+    stoch8EarlyExit: false,
     fractalSl: setup.fractal ? setup.fractal.price : null,
     fractalEpoch: setup.fractal ? setup.fractal.epoch : null,
     fractalTimeframe: "M5",
     m5Fractal: setup.fractal ? setup.fractal.price : null,
-    m30FractalUpgraded: false, tpPrice, fibTpPrice: tpPrice,
+    m30FractalUpgraded: false, tpPrice: null, fibTpPrice: null,
     openTime: timeFormatted, closeTime: null, result: null
   };
   trades.push(pendingTradeRecord);
