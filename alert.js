@@ -23,6 +23,8 @@ export function getMostRecentM5FractalByType(candles, currentIndex, targetType) 
         type: 'UP',
         pivotIndex: k,
         pivotEpoch: candles[k].epoch,
+        epoch: candles[k].epoch,
+        price: high,
         high,
         low,
         close: parseFloat(candles[k].close),
@@ -34,6 +36,8 @@ export function getMostRecentM5FractalByType(candles, currentIndex, targetType) 
         type: 'DOWN',
         pivotIndex: k,
         pivotEpoch: candles[k].epoch,
+        epoch: candles[k].epoch,
+        price: low,
         high,
         low,
         close: parseFloat(candles[k].close),
@@ -3236,7 +3240,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       saveTrades(trades);
     }
 
-    const isPostEntry = !t.entryEpoch || candles[si].epoch > t.entryEpoch || (t.entryM5Bucket && candles[si].epoch >= t.entryM5Bucket);
+    const isPostEntry = (!t.entryEpoch && !t.entryM5Bucket) || (t.entryEpoch && candles[si].epoch > t.entryEpoch) || (t.entryM5Bucket && candles[si].epoch > t.entryM5Bucket);
 
     // =========================================================================
     // 🛡️ CALIBRATED PER-PROFILE STOP LOSS INVALIDATION (MAIN SL):
