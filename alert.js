@@ -854,7 +854,7 @@ async function executeTrade(direction, orderContext = {}) {
     try {
       // Software SL is evaluated strictly on M5 candle CLOSE in software.
       // Broker SL order sent to cTrader is purely catastrophic Hard SL placed behind Software SL.
-      // Take Profit is placed at 2.5R TP on cTrader ticket, and also monitored in fast-path and trailing with Supertrend.
+      // Take Profit is placed at Dynamic Fractal Range TP on cTrader ticket, and also monitored in fast-path and trailing with Supertrend.
       const brokerSlPrice = orderContext.brokerSlPrice || orderContext.brokerHardSlPrice || null;
       const targetTpPrice = orderContext.tpPrice || orderContext.fibTpPrice || null;
       const payload = {
@@ -867,7 +867,7 @@ async function executeTrade(direction, orderContext = {}) {
         tpUsd: null,
         comment: `${REPO_LABEL} cTrader`
       };
-      console.log(`[CTRADER ORDER] Sending ${direction} order: ${CTRADER_LOT_SIZE} lots on ${SYMBOL_NAME || SYMBOL} (Broker Hard SL: ${payload.slPrice || payload.slUsd}, 2.5R TP: ${payload.tpPrice || 'None'})`);
+      console.log(`[CTRADER ORDER] Sending ${direction} order: ${CTRADER_LOT_SIZE} lots on ${SYMBOL_NAME || SYMBOL} (Broker Hard SL: ${payload.slPrice || payload.slUsd}, Fractal Range TP: ${payload.tpPrice || 'None'})`);
       let lastError = null;
       const maxAttempts = 3;
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -2334,13 +2334,13 @@ async function manageOpenTradesFastPath() {
     openTrade.maxUnrealizedPnL = Math.max(openTrade.maxUnrealizedPnL || 0, pnl);
     const peak = openTrade.maxUnrealizedPnL;
 
-    // Fast-path trade monitoring: Monitors 2.5R Take Profit, catastrophic broker hard stop, and daily profit target ceiling.
+    // Fast-path trade monitoring: Monitors Dynamic Fractal Range Take Profit, catastrophic broker hard stop, and daily profit target ceiling.
     // Supertrend (21, 1, 0) trailing profit exit is evaluated on confirmed M5 close in runSlowPathScan.
 
     const remainingToDailyTarget = Math.max(0, DAILY_PROFIT_TARGET_USD - (state.dailyNetPnl || 0));
     const dailyTargetCeilingHit = DAILY_TARGET_LOCK_ENABLED && remainingToDailyTarget > 0 && pnl >= remainingToDailyTarget && (state.dailyNetPnl || 0) + pnl >= DAILY_PROFIT_TARGET_USD;
 
-    // 🎯 2.5R Take Profit Check (Fast-Path Hit):
+    // 🎯 Dynamic Fractal Range Take Profit Check (Fast-Path Hit):
     const activeTpTarget = openTrade.tpPrice || openTrade.fibTpPrice || null;
     const tpHit = activeTpTarget ? (isBuy ? currentPrice >= activeTpTarget : currentPrice <= activeTpTarget) : false;
 
@@ -2356,7 +2356,7 @@ async function manageOpenTradesFastPath() {
     if (dailyTargetCeilingHit) {
       reason = `Daily Target TP Hit (+$${pnl.toFixed(2)}) — Secured 100% of Daily +$${DAILY_PROFIT_TARGET_USD.toFixed(2)} Target!`;
     } else if (tpHit) {
-      reason = `2.5R Take Profit Hit at ${currentPrice.toFixed(4)} (TP: ${Number(activeTpTarget).toFixed(4)}, PnL: +$${pnl.toFixed(2)})`;
+      reason = `Fractal Range Take Profit Hit at ${currentPrice.toFixed(4)} (TP: ${Number(activeTpTarget).toFixed(4)}, PnL: +$${pnl.toFixed(2)})`;
     } else if (hardStopBreached) {
       reason = `Emergency Broker Hard SL breached at ${currentPrice.toFixed(4)} (Hard SL: ${brokerHardSl.toFixed(4)}, PnL: -$${Math.abs(pnl).toFixed(2)})`;
     }
@@ -3930,16 +3930,21 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const activeFractal = triggeredFractalForSl || (direction === "BUY" ? recentHighFractal : recentLowFractal);
     const sl = deriveCalibratedStopLossPrice(entry, direction, candles[si], activeFractal);
 
-    // 🎯 2.5R Dynamic Take Profit:
-    // Risk R is strictly the distance between entry and the software stop loss.
-    // For BUY: TP = Entry + (2.5 * R)
-    // For SELL: TP = Entry - (2.5 * R)
-    const riskDistance = Math.abs(entry - sl);
-    const tpDistance = 2.5 * riskDistance;
-    const tpDigits = SYMBOL === "R_50" ? 4 : (SYMBOL === "R_25" ? 3 : 2);
+    // 🎯 Dynamic Fractal Distance Take Profit (Structural Measured Move):
+    // Measures the exact structural swing distance between the most recent confirmed M5 UP fractal and DOWN fractal:
+    // Distance D = |recentHighFractal.high - recentLowFractal.low|
+    // For BUY: TP = Entry + D
+    // For SELL: TP = Entry - D
+    const tpDigits = SYMBOL === "R_50" ? 4 : ((SYMBOL === "R_25" || SYMBOL === "R_10") ? 3 : 2);
+    let fractalDistance = (recentHighFractal && recentLowFractal)
+      ? Math.abs(Number(recentHighFractal.high) - Number(recentLowFractal.low))
+      : 0;
+    if (!fractalDistance || fractalDistance <= 0) {
+      fractalDistance = Math.abs(entry - sl) * 2.0;
+    }
     const tpPrice = direction === "BUY"
-      ? parseFloat((entry + tpDistance).toFixed(tpDigits))
-      : parseFloat((entry - tpDistance).toFixed(tpDigits));
+      ? parseFloat((entry + fractalDistance).toFixed(tpDigits))
+      : parseFloat((entry - fractalDistance).toFixed(tpDigits));
     const fibTpPrice = tpPrice;
     const isDynamicRunner = false;
 
@@ -3956,7 +3961,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const slRuleDesc = direction === "BUY"
       ? (isFracBull ? "Bullish Fractal Candle Open (Bottom of Body)" : "Bearish Fractal Candle Close (Bottom of Body)")
       : (isFracBull ? "Bullish Fractal Candle Close (Top of Body)" : "Bearish Fractal Candle Open (Top of Body)");
-    const tpTargetDesc = `2.5R Take Profit @ ${tpPrice.toFixed(tpDigits)} (Risk R: ${riskDistance.toFixed(tpDigits)} pts / Supertrend trailing protection)`;
+    const tpTargetDesc = `Fractal Range TP @ ${tpPrice.toFixed(tpDigits)} (Swing Range: ${fractalDistance.toFixed(tpDigits)} pts / Supertrend trailing protection)`;
     const confluenceLines =
       `• Gate 1 (Macro Trend): *M5 Stoch (100,1,1) %K ${(sK100 !== null ? sK100.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [BULLISH]" : "<50 [BEARISH]"})\n` +
       `• Gate 2 (Momentum): *M5 Stoch (8,1,1) %K ${(sK8 !== null ? sK8.toFixed(1) : "N/A")}* (${isInitialSignal ? "Initial Entry (Stoch 100 Fresh Cross)" : `Re-Entry Pullback ${direction === "BUY" ? "<=10" : ">=90"}`})\n` +
@@ -3983,7 +3988,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const brokerHardSlPrice = deriveHardStopPrice(entry, direction, CTRADER_LOT_SIZE, sl);
 
     const pendingTradeRecord = {
-      id: `${SYMBOL}-${Date.now()}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, brokerSlPrice: brokerHardSlPrice, rr: 2.5, entryType, brokerSlAmount: STAKE_USD,
+      id: `${SYMBOL}-${Date.now()}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, brokerSlPrice: brokerHardSlPrice, rr: null, fractalDistance, entryType, brokerSlAmount: STAKE_USD,
       lots: CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE, is_ctrader: EXECUTION_MODE === "ctrader",
       entryEpoch: m5BoundaryEpoch, purchaseTimeEpoch: m5BoundaryEpoch, purchase_time: m5BoundaryEpoch,
       entryM5Bucket: candles[si].epoch,
@@ -3992,7 +3997,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       entryCandleLow: (candles && candles[si]) ? parseFloat(candles[si].low) : entry,
       slReferenceType: SL_REFERENCE_TYPE,
       slExecutionType: SL_EXECUTION_TYPE,
-      profitManagementMode: "2.5R_TP_AND_SUPERTREND_TRAILING",
+      profitManagementMode: "FRACTAL_RANGE_TP_AND_SUPERTREND_TRAILING",
       supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
       supertrendAtEntry: curSt ? curSt.trend : null,
       stoch8EarlyExit: false,
@@ -4076,7 +4081,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       trailingActive: !!activeTrade.trendRidingActive
     };
     blockerReason = `Active Position Open: #${activeTrade.contractId || activeTrade.id} (${activeTrade.direction} @ ${Number(activeTrade.entry).toFixed(2)}, PnL: ${uPnl >= 0 ? "+" : ""}${uPnl.toFixed(2)})`;
-    nextTrigger = `Managing Position: 2.5R TP @ ${activeTrade.tpPrice ? Number(activeTrade.tpPrice).toFixed(2) : "Dynamic"} | Supertrend (21, 1, 0) Profit Trailing | SL: ${activeTrade.sl ? Number(activeTrade.sl).toFixed(2) : "N/A"} (${SL_REFERENCE_TYPE} / ${SL_EXECUTION_TYPE})`;
+    nextTrigger = `Managing Position: Fractal Range TP @ ${activeTrade.tpPrice ? Number(activeTrade.tpPrice).toFixed(2) : "Dynamic"} | Supertrend (21, 1, 0) Profit Trailing | SL: ${activeTrade.sl ? Number(activeTrade.sl).toFixed(2) : "N/A"} (${SL_REFERENCE_TYPE} / ${SL_EXECUTION_TYPE})`;
   } else if (state.dailyTargetReached) {
     state.openTrade = null;
     healthStatus = "FUNCTIONING";
@@ -4228,20 +4233,19 @@ async function checkIntrabarInitialTouchEntry(currentM5Boundary) {
   const sl = deriveCalibratedStopLossPrice(entry, direction, provisionalCandle, setup.fractal);
   const brokerHardSlPrice = deriveHardStopPrice(entry, direction, CTRADER_LOT_SIZE, sl);
 
-  // 🎯 2.5R Dynamic Take Profit:
-  const riskDistance = Math.abs(entry - sl);
-  const tpDistance = 2.5 * riskDistance;
-  const tpDigits = SYMBOL === "R_50" ? 4 : (SYMBOL === "R_25" ? 3 : 2);
+  // 🎯 Dynamic Fractal Distance Take Profit (Structural Measured Move):
+  const tpDigits = SYMBOL === "R_50" ? 4 : ((SYMBOL === "R_25" || SYMBOL === "R_10") ? 3 : 2);
+  let fractalDistance = Math.abs(entry - sl) * 2.0;
   const tpPrice = direction === "BUY"
-    ? parseFloat((entry + tpDistance).toFixed(tpDigits))
-    : parseFloat((entry - tpDistance).toFixed(tpDigits));
+    ? parseFloat((entry + fractalDistance).toFixed(tpDigits))
+    : parseFloat((entry - fractalDistance).toFixed(tpDigits));
   const fibTpPrice = tpPrice;
 
   const nowEpoch = Math.floor(Date.now() / 1000);
   const timeFormatted = new Date(nowEpoch * 1000).toISOString().replace("T", " ").substring(0, 19);
   const dirEmoji = direction === "BUY" ? "🟢 ⬆️ BUY" : "🔴 ⬇️ SELL";
 
-  const tpTargetDesc = `2.5R Take Profit @ ${tpPrice.toFixed(tpDigits)} (Risk R: ${riskDistance.toFixed(tpDigits)} pts / Supertrend trailing protection)`;
+  const tpTargetDesc = `Fractal Range TP @ ${tpPrice.toFixed(tpDigits)} (Swing Range: ${fractalDistance.toFixed(tpDigits)} pts / Supertrend trailing protection)`;
   const confluenceLines =
     `• Gate 1 (Macro Trend): *M5 Stoch (100,1,1) ${direction === "BUY" ? ">50 [BULLISH]" : "<50 [BEARISH]"}*\n` +
     `• Gate 2 (Initial Mode): *${INITIAL_GATE_MODE}* (Intrabar Touch Armed)\n` +
@@ -4266,7 +4270,7 @@ async function checkIntrabarInitialTouchEntry(currentM5Boundary) {
 
   const trades = loadTrades();
   const pendingTradeRecord = {
-    id: `${SYMBOL}-${Date.now()}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, brokerSlPrice: brokerHardSlPrice, rr: 2.5, entryType, brokerSlAmount: STAKE_USD,
+    id: `${SYMBOL}-${Date.now()}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, brokerSlPrice: brokerHardSlPrice, rr: null, fractalDistance, entryType, brokerSlAmount: STAKE_USD,
     lots: CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE, is_ctrader: EXECUTION_MODE === "ctrader",
     entryEpoch: nowEpoch, purchaseTimeEpoch: nowEpoch, purchase_time: nowEpoch,
     entryM5Bucket: currentM5Boundary,
@@ -4275,7 +4279,7 @@ async function checkIntrabarInitialTouchEntry(currentM5Boundary) {
     entryCandleLow: provisionalCandle.low,
     slReferenceType: SL_REFERENCE_TYPE,
     slExecutionType: SL_EXECUTION_TYPE,
-    profitManagementMode: "2.5R_TP_AND_SUPERTREND_TRAILING",
+    profitManagementMode: "FRACTAL_RANGE_TP_AND_SUPERTREND_TRAILING",
     supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
     stoch8EarlyExit: false,
     fractalSl: setup.fractal ? setup.fractal.price : null,
