@@ -188,8 +188,9 @@ export const INSTRUMENT_PROFILES = {
     entryBreakoutType: "HIGH_LOW",            // Re-Entry: M5 close > High of UP fractal (BUY) / < Low of DOWN fractal (SELL)
     slReferenceType: "FRACTAL_BODY_ANCHOR",   // BUY: Open if Bullish candle / Close if Bearish candle; SELL: Close if Bullish candle / Open if Bearish candle
     slExecutionType: "CLOSE",                 // Software SL executed strictly on confirmed M5 candle CLOSE
-    takeProfitMode: "M15_SUPPORT_RESISTANCE", // TP targets next M15 Resistance (BUY) / Support (SELL)
-    stoch8EarlyExit: false,                   // Trades allowed to run to M15 S/R target
+    profitManagementMode: "SUPERTREND_DIRECTION_FLIP", // Supertrend (21, 1, 0) direction flip exit when in profit
+    supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
+    stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
     takeProfitUsd: 10.00,                     // Fallback TP ($10.00 / 1,000 pts @ 0.01 lots)
     dailyTargetLockEnabled: false,
     minTakeProfitPoints: 500.0,
@@ -199,7 +200,7 @@ export const INSTRUMENT_PROFILES = {
     trailBufferUsd: 2.00,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High / < Low Fractal; Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "1HZ75V": {
     symbol: "1HZ75V",
@@ -220,8 +221,9 @@ export const INSTRUMENT_PROFILES = {
     entryBreakoutType: "HIGH_LOW",
     slReferenceType: "FRACTAL_BODY_ANCHOR",
     slExecutionType: "CLOSE",
-    takeProfitMode: "M15_SUPPORT_RESISTANCE",
-    stoch8EarlyExit: false,
+    profitManagementMode: "SUPERTREND_DIRECTION_FLIP", // Supertrend (21, 1, 0) direction flip exit when in profit
+    supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
+    stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
     takeProfitUsd: 7.00,
     dailyTargetLockEnabled: true,
     minTakeProfitPoints: 23.33,
@@ -231,7 +233,7 @@ export const INSTRUMENT_PROFILES = {
     trailBufferUsd: 2.00,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "R_100": {
     symbol: "R_100",
@@ -252,8 +254,9 @@ export const INSTRUMENT_PROFILES = {
     entryBreakoutType: "HIGH_LOW",
     slReferenceType: "FRACTAL_BODY_ANCHOR",
     slExecutionType: "CLOSE",
-    takeProfitMode: "M15_SUPPORT_RESISTANCE",
-    stoch8EarlyExit: false,
+    profitManagementMode: "SUPERTREND_DIRECTION_FLIP", // Supertrend (21, 1, 0) direction flip exit when in profit
+    supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
+    stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
     takeProfitUsd: 7.00,
     dailyTargetLockEnabled: true,
     minTakeProfitPoints: 3.00,
@@ -262,7 +265,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 5.00,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "1HZ100V": {
     symbol: "1HZ100V",
@@ -281,8 +284,9 @@ export const INSTRUMENT_PROFILES = {
     entryBreakoutType: "HIGH_LOW",
     slReferenceType: "FRACTAL_BODY_ANCHOR",
     slExecutionType: "CLOSE",
-    takeProfitMode: "M15_SUPPORT_RESISTANCE",
-    stoch8EarlyExit: false,
+    profitManagementMode: "SUPERTREND_DIRECTION_FLIP", // Supertrend (21, 1, 0) direction flip exit when in profit
+    supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
+    stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
     takeProfitUsd: 7.00,
     dailyTargetLockEnabled: true,
     minTakeProfitPoints: 3.00,
@@ -291,7 +295,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 2.20,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "1HZ25V": {
     symbol: "1HZ25V",
@@ -312,8 +316,9 @@ export const INSTRUMENT_PROFILES = {
     entryBreakoutType: "HIGH_LOW",
     slReferenceType: "FRACTAL_BODY_ANCHOR",
     slExecutionType: "CLOSE",
-    takeProfitMode: "M15_SUPPORT_RESISTANCE",
-    stoch8EarlyExit: false,
+    profitManagementMode: "SUPERTREND_DIRECTION_FLIP", // Supertrend (21, 1, 0) direction flip exit when in profit
+    supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
+    stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
     takeProfitUsd: 7.00,
     dailyTargetLockEnabled: true,
     minTakeProfitPoints: 600.0,
@@ -322,7 +327,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 5.00,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "R_25": {
     symbol: "R_25",
@@ -343,8 +348,9 @@ export const INSTRUMENT_PROFILES = {
     entryBreakoutType: "HIGH_LOW",
     slReferenceType: "FRACTAL_BODY_ANCHOR",
     slExecutionType: "CLOSE",
-    takeProfitMode: "M15_SUPPORT_RESISTANCE",
-    stoch8EarlyExit: false,
+    profitManagementMode: "SUPERTREND_DIRECTION_FLIP", // Supertrend (21, 1, 0) direction flip exit when in profit
+    supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
+    stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
     takeProfitUsd: 7.00,
     dailyTargetLockEnabled: false,
     minTakeProfitPoints: 6.00,
@@ -354,7 +360,7 @@ export const INSTRUMENT_PROFILES = {
     trailBufferUsd: 1.50,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "R_50": {
     symbol: "R_50",
@@ -375,8 +381,9 @@ export const INSTRUMENT_PROFILES = {
     entryBreakoutType: "HIGH_LOW",
     slReferenceType: "FRACTAL_BODY_ANCHOR",
     slExecutionType: "CLOSE",
-    takeProfitMode: "M15_SUPPORT_RESISTANCE",
-    stoch8EarlyExit: false,
+    profitManagementMode: "SUPERTREND_DIRECTION_FLIP", // Supertrend (21, 1, 0) direction flip exit when in profit
+    supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
+    stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
     takeProfitUsd: 7.00,
     dailyTargetLockEnabled: true,
     minTakeProfitPoints: 0.75,
@@ -386,7 +393,7 @@ export const INSTRUMENT_PROFILES = {
     trailBufferUsd: 1.50,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "R_10": {
     symbol: "R_10",
@@ -407,8 +414,9 @@ export const INSTRUMENT_PROFILES = {
     entryBreakoutType: "HIGH_LOW",
     slReferenceType: "FRACTAL_BODY_ANCHOR",
     slExecutionType: "CLOSE",
-    takeProfitMode: "M15_SUPPORT_RESISTANCE",
-    stoch8EarlyExit: false,
+    profitManagementMode: "SUPERTREND_DIRECTION_FLIP", // Supertrend (21, 1, 0) direction flip exit when in profit
+    supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
+    stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
     takeProfitUsd: 7.00,
     dailyTargetLockEnabled: true,
     minTakeProfitPoints: 6.00,
@@ -417,7 +425,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 4.50,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   }
 };
 
@@ -1308,6 +1316,100 @@ export function calculateCCI(candles, n = 100) {
     out[i] = md === 0 ? 0 : (tp[tp.length - 1] - m) / (0.015 * md);
   }
   return out;
+}
+
+// =========================================================================
+// 🎯 SUPERTREND (Periods: 21, Multiplier: 1.0, Shift: 0) PROFIT MANAGEMENT
+// cTrader / TradingView Standard Wilder's ATR Supertrend Formulation
+// =========================================================================
+export function calculateSupertrend(candles, period = 21, multiplier = 1.0) {
+  if (!candles || candles.length < period) return [];
+  const len = candles.length;
+
+  const tr = new Array(len);
+  tr[0] = parseFloat(candles[0].high) - parseFloat(candles[0].low);
+  for (let i = 1; i < len; i++) {
+    const high = parseFloat(candles[i].high);
+    const low = parseFloat(candles[i].low);
+    const prevClose = parseFloat(candles[i - 1].close);
+    const hl = high - low;
+    const hcp = Math.abs(high - prevClose);
+    const lcp = Math.abs(low - prevClose);
+    tr[i] = Math.max(hl, hcp, lcp);
+  }
+
+  const atr = new Array(len).fill(0);
+  let sumTr = 0;
+  for (let i = 0; i < period; i++) sumTr += tr[i];
+  atr[period - 1] = sumTr / period;
+  for (let i = period; i < len; i++) {
+    atr[i] = ((period - 1) * atr[i - 1] + tr[i]) / period;
+  }
+
+  const basicUpper = new Array(len).fill(0);
+  const basicLower = new Array(len).fill(0);
+  const finalUpper = new Array(len).fill(0);
+  const finalLower = new Array(len).fill(0);
+  const trend = new Array(len).fill(1); // 1 = UP/Bullish (green), -1 = DOWN/Bearish (red)
+  const supertrend = new Array(len).fill(0);
+
+  for (let i = period - 1; i < len; i++) {
+    const high = parseFloat(candles[i].high);
+    const low = parseFloat(candles[i].low);
+    const close = parseFloat(candles[i].close);
+    const hl2 = (high + low) / 2.0;
+    basicUpper[i] = hl2 + (multiplier * atr[i]);
+    basicLower[i] = hl2 - (multiplier * atr[i]);
+
+    if (i === period - 1) {
+      finalUpper[i] = basicUpper[i];
+      finalLower[i] = basicLower[i];
+      trend[i] = close >= basicLower[i] ? 1 : -1;
+      supertrend[i] = trend[i] === 1 ? finalLower[i] : finalUpper[i];
+      continue;
+    }
+
+    const prevClose = parseFloat(candles[i - 1].close);
+
+    // Final Upper Band: ratchets downward or resets on bullish close
+    if (basicUpper[i] < finalUpper[i - 1] || prevClose > finalUpper[i - 1]) {
+      finalUpper[i] = basicUpper[i];
+    } else {
+      finalUpper[i] = finalUpper[i - 1];
+    }
+
+    // Final Lower Band: ratchets upward or resets on bearish close
+    if (basicLower[i] > finalLower[i - 1] || prevClose < finalLower[i - 1]) {
+      finalLower[i] = basicLower[i];
+    } else {
+      finalLower[i] = finalLower[i - 1];
+    }
+
+    // Trend Direction Flip
+    const prevTrend = trend[i - 1];
+    if (prevTrend === 1 && close < finalLower[i - 1]) {
+      trend[i] = -1; // Bearish flip
+    } else if (prevTrend === -1 && close > finalUpper[i - 1]) {
+      trend[i] = 1;  // Bullish flip
+    } else {
+      trend[i] = prevTrend;
+    }
+
+    supertrend[i] = trend[i] === 1 ? finalLower[i] : finalUpper[i];
+  }
+
+  return candles.map((c, idx) => ({
+    epoch: c.epoch,
+    open: parseFloat(c.open),
+    high: parseFloat(c.high),
+    low: parseFloat(c.low),
+    close: parseFloat(c.close),
+    atr: atr[idx] ? parseFloat(atr[idx].toFixed(4)) : null,
+    supertrend: supertrend[idx] ? parseFloat(supertrend[idx].toFixed(4)) : null,
+    trend: trend[idx], // 1 = UP/Bullish (green), -1 = DOWN/Bearish (red)
+    upperBand: finalUpper[idx] ? parseFloat(finalUpper[idx].toFixed(4)) : null,
+    lowerBand: finalLower[idx] ? parseFloat(finalLower[idx].toFixed(4)) : null
+  }));
 }
 
 export function calculateADX(candles, period = 14) {
@@ -3117,6 +3219,18 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
   }
 
+  // Supertrend (Periods: 21, Multiplier: 1.0, Shift: 0) on M5 Candles for Profit Management
+  const supertrendData = calculateSupertrend(candles, 21, 1.0);
+  const curSt = supertrendData.length > si ? supertrendData[si] : null;
+  const prevSt = supertrendData.length > si - 1 ? supertrendData[si - 1] : null;
+  if (curSt) {
+    state.supertrendVal = curSt.supertrend;
+    state.supertrendTrend = curSt.trend; // 1 = UP/Bullish (green), -1 = DOWN/Bearish (red)
+    state.supertrendUpper = curSt.upperBand;
+    state.supertrendLower = curSt.lowerBand;
+    state.supertrendAtr = curSt.atr;
+  }
+
   // 5. Manage Structure & Early Exits on Active Trades (Universal Fleet Invalidation & Rule 1/2 Engine)
   let openTrades = trades.filter(t => !t.result && !t.pending);
   for (const t of openTrades) {
@@ -3219,6 +3333,72 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         closingContracts.delete(t.contractId);
         continue;
       }
+    }
+
+    // =========================================================================
+    // 🎯 SUPERTREND (Periods: 21, Multiplier: 1.0, Shift: 0) PROFIT MANAGEMENT EXIT
+    // User Rule: When trades are in profit (currentPnl > 0), close the trade
+    // immediately when Supertrend changes direction against the trade!
+    // - For BUY: Flipped to Bearish (trend === -1)
+    // - For SELL: Flipped to Bullish (trend === 1)
+    // =========================================================================
+    let supertrendExit = false;
+    let supertrendExitDetail = "";
+
+    if (isPostEntry && currentPnl > 0 && curSt) {
+      if (isBuy && curSt.trend === -1) {
+        supertrendExit = true;
+        supertrendExitDetail = `Supertrend (21, 1) Direction Flip to BEARISH: M5 candle closed at ${cClose.toFixed(4)} (below Lower Band ${curSt.lowerBand ? curSt.lowerBand.toFixed(4) : "N/A"}) while in profit (+$${currentPnl.toFixed(2)})`;
+      } else if (!isBuy && curSt.trend === 1) {
+        supertrendExit = true;
+        supertrendExitDetail = `Supertrend (21, 1) Direction Flip to BULLISH: M5 candle closed at ${cClose.toFixed(4)} (above Upper Band ${curSt.upperBand ? curSt.upperBand.toFixed(4) : "N/A"}) while in profit (+$${currentPnl.toFixed(2)})`;
+      }
+    }
+
+    if (supertrendExit) {
+      closingContracts.add(t.contractId);
+      console.log(`[SUPERTREND PROFIT EXIT ${SYMBOL}] Active ${t.direction} #${t.contractId}: ${supertrendExitDetail}. Current PnL: +$${currentPnl.toFixed(2)}. Liquidating immediately to lock in profit.`);
+      t.exitReason = supertrendExitDetail;
+      try {
+        const closeRes = await closeContract(t.contractId);
+        if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+          console.error(`[SUPERTREND PROFIT EXIT ERROR ${SYMBOL}] Broker close failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+          closingContracts.delete(t.contractId);
+          continue;
+        }
+        const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
+        t.serverPnl = (closeRes && closeRes.sell?.profit) ?? (settled !== null ? settled.profit : parseFloat(currentPnl.toFixed(2)));
+        t.resultSource = (closeRes && closeRes.sell?.profit !== undefined) ? "server_close_confirmed" : (settled !== null ? "deriv_settled_official" : "estimated_fallback");
+        t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
+        t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+        state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+        if (DAILY_TARGET_LOCK_ENABLED && state.dailyNetPnl >= DAILY_PROFIT_TARGET_USD) {
+          state.dailyTargetReached = true;
+          state.dailyTargetDate = todayStr;
+        }
+        state.openTrade = null;
+        onTradeClosedCleanup(candles[si].epoch);
+        saveTrades(trades);
+        saveState();
+
+        const icon = t.result === "WIN" ? "🟢" : "🔴";
+        const pnlStr = t.serverPnl >= 0 ? "+" + t.serverPnl.toFixed(2) : "-" + Math.abs(t.serverPnl).toFixed(2);
+        await sendTelegram(
+          icon + " *[SUPERTREND PROFIT EXIT] " + SYMBOL_NAME + " — " + REPO_LABEL + "*\n\n" +
+          "• Direction: *" + (t.direction === "BUY" ? "🟢 ⬆️ BUY" : "🔴 ⬇️ SELL") + "*\n" +
+          "• Exit Trigger: *" + supertrendExitDetail + "*\n" +
+          "• Supertrend (21, 1): *" + (curSt.supertrend ? curSt.supertrend.toFixed(4) : "N/A") + " (" + (curSt.trend === 1 ? "BULLISH [UP]" : "BEARISH [DOWN]") + ")*\n" +
+          "• Net P&L: *" + pnlStr + "*\n" +
+          "• Daily Net Total: *" + state.dailyNetPnl.toFixed(2) + "*\n" +
+          "• Contract: `" + t.contractId + "`"
+        );
+      } catch (e) {
+        console.error("[SUPERTREND PROFIT EXIT] Exception closing " + t.contractId + ":", e.message);
+        closingContracts.delete(t.contractId);
+        continue;
+      }
+      closingContracts.delete(t.contractId);
+      continue;
     }
 
     // =========================================================================
@@ -3893,12 +4073,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const slRuleDesc = direction === "BUY"
       ? (isFracBull ? "Bullish Fractal Candle Open (Bottom of Body)" : "Bearish Fractal Candle Close (Bottom of Body)")
       : (isFracBull ? "Bullish Fractal Candle Close (Top of Body)" : "Bearish Fractal Candle Open (Top of Body)");
-    const tpTargetDesc = direction === "BUY" ? "M15 Resistance Level" : "M15 Support Level";
+    const tpTargetDesc = "Supertrend (21, 1, 0) Direction Flip Exit (Trailing Profit)";
     const confluenceLines =
       `• Gate 1 (Macro Trend): *M5 Stoch (100,1,1) %K ${(sK100 !== null ? sK100.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [BULLISH]" : "<50 [BEARISH]"})\n` +
       `• Gate 2 (Momentum): *M5 Stoch (8,1,1) %K ${(sK8 !== null ? sK8.toFixed(1) : "N/A")}* (${isInitialSignal ? "Initial Entry (Stoch 100 Fresh Cross)" : `Re-Entry Pullback ${direction === "BUY" ? "<=10" : ">=90"}`})\n` +
       `• Gate 3 (Fractal Trigger): *${setupLabel}* (M5 Close ${direction === "BUY" ? "> High Fractal High" : "< Low Fractal Low"})\n` +
-      `• Gate 4 (Take Profit): *${tpPrice.toFixed(4)} (${tpTargetDesc})*\n` +
+      `• Gate 4 (Profit Management): *${tpTargetDesc}*\n` +
       `• Gate 5 (Stop Loss): *${sl.toFixed(4)}* (${slRuleDesc} / Software SL on M5 Close)\n` +
       `• Daily Target Progress: *$${(state.dailyNetPnl || 0).toFixed(2)} / $${DAILY_PROFIT_TARGET_USD.toFixed(2)} (${DAILY_TARGET_LOCK_ENABLED ? "Lock ON" : "Uncapped"})*`;
 
@@ -3909,7 +4089,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       `Setup: *${escapeMarkdown(entryType)}*\n` +
       `📍 Entry: *${entry.toFixed(4)}*\n` +
       `🛑 Stop Loss: *${sl.toFixed(4)}* (${slRuleDesc} / Software SL on M5 Close)\n` +
-      `🎯 Take Profit: *${tpPrice.toFixed(4)} (${tpTargetDesc})*\n\n` +
+      `🎯 Profit Management: *${tpTargetDesc}*\n\n` +
       `💰 Stake: $${STAKE_USD} | Mode: ${EXECUTION_MODE === "ctrader" ? `cTrader CFD (${CTRADER_LOT_SIZE} lots)` : `Multiplier ${MULTIPLIER}x`}\n\n` +
       `📐 *Technical Confluence Verification:*\n` +
       confluenceLines + `\n` +
@@ -3929,12 +4109,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       entryCandleLow: (candles && candles[si]) ? parseFloat(candles[si].low) : entry,
       slReferenceType: SL_REFERENCE_TYPE,
       slExecutionType: SL_EXECUTION_TYPE,
-      stoch8EarlyExit: STOCH8_EARLY_EXIT_ENABLED,
+      profitManagementMode: "SUPERTREND_DIRECTION_FLIP",
+      supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
+      supertrendAtEntry: curSt ? curSt.trend : null,
+      stoch8EarlyExit: false,
       fractalSl: initialM5Fractal || initialM15Fractal,
       fractalEpoch: null,
       fractalTimeframe: initialM5Fractal ? "M5" : (initialM15Fractal ? "M15" : null),
       m5Fractal: initialM5Fractal,
-      m30FractalUpgraded: false, tpPrice, fibTpPrice: tpPrice,
+      m30FractalUpgraded: false, tpPrice: null, fibTpPrice: null,
       openTime: timeFormatted, closeTime: null, result: null
     };
     trades.push(pendingTradeRecord);
