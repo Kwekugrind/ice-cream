@@ -186,7 +186,7 @@ export const INSTRUMENT_PROFILES = {
     initialBreakoutType: "HIGH_LOW",          // Initial Entry: M5 close > High of UP fractal (BUY) / < Low of DOWN fractal (SELL)
     initialTriggerExec: "CLOSE",              // Initial Entry: M5 candle CLOSE
     entryBreakoutType: "HIGH_LOW",            // Re-Entry: M5 close > High of UP fractal (BUY) / < Low of DOWN fractal (SELL)
-    slReferenceType: "FRACTAL_BODY_ANCHOR",   // Bullish fractal: Open (BUY) / Close (SELL); Bearish fractal: Close (BUY) / Open (SELL)
+    slReferenceType: "FRACTAL_BODY_ANCHOR",   // BUY: Open if Bullish candle / Close if Bearish candle; SELL: Close if Bullish candle / Open if Bearish candle
     slExecutionType: "CLOSE",                 // Software SL executed strictly on confirmed M5 candle CLOSE
     takeProfitMode: "M15_SUPPORT_RESISTANCE", // TP targets next M15 Resistance (BUY) / Support (SELL)
     stoch8EarlyExit: false,                   // Trades allowed to run to M15 S/R target
@@ -498,7 +498,7 @@ const INITIAL_BREAKOUT_TYPE = PROFILE.initialBreakoutType || PROFILE.entryBreako
 const INITIAL_TRIGGER_EXEC = PROFILE.initialTriggerExec || "CLOSE";
 const ENTRY_BREAKOUT_TYPE = PROFILE.entryBreakoutType || "HIGH_LOW";
 const SL_REFERENCE_TYPE = PROFILE.slReferenceType || "FRACTAL_BODY_ANCHOR";
-const SL_EXECUTION_TYPE = PROFILE.slExecutionType || "TOUCH";
+const SL_EXECUTION_TYPE = PROFILE.slExecutionType || "CLOSE";
 const STOCH8_EARLY_EXIT_ENABLED = PROFILE.stoch8EarlyExit !== undefined ? Boolean(PROFILE.stoch8EarlyExit) : true;
 const DAILY_TARGET_LOCK_ENABLED = PROFILE.dailyTargetLockEnabled !== undefined ? Boolean(PROFILE.dailyTargetLockEnabled) : true;
 
@@ -553,10 +553,14 @@ export function deriveCalibratedStopLossPrice(entryPrice, direction, entryCandle
   if (fractal && typeof fractal.open === "number" && typeof fractal.close === "number") {
     const isFractalBullish = fractal.close >= fractal.open;
     if (isBuy) {
-      // BUY: Bullish fractal -> open; Bearish fractal -> close (bottom of fractal candle body)
+      // Scenario 1: BUY Trade
+      // 1A (Bullish Fractal Candle): SL = Open price (bottom of body)
+      // 1B (Bearish Fractal Candle): SL = Close price (bottom of body)
       candidateSl = isFractalBullish ? fractal.open : fractal.close;
     } else {
-      // SELL: Bullish fractal -> close; Bearish fractal -> open (top of fractal candle body)
+      // Scenario 2: SELL Trade
+      // 2A (Bullish Fractal Candle): SL = Close price (top of body)
+      // 2B (Bearish Fractal Candle): SL = Open price (top of body)
       candidateSl = isFractalBullish ? fractal.close : fractal.open;
     }
   } else {
@@ -3887,8 +3891,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const isInitialSignal = entryType.includes("INITIAL");
     const isFracBull = activeFractal && activeFractal.close >= activeFractal.open;
     const slRuleDesc = direction === "BUY"
-      ? (isFracBull ? "Bullish Fractal Open" : "Bearish Fractal Close")
-      : (isFracBull ? "Bullish Fractal Close" : "Bearish Fractal Open");
+      ? (isFracBull ? "Bullish Fractal Candle Open (Bottom of Body)" : "Bearish Fractal Candle Close (Bottom of Body)")
+      : (isFracBull ? "Bullish Fractal Candle Close (Top of Body)" : "Bearish Fractal Candle Open (Top of Body)");
     const tpTargetDesc = direction === "BUY" ? "M15 Resistance Level" : "M15 Support Level";
     const confluenceLines =
       `• Gate 1 (Macro Trend): *M5 Stoch (100,1,1) %K ${(sK100 !== null ? sK100.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [BULLISH]" : "<50 [BEARISH]"})\n` +
