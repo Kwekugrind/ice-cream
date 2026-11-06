@@ -188,17 +188,18 @@ export const INSTRUMENT_PROFILES = {
     entryBreakoutType: "HIGH_LOW",            // Re-Entry: M5 close > High of UP fractal (BUY) / < Low of DOWN fractal (SELL)
     slReferenceType: "FRACTAL_BODY_ANCHOR",   // Bullish fractal: Open (BUY) / Close (SELL); Bearish fractal: Close (BUY) / Open (SELL)
     slExecutionType: "TOUCH",                 // Intrabar touch execution (Hard SL precedence)
-    stoch8EarlyExit: false,
-    takeProfitUsd: 10.00,                     // $10.00 TP (1,000 pts @ 0.01 lots)
+    takeProfitMode: "M15_SUPPORT_RESISTANCE", // TP targets next M15 Resistance (BUY) / Support (SELL)
+    stoch8EarlyExit: false,                   // Trades allowed to run to M15 S/R target
+    takeProfitUsd: 10.00,                     // Fallback TP ($10.00 / 1,000 pts @ 0.01 lots)
     dailyTargetLockEnabled: false,
-    minTakeProfitPoints: 1000.0,
-    minTakeProfitUsd: 10.00,
+    minTakeProfitPoints: 500.0,
+    minTakeProfitUsd: 5.00,
     softwareSlUsd: null,
     trailActivationUsd: 5.00,
     trailBufferUsd: 2.00,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_TOUCH",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal (expires if Stoch 8 crosses 50 and reverses back across 50); SL on Fractal Candle Open/Close (Bullish: Open for BUY / Close for SELL; Bearish: Close for BUY / Open for SELL)."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; SL on Fractal Candle Open/Close; TP targets next M15 Resistance (BUY) / Support (SELL)."
   },
   "1HZ75V": {
     symbol: "1HZ75V",
@@ -219,8 +220,9 @@ export const INSTRUMENT_PROFILES = {
     entryBreakoutType: "HIGH_LOW",
     slReferenceType: "FRACTAL_BODY_ANCHOR",
     slExecutionType: "TOUCH",
-    stoch8EarlyExit: true,
-    takeProfitUsd: 3.50,
+    takeProfitMode: "M15_SUPPORT_RESISTANCE",
+    stoch8EarlyExit: false,
+    takeProfitUsd: 7.00,
     dailyTargetLockEnabled: true,
     minTakeProfitPoints: 23.33,
     minTakeProfitUsd: 3.50,
@@ -229,7 +231,7 @@ export const INSTRUMENT_PROFILES = {
     trailBufferUsd: 2.00,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_TOUCH",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal (expires if Stoch 8 crosses 50 and reverses back across 50); SL on Fractal Candle Open/Close (Bullish: Open for BUY / Close for SELL; Bearish: Close for BUY / Open for SELL)."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; SL on Fractal Candle Open/Close; TP targets next M15 Resistance (BUY) / Support (SELL)."
   },
   "R_100": {
     symbol: "R_100",
@@ -250,16 +252,17 @@ export const INSTRUMENT_PROFILES = {
     entryBreakoutType: "HIGH_LOW",
     slReferenceType: "FRACTAL_BODY_ANCHOR",
     slExecutionType: "TOUCH",
-    stoch8EarlyExit: true,
-    takeProfitUsd: 3.50,
+    takeProfitMode: "M15_SUPPORT_RESISTANCE",
+    stoch8EarlyExit: false,
+    takeProfitUsd: 7.00,
     dailyTargetLockEnabled: true,
-    minTakeProfitPoints: 3.50,
-    minTakeProfitUsd: 3.50,
+    minTakeProfitPoints: 3.00,
+    minTakeProfitUsd: 3.00,
     softwareSlUsd: null,
     trailActivationUsd: 5.00,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_TOUCH",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal (expires if Stoch 8 crosses 50 and reverses back across 50); SL on Fractal Candle Open/Close (Bullish: Open for BUY / Close for SELL; Bearish: Close for BUY / Open for SELL)."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; SL on Fractal Candle Open/Close; TP targets next M15 Resistance (BUY) / Support (SELL)."
   },
   "1HZ100V": {
     symbol: "1HZ100V",
@@ -278,16 +281,17 @@ export const INSTRUMENT_PROFILES = {
     entryBreakoutType: "HIGH_LOW",
     slReferenceType: "FRACTAL_BODY_ANCHOR",
     slExecutionType: "TOUCH",
-    stoch8EarlyExit: true,
-    takeProfitUsd: 3.50,
+    takeProfitMode: "M15_SUPPORT_RESISTANCE",
+    stoch8EarlyExit: false,
+    takeProfitUsd: 7.00,
     dailyTargetLockEnabled: true,
-    minTakeProfitPoints: 3.50,
-    minTakeProfitUsd: 3.50,
+    minTakeProfitPoints: 3.00,
+    minTakeProfitUsd: 3.00,
     softwareSlUsd: null,
     trailActivationUsd: 2.20,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_TOUCH",
-    notes: "Legacy V100-1s profile aligned with Unified Fleet Rule."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; SL on Fractal Candle Open/Close; TP targets next M15 Resistance (BUY) / Support (SELL)."
   },
   "1HZ25V": {
     symbol: "1HZ25V",
@@ -308,16 +312,17 @@ export const INSTRUMENT_PROFILES = {
     entryBreakoutType: "HIGH_LOW",
     slReferenceType: "FRACTAL_BODY_ANCHOR",
     slExecutionType: "TOUCH",
+    takeProfitMode: "M15_SUPPORT_RESISTANCE",
     stoch8EarlyExit: false,
     takeProfitUsd: 7.00,
     dailyTargetLockEnabled: true,
-    minTakeProfitPoints: 1400.0,
-    minTakeProfitUsd: 7.00,
+    minTakeProfitPoints: 600.0,
+    minTakeProfitUsd: 3.00,
     softwareSlUsd: null,
     trailActivationUsd: 5.00,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_TOUCH",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal (expires if Stoch 8 crosses 50 and reverses back across 50); SL on Fractal Candle Open/Close (Bullish: Open for BUY / Close for SELL; Bearish: Close for BUY / Open for SELL)."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; SL on Fractal Candle Open/Close; TP targets next M15 Resistance (BUY) / Support (SELL)."
   },
   "R_25": {
     symbol: "R_25",
@@ -338,17 +343,18 @@ export const INSTRUMENT_PROFILES = {
     entryBreakoutType: "HIGH_LOW",
     slReferenceType: "FRACTAL_BODY_ANCHOR",
     slExecutionType: "TOUCH",
+    takeProfitMode: "M15_SUPPORT_RESISTANCE",
     stoch8EarlyExit: false,
     takeProfitUsd: 7.00,
     dailyTargetLockEnabled: false,
-    minTakeProfitPoints: 14.00,
-    minTakeProfitUsd: 7.00,
+    minTakeProfitPoints: 6.00,
+    minTakeProfitUsd: 3.00,
     softwareSlUsd: null,
     trailActivationUsd: 4.50,
     trailBufferUsd: 1.50,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_TOUCH",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal (expires if Stoch 8 crosses 50 and reverses back across 50); SL on Fractal Candle Open/Close (Bullish: Open for BUY / Close for SELL; Bearish: Close for BUY / Open for SELL)."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; SL on Fractal Candle Open/Close; TP targets next M15 Resistance (BUY) / Support (SELL)."
   },
   "R_50": {
     symbol: "R_50",
@@ -369,17 +375,18 @@ export const INSTRUMENT_PROFILES = {
     entryBreakoutType: "HIGH_LOW",
     slReferenceType: "FRACTAL_BODY_ANCHOR",
     slExecutionType: "TOUCH",
+    takeProfitMode: "M15_SUPPORT_RESISTANCE",
     stoch8EarlyExit: false,
     takeProfitUsd: 7.00,
     dailyTargetLockEnabled: true,
-    minTakeProfitPoints: 1.75,
-    minTakeProfitUsd: 7.00,
+    minTakeProfitPoints: 0.75,
+    minTakeProfitUsd: 3.00,
     softwareSlUsd: null,
     trailActivationUsd: 4.50,
     trailBufferUsd: 1.50,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_TOUCH",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal (expires if Stoch 8 crosses 50 and reverses back across 50); SL on Fractal Candle Open/Close (Bullish: Open for BUY / Close for SELL; Bearish: Close for BUY / Open for SELL)."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; SL on Fractal Candle Open/Close; TP targets next M15 Resistance (BUY) / Support (SELL)."
   },
   "R_10": {
     symbol: "R_10",
@@ -400,16 +407,17 @@ export const INSTRUMENT_PROFILES = {
     entryBreakoutType: "HIGH_LOW",
     slReferenceType: "FRACTAL_BODY_ANCHOR",
     slExecutionType: "TOUCH",
+    takeProfitMode: "M15_SUPPORT_RESISTANCE",
     stoch8EarlyExit: false,
     takeProfitUsd: 7.00,
     dailyTargetLockEnabled: true,
-    minTakeProfitPoints: 14.00,
-    minTakeProfitUsd: 7.00,
+    minTakeProfitPoints: 6.00,
+    minTakeProfitUsd: 3.00,
     softwareSlUsd: null,
     trailActivationUsd: 4.50,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_TOUCH",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal (expires if Stoch 8 crosses 50 and reverses back across 50); SL on Fractal Candle Open/Close (Bullish: Open for BUY / Close for SELL; Bearish: Close for BUY / Open for SELL)."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; SL on Fractal Candle Open/Close; TP targets next M15 Resistance (BUY) / Support (SELL)."
   }
 };
 
@@ -840,7 +848,7 @@ async function executeTrade(direction, orderContext = {}) {
         slPrice: brokerSlPrice,
         tpPrice: orderContext.tpPrice || orderContext.fibTpPrice || null,
         slUsd: brokerSlPrice ? null : 10.00, // Fractal Candle Open/Close SL takes strict precedence over Hard SL
-        tpUsd: hardTpUsd,
+        tpUsd: (orderContext.tpPrice || orderContext.fibTpPrice) ? null : hardTpUsd,
         comment: `${REPO_LABEL} cTrader`
       };
       console.log(`[CTRADER ORDER] Sending ${direction} order: ${CTRADER_LOT_SIZE} lots on ${SYMBOL_NAME || SYMBOL} (SL: ${payload.slPrice || payload.slUsd}, TP: ${payload.tpPrice || payload.tpUsd})`);
@@ -1432,6 +1440,43 @@ export function findRecentFractalM15(m15Candles, direction) {
     }
   }
   return null;
+}
+
+// Finds the next institutional Support or Resistance target on the M15 timeframe:
+// - BUY trades target the nearest confirmed M15 Fractal High (Resistance) ABOVE entry price
+// - SELL trades target the nearest confirmed M15 Fractal Low (Support) BELOW entry price
+export function findNextM15SupportResistanceTarget(m15Candles, direction, entryPrice, minDistancePts = 3.0, fallbackPoints = 6.0) {
+  if (!m15Candles || m15Candles.length < 5 || !entryPrice) {
+    return direction === "BUY" ? (entryPrice + fallbackPoints) : (entryPrice - fallbackPoints);
+  }
+  const minPoints = Math.max(0.0001, Number(minDistancePts) || 3.0);
+  const fallback = Math.max(minPoints, Number(fallbackPoints) || 6.0);
+
+  if (direction === "BUY") {
+    for (let k = m15Candles.length - 3; k >= 2; k--) {
+      const high = parseFloat(m15Candles[k].high);
+      const isUp = high > parseFloat(m15Candles[k - 1].high) &&
+                   high > parseFloat(m15Candles[k - 2].high) &&
+                   high > parseFloat(m15Candles[k + 1].high) &&
+                   high > parseFloat(m15Candles[k + 2].high);
+      if (isUp && high >= (entryPrice + minPoints)) {
+        return high;
+      }
+    }
+    return entryPrice + fallback;
+  } else {
+    for (let k = m15Candles.length - 3; k >= 2; k--) {
+      const low = parseFloat(m15Candles[k].low);
+      const isDown = low < parseFloat(m15Candles[k - 1].low) &&
+                     low < parseFloat(m15Candles[k - 2].low) &&
+                     low < parseFloat(m15Candles[k + 1].low) &&
+                     low < parseFloat(m15Candles[k + 2].low);
+      if (isDown && low <= (entryPrice - minPoints)) {
+        return low;
+      }
+    }
+    return entryPrice - fallback;
+  }
 }
 
 // Finds if an opposing M15 swing fractal has formed after trade entry (Fakeout Detection)
@@ -2219,7 +2264,6 @@ async function manageOpenTradesFastPath() {
     // Calibrated Per-Profile Take Profit & Daily Target Strike Ceiling
     const calibratedTpUsd = PROFILE.takeProfitUsd || PROFILE.minTakeProfitUsd || 7.00;
     const remainingToDailyTarget = Math.max(0, DAILY_PROFIT_TARGET_USD - (state.dailyNetPnl || 0));
-    const tpUsdReached = pnl >= calibratedTpUsd;
     const dailyTargetCeilingHit = DAILY_TARGET_LOCK_ENABLED && remainingToDailyTarget > 0 && pnl >= remainingToDailyTarget && (state.dailyNetPnl || 0) + pnl >= DAILY_PROFIT_TARGET_USD;
 
     const activeTpTarget = openTrade.tpPrice || openTrade.fibTpPrice || null;
@@ -2227,6 +2271,7 @@ async function manageOpenTradesFastPath() {
     if (activeTpTarget) {
       tpHit = isBuy ? currentPrice >= activeTpTarget : currentPrice <= activeTpTarget;
     }
+    const tpUsdReached = !activeTpTarget && (pnl >= calibratedTpUsd);
 
     // 🛡️ Unified Fractal Candle Open/Close Stop Loss Enforcement (Takes strict precedence over Hard SL):
     const hasFractalSl = Boolean(openTrade.sl && openTrade.sl > 0);
@@ -2238,7 +2283,10 @@ async function manageOpenTradesFastPath() {
     const hardStopBreached = !hasFractalSl && (isBuy ? currentPrice <= hardStopPrice : currentPrice >= hardStopPrice);
 
     let reason = null;
-    if (tpHit || tpUsdReached) {
+    if (tpHit) {
+      const tpTargetLabel = isBuy ? "M15 Resistance Target" : "M15 Support Target";
+      reason = `${tpTargetLabel} reached at ${currentPrice.toFixed(4)} (TP: ${Number(activeTpTarget).toFixed(4)}, PnL: +$${pnl.toFixed(2)})`;
+    } else if (tpUsdReached) {
       reason = `Calibrated Take Profit ($${calibratedTpUsd.toFixed(2)}) reached at ${currentPrice.toFixed(4)} (+$${pnl.toFixed(2)})`;
     } else if (dailyTargetCeilingHit) {
       reason = `Daily Target TP Hit (+$${pnl.toFixed(2)}) — Secured 100% of Daily +$${DAILY_PROFIT_TARGET_USD.toFixed(2)} Target!`;
@@ -3806,14 +3854,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
     const entry = currentPrice;
 
-    // Calibrated Per-Profile Take Profit Target
-    const calibratedTpUsd = PROFILE.takeProfitUsd || PROFILE.minTakeProfitUsd || 7.00;
-    const tpPoints = calibratedTpUsd / CTRADER_LOT_SIZE;
+    // Dynamic M15 Support/Resistance Take Profit Target (Allows winning trades to run to structural S/R on M15)
+    const minDistancePts = (PROFILE.minTakeProfitUsd || 3.00) / CTRADER_LOT_SIZE;
+    const fallbackPts = (PROFILE.takeProfitUsd || 7.00) / CTRADER_LOT_SIZE;
     const tpDigits = SYMBOL === "R_50" ? 4 : 2;
-    const fibTpPrice = direction === "BUY"
-      ? parseFloat((entry + tpPoints).toFixed(tpDigits))
-      : parseFloat((entry - tpPoints).toFixed(tpDigits));
-    const tpPrice = fibTpPrice;
+    const rawM15Target = findNextM15SupportResistanceTarget(m15Candles, direction, entry, minDistancePts, fallbackPts);
+    const tpPrice = parseFloat(rawM15Target.toFixed(tpDigits));
+    const fibTpPrice = tpPrice;
     const isDynamicRunner = false;
 
     // Calibrated Per-Profile Stop Loss Anchor (Strictly Validated on SL Side of Entry)
@@ -3833,11 +3880,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const slRuleDesc = direction === "BUY"
       ? (isFracBull ? "Bullish Fractal Open" : "Bearish Fractal Close")
       : (isFracBull ? "Bullish Fractal Close" : "Bearish Fractal Open");
+    const tpTargetDesc = direction === "BUY" ? "M15 Resistance Level" : "M15 Support Level";
     const confluenceLines =
       `• Gate 1 (Macro Trend): *M5 Stoch (100,1,1) %K ${(sK100 !== null ? sK100.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [BULLISH]" : "<50 [BEARISH]"})\n` +
       `• Gate 2 (Momentum): *M5 Stoch (8,1,1) %K ${(sK8 !== null ? sK8.toFixed(1) : "N/A")}* (${isInitialSignal ? "Initial Entry (Stoch 100 Fresh Cross)" : `Re-Entry Pullback ${direction === "BUY" ? "<=10" : ">=90"}`})\n` +
       `• Gate 3 (Fractal Trigger): *${setupLabel}* (M5 Close ${direction === "BUY" ? "> High Fractal High" : "< Low Fractal Low"})\n` +
-      `• Gate 4 (Profit & Exit): *+$${calibratedTpUsd.toFixed(2)} TP* | *Stoch 8 Lvl 50 Profit Exit: ${STOCH8_EARLY_EXIT_ENABLED ? "ON" : "OFF"}*\n` +
+      `• Gate 4 (Take Profit): *${tpPrice.toFixed(4)} (${tpTargetDesc})*\n` +
       `• Gate 5 (Stop Loss): *${sl.toFixed(4)}* (${slRuleDesc} / TOUCH)\n` +
       `• Daily Target Progress: *$${(state.dailyNetPnl || 0).toFixed(2)} / $${DAILY_PROFIT_TARGET_USD.toFixed(2)} (${DAILY_TARGET_LOCK_ENABLED ? "Lock ON" : "Uncapped"})*`;
 
@@ -3848,7 +3896,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       `Setup: *${escapeMarkdown(entryType)}*\n` +
       `📍 Entry: *${entry.toFixed(4)}*\n` +
       `🛑 Stop Loss: *${sl.toFixed(4)}* (${slRuleDesc} / TOUCH)\n` +
-      `🎯 Take Profit: *${tpPrice.toFixed(4)} (+$${calibratedTpUsd.toFixed(2)} Target | Stoch 8 Profit Exit: ${STOCH8_EARLY_EXIT_ENABLED ? "ON" : "OFF"})*\n\n` +
+      `🎯 Take Profit: *${tpPrice.toFixed(4)} (${tpTargetDesc})*\n\n` +
       `💰 Stake: $${STAKE_USD} | Mode: ${EXECUTION_MODE === "ctrader" ? `cTrader CFD (${CTRADER_LOT_SIZE} lots)` : `Multiplier ${MULTIPLIER}x`}\n\n` +
       `📐 *Technical Confluence Verification:*\n` +
       confluenceLines + `\n` +
