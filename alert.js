@@ -2337,8 +2337,8 @@ async function manageOpenTradesFastPath() {
     // Fast-path trade monitoring: Monitors Dynamic Fractal Range Take Profit, catastrophic broker hard stop, and daily profit target ceiling.
     // Supertrend (21, 1, 0) trailing profit exit is evaluated on confirmed M5 close in runSlowPathScan.
 
-    const remainingToDailyTarget = Math.max(0, DAILY_PROFIT_TARGET_USD - (state.dailyNetPnl || 0));
-    const dailyTargetCeilingHit = DAILY_TARGET_LOCK_ENABLED && remainingToDailyTarget > 0 && pnl >= remainingToDailyTarget && (state.dailyNetPnl || 0) + pnl >= DAILY_PROFIT_TARGET_USD;
+    // Intra-trade daily target ceiling disabled: Trades run unhindered to full Fractal Range TP or Supertrend flip exit
+    const dailyTargetCeilingHit = false;
 
     // 🎯 Dynamic Fractal Range Take Profit Check (Fast-Path Hit):
     const activeTpTarget = openTrade.tpPrice || openTrade.fibTpPrice || null;
@@ -2353,9 +2353,7 @@ async function manageOpenTradesFastPath() {
     const hardStopBreached = isBuy ? currentPrice <= brokerHardSl : currentPrice >= brokerHardSl;
 
     let reason = null;
-    if (dailyTargetCeilingHit) {
-      reason = `Daily Target TP Hit (+$${pnl.toFixed(2)}) — Secured 100% of Daily +$${DAILY_PROFIT_TARGET_USD.toFixed(2)} Target!`;
-    } else if (tpHit) {
+    if (tpHit) {
       reason = `Fractal Range Take Profit Hit at ${currentPrice.toFixed(4)} (TP: ${Number(activeTpTarget).toFixed(4)}, PnL: +$${pnl.toFixed(2)})`;
     } else if (hardStopBreached) {
       reason = `Emergency Broker Hard SL breached at ${currentPrice.toFixed(4)} (Hard SL: ${brokerHardSl.toFixed(4)}, PnL: -$${Math.abs(pnl).toFixed(2)})`;
@@ -3287,6 +3285,92 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         closingContracts.delete(t.contractId);
         continue;
       }
+    }
+
+    // =========================================================================
+    // 🎯 NEAR-TARGET M5 CANDLE-CLOSE PROFIT EXIT (>= 85% TARGET COMPLETION / EXHAUSTION)
+    // User Rule: When trade is in profit and reaches >= 85% of the Fractal Take Profit:
+    // 1. Direct Near-Target Close: If closed M5 candle closes >= 85% of target: Take profit immediately.
+    // 2. Near-Target Rejection / Exhaustion: If M5 candle wicked into >= 85% of target,
+    //    but closed showing rejection (opposite candle color: red for BUY, green for SELL):
+    //    Liquidate immediately on candle close to lock in maximum peak profit.
+    // =========================================================================
+    let nearTargetExit = false;
+    let nearTargetDetail = "";
+
+    if (isPostEntry && currentPnl > 0) {
+      const entryPrice = parseFloat(t.entryPrice || t.entry);
+      let targetTp = parseFloat(t.tpPrice || t.fibTpPrice || t.takeProfit);
+      if ((!targetTp || isNaN(targetTp)) && t.fractalDistance) {
+        targetTp = isBuy ? (entryPrice + t.fractalDistance) : (entryPrice - t.fractalDistance);
+      }
+      if (entryPrice && targetTp && Math.abs(targetTp - entryPrice) > 0) {
+        const targetDist = Math.abs(targetTp - entryPrice);
+        const nearTargetLine = isBuy ? (entryPrice + 0.85 * targetDist) : (entryPrice - 0.85 * targetDist);
+
+        if (isBuy) {
+          if (cClose >= nearTargetLine) {
+            nearTargetExit = true;
+            nearTargetDetail = `Near-Target M5 Candle Close: M5 candle closed at ${cClose.toFixed(4)} (>= 85% of target ${targetTp.toFixed(4)}) while in profit (+$${currentPnl.toFixed(2)})`;
+          } else if (cHigh >= nearTargetLine && cClose < cOpen) {
+            nearTargetExit = true;
+            nearTargetDetail = `Near-Target Exhaustion Wick Exit: M5 candle peaked at ${cHigh.toFixed(4)} (>= 85% of target ${targetTp.toFixed(4)}) and closed RED at ${cClose.toFixed(4)} while in profit (+$${currentPnl.toFixed(2)})`;
+          }
+        } else {
+          if (cClose <= nearTargetLine) {
+            nearTargetExit = true;
+            nearTargetDetail = `Near-Target M5 Candle Close: M5 candle closed at ${cClose.toFixed(4)} (<= 85% of target ${targetTp.toFixed(4)}) while in profit (+$${currentPnl.toFixed(2)})`;
+          } else if (cLow <= nearTargetLine && cClose > cOpen) {
+            nearTargetExit = true;
+            nearTargetDetail = `Near-Target Exhaustion Wick Exit: M5 candle wicked to ${cLow.toFixed(4)} (<= 85% of target ${targetTp.toFixed(4)}) and closed GREEN at ${cClose.toFixed(4)} while in profit (+$${currentPnl.toFixed(2)})`;
+          }
+        }
+      }
+    }
+
+    if (nearTargetExit) {
+      closingContracts.add(t.contractId);
+      console.log(`[NEAR-TARGET PROFIT EXIT ${SYMBOL}] Active ${t.direction} #${t.contractId}: ${nearTargetDetail}. Current PnL: +$${currentPnl.toFixed(2)}. Liquidating immediately to lock in maximum profit.`);
+      t.exitReason = nearTargetDetail;
+      try {
+        const closeRes = await closeContract(t.contractId);
+        if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+          console.error(`[NEAR-TARGET PROFIT EXIT ERROR ${SYMBOL}] Broker close failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+          closingContracts.delete(t.contractId);
+          continue;
+        }
+        const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
+        t.serverPnl = (closeRes && closeRes.sell?.profit) ?? (settled !== null ? settled.profit : parseFloat(currentPnl.toFixed(2)));
+        t.resultSource = (closeRes && closeRes.sell?.profit !== undefined) ? "server_close_confirmed" : (settled !== null ? "deriv_settled_official" : "estimated_fallback");
+        t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
+        t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+        state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+        if (DAILY_TARGET_LOCK_ENABLED && state.dailyNetPnl >= DAILY_PROFIT_TARGET_USD) {
+          state.dailyTargetReached = true;
+          state.dailyTargetDate = todayStr;
+        }
+        state.openTrade = null;
+        onTradeClosedCleanup(candles[si].epoch);
+        saveTrades(trades);
+        saveState();
+
+        const icon = t.result === "WIN" ? "🎯" : "🔴";
+        const pnlStr = t.serverPnl >= 0 ? "+" + t.serverPnl.toFixed(2) : "-" + Math.abs(t.serverPnl).toFixed(2);
+        await sendTelegram(
+          icon + " *[NEAR-TARGET PROFIT EXIT] " + SYMBOL_NAME + " — " + REPO_LABEL + "*\n\n" +
+          "• Direction: *" + (t.direction === "BUY" ? "🟢 ⬆️ BUY" : "🔴 ⬇️ SELL") + "*\n" +
+          "• Exit Trigger: *" + nearTargetDetail + "*\n" +
+          "• Net P&L: *" + pnlStr + "*\n" +
+          "• Daily Net Total: *" + state.dailyNetPnl.toFixed(2) + "*\n" +
+          "• Contract: `" + t.contractId + "`"
+        );
+      } catch (e) {
+        console.error("[NEAR-TARGET PROFIT EXIT] Exception closing " + t.contractId + ":", e.message);
+        closingContracts.delete(t.contractId);
+        continue;
+      }
+      closingContracts.delete(t.contractId);
+      continue;
     }
 
     // =========================================================================
