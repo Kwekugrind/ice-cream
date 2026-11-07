@@ -942,7 +942,8 @@ async function closeContract(contractId) {
 async function getContractProfitFromHistory(contractId, approxOpenEpoch) {
   if (EXECUTION_MODE === "ctrader") {
     try {
-      const res = await gatewayFetch("/ctrader/deals");
+      const fromMs = approxOpenEpoch ? (approxOpenEpoch * 1000 - 120000) : (Date.now() - 24 * 60 * 60 * 1000);
+      const res = await gatewayFetch(`/ctrader/deals?positionId=${encodeURIComponent(contractId)}&from=${fromMs}&to=${Date.now()}`);
       if (res && res.ok && Array.isArray(res.deals)) {
         // Match only the CLOSING deal (which contains closePositionDetail), never the opening deal
         const match = res.deals.find(d => String(d.positionId) === String(contractId) && d.closePositionDetail);
