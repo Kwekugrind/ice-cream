@@ -3,20 +3,24 @@
 // Scans backwards from si - 2 to find the most recent completed 5-bar Bill Williams fractal pivot
 
 // ==================== FRACTAL DETECTION BY SPECIFIC TYPE ====================
-// Scans backwards from si - 2 to find the most recent completed 5-bar Bill Williams fractal pivot of targetType ('UP' or 'DOWN')
+// Scans backwards from si - 1 to find the most recent completed fractal pivot of targetType ('UP' or 'DOWN')
+// Uses 3-candle fractal definition: confirmed when 1 candle to the right closes.
 export function getMostRecentM5FractalByType(candles, currentIndex, targetType) {
-  if (!candles || currentIndex < 4) return null;
-  for (let k = currentIndex - 2; k >= 2; k--) {
+  if (!candles || currentIndex < 3) return null;
+  for (let k = currentIndex - 1; k >= 2; k--) {
     const high = parseFloat(candles[k].high);
     const low = parseFloat(candles[k].low);
+    const right1Up = (k + 1 <= currentIndex) ? high > parseFloat(candles[k + 1].high) : true;
+    const right2Up = (k + 2 <= currentIndex) ? high > parseFloat(candles[k + 2].high) : true;
     const isUp = high > parseFloat(candles[k - 1].high) &&
                  high > parseFloat(candles[k - 2].high) &&
-                 high > parseFloat(candles[k + 1].high) &&
-                 high > parseFloat(candles[k + 2].high);
+                 right1Up && right2Up;
+
+    const right1Down = (k + 1 <= currentIndex) ? low < parseFloat(candles[k + 1].low) : true;
+    const right2Down = (k + 2 <= currentIndex) ? low < parseFloat(candles[k + 2].low) : true;
     const isDown = low < parseFloat(candles[k - 1].low) &&
                    low < parseFloat(candles[k - 2].low) &&
-                   low < parseFloat(candles[k + 1].low) &&
-                   low < parseFloat(candles[k + 2].low);
+                   right1Down && right2Down;
 
     if (targetType === 'UP' && isUp) {
       return {
@@ -49,17 +53,21 @@ export function getMostRecentM5FractalByType(candles, currentIndex, targetType) 
 }
 
 export function getMostRecentM5Fractal(candles, currentIndex) {
-  for (let k = currentIndex - 2; k >= 2; k--) {
+  if (!candles || currentIndex < 3) return null;
+  for (let k = currentIndex - 1; k >= 2; k--) {
     const high = parseFloat(candles[k].high);
     const low = parseFloat(candles[k].low);
+    const right1Up = (k + 1 <= currentIndex) ? high > parseFloat(candles[k + 1].high) : true;
+    const right2Up = (k + 2 <= currentIndex) ? high > parseFloat(candles[k + 2].high) : true;
     const isUp = high > parseFloat(candles[k - 1].high) &&
                  high > parseFloat(candles[k - 2].high) &&
-                 high > parseFloat(candles[k + 1].high) &&
-                 high > parseFloat(candles[k + 2].high);
+                 right1Up && right2Up;
+
+    const right1Down = (k + 1 <= currentIndex) ? low < parseFloat(candles[k + 1].low) : true;
+    const right2Down = (k + 2 <= currentIndex) ? low < parseFloat(candles[k + 2].low) : true;
     const isDown = low < parseFloat(candles[k - 1].low) &&
                    low < parseFloat(candles[k - 2].low) &&
-                   low < parseFloat(candles[k + 1].low) &&
-                   low < parseFloat(candles[k + 2].low);
+                   right1Down && right2Down;
 
     if (isUp && !isDown) {
       return { type: 'UP', pivotIndex: k, pivotEpoch: candles[k].epoch, price: high };
@@ -74,6 +82,118 @@ export function getMostRecentM5Fractal(candles, currentIndex) {
     }
   }
   return null;
+}
+
+// =========================================================================
+// 🛡️ CHECK IF CANDLE HAS CONFIRMED M5 FRACTAL OF SPECIFIC TYPE
+// Scans candles array to find the candle with matching targetEpoch, then checks
+// if it satisfies the fractal pivot rule of targetType ('UP' or 'DOWN').
+// Requires targetIndex + 1 <= currentIndex (1 subsequent bar confirms the pivot).
+// =========================================================================
+export function hasConfirmedM5FractalAtEpoch(candles, currentIndex, targetEpoch, targetType) {
+  if (!candles || currentIndex < 3 || !targetEpoch) return false;
+  
+  const targetIdx = candles.findIndex(c => c && c.epoch === targetEpoch);
+  if (targetIdx < 2 || targetIdx > currentIndex - 1) return false;
+
+  const high = parseFloat(candles[targetIdx].high);
+  const low = parseFloat(candles[targetIdx].low);
+
+  const right1Up = (targetIdx + 1 <= currentIndex) ? high > parseFloat(candles[targetIdx + 1].high) : true;
+  const right2Up = (targetIdx + 2 <= currentIndex) ? high > parseFloat(candles[targetIdx + 2].high) : true;
+
+  const right1Down = (targetIdx + 1 <= currentIndex) ? low < parseFloat(candles[targetIdx + 1].low) : true;
+  const right2Down = (targetIdx + 2 <= currentIndex) ? low < parseFloat(candles[targetIdx + 2].low) : true;
+
+  if (targetType === 'UP') {
+    return high > parseFloat(candles[targetIdx - 1].high) &&
+           high > parseFloat(candles[targetIdx - 2].high) &&
+           right1Up && right2Up;
+  } else if (targetType === 'DOWN') {
+    return low < parseFloat(candles[targetIdx - 1].low) &&
+           low < parseFloat(candles[targetIdx - 2].low) &&
+           right1Down && right2Down;
+  }
+  return false;
+}
+
+// =========================================================================
+// 🎯 FIND FIRST FRACTAL BREAKOUT CANDLE INDEX
+// Scans forward from fractal confirmation to maxIndex (current candle)
+// to find the first candle whose close broke beyond the fractal level.
+// Returns the candle index if found, or null if no breakout has occurred yet.
+// =========================================================================
+export function findFirstFractalBreakoutIndex(candles, fractal, direction, maxIndex, customTargetPrice = null, customComparison = null) {
+  if (!candles || !fractal || maxIndex === undefined || maxIndex === null) return null;
+  let pIdx = typeof fractal.pivotIndex === "number" ? fractal.pivotIndex : candles.findIndex(c => c && c.epoch === fractal.epoch);
+  if (pIdx < 0) pIdx = 0;
+  const startIdx = Math.max(0, pIdx + 1);
+  const targetPrice = customTargetPrice !== null ? customTargetPrice : (direction === "BUY" ? fractal.high : fractal.low);
+  if (targetPrice === undefined || targetPrice === null || isNaN(targetPrice)) return null;
+
+  for (let k = startIdx; k <= maxIndex; k++) {
+    if (!candles[k]) continue;
+    const cClose = parseFloat(candles[k].close);
+    if (customComparison) {
+      if (customComparison(cClose, targetPrice)) return k;
+    } else {
+      if (direction === "BUY" && cClose > targetPrice) return k;
+      if (direction === "SELL" && cClose < targetPrice) return k;
+    }
+  }
+  return null;
+}
+
+// =========================================================================
+// 🎯 FIND FRESH SWEEP BREAKOUT CANDLE INDEX (EXPERIMENTAL STRATEGY)
+// For BUY: price was below targetPrice (fractal low), then broke and closed ABOVE targetPrice.
+// For SELL: price was above targetPrice (fractal high), then broke and closed BELOW targetPrice.
+// Returns the candle index of the fresh breakout, or null if no fresh breakout.
+// =========================================================================
+export function findSweepBreakoutIndex(candles, fractal, direction, maxIndex, targetPrice) {
+  if (!candles || !fractal || maxIndex === undefined || maxIndex === null) return null;
+  let pIdx = typeof fractal.pivotIndex === "number" ? fractal.pivotIndex : candles.findIndex(c => c && c.epoch === fractal.epoch);
+  if (pIdx < 0) pIdx = 0;
+  const startIdx = Math.max(1, pIdx);
+  if (targetPrice === undefined || targetPrice === null || isNaN(targetPrice)) return null;
+
+  let latestBreakoutIdx = null;
+
+  for (let k = startIdx; k <= maxIndex; k++) {
+    if (!candles[k] || !candles[k - 1]) continue;
+    const cClose = parseFloat(candles[k].close);
+    const prevClose = parseFloat(candles[k - 1].close);
+    const prevLow = parseFloat(candles[k - 1].low);
+    const prevHigh = parseFloat(candles[k - 1].high);
+    const cLow = parseFloat(candles[k].low);
+    const cHigh = parseFloat(candles[k].high);
+
+    if (direction === "BUY") {
+      // Must close ABOVE targetPrice (the lowest point of the fractal)
+      if (cClose > targetPrice) {
+        // Price was below targetPrice immediately before
+        const wasBelow = prevClose <= targetPrice || prevLow < targetPrice || cLow < targetPrice;
+        if (wasBelow && prevClose <= targetPrice) {
+          latestBreakoutIdx = k;
+        } else if (wasBelow && latestBreakoutIdx === null) {
+          latestBreakoutIdx = k;
+        }
+      }
+    } else if (direction === "SELL") {
+      // Must close BELOW targetPrice (the highest point of the fractal)
+      if (cClose < targetPrice) {
+        // Price was above targetPrice immediately before
+        const wasAbove = prevClose >= targetPrice || prevHigh > targetPrice || cHigh > targetPrice;
+        if (wasAbove && prevClose >= targetPrice) {
+          latestBreakoutIdx = k;
+        } else if (wasAbove && latestBreakoutIdx === null) {
+          latestBreakoutIdx = k;
+        }
+      }
+    }
+  }
+
+  return latestBreakoutIdx;
 }
 
 // Fleet Master Sync Verified: 2026-10-16T08:04:15.425Z
@@ -184,9 +304,9 @@ export const INSTRUMENT_PROFILES = {
     commissionUsd: 0.15,
     strategyProfile: "PROFILE_UNIVERSAL_STOCH100_STOCH8",
     gateType: "STOCH100_STOCH8",
-    stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", level: 50 },
+    stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", buyLevel: 47, sellLevel: 53 },
     stoch8Params: { k: 8, d: 1, slowing: 1, method: "Simple", levels: [10, 50, 90] },
-    initialGateMode: "STOCH100_ONLY",         // Initial Entry: Stoch 100 Level 50 cross + M5 close beyond Fractal High/Low
+    initialGateMode: "STOCH100_ONLY",         // Initial Entry: Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross + M5 close beyond Fractal High/Low
     initialBreakoutType: "HIGH_LOW",          // Initial Entry: M5 close > High of UP fractal (BUY) / < Low of DOWN fractal (SELL)
     initialTriggerExec: "CLOSE",              // Initial Entry: M5 candle CLOSE
     entryBreakoutType: "HIGH_LOW",            // Re-Entry: M5 close > High of UP fractal (BUY) / < Low of DOWN fractal (SELL)
@@ -196,7 +316,7 @@ export const INSTRUMENT_PROFILES = {
     supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
     stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
     takeProfitUsd: 10.00,                     // Fallback TP ($10.00 / 1,000 pts @ 0.01 lots)
-    dailyTargetLockEnabled: false,
+    dailyTargetLockEnabled: true,
     minTakeProfitPoints: 500.0,
     minTakeProfitUsd: 5.00,
     softwareSlUsd: null,
@@ -204,7 +324,7 @@ export const INSTRUMENT_PROFILES = {
     trailBufferUsd: 2.00,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High / < Low Fractal; Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross + M5 close > High / < Low Fractal; Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "1HZ75V": {
     symbol: "1HZ75V",
@@ -217,7 +337,7 @@ export const INSTRUMENT_PROFILES = {
     commissionUsd: 0.15,
     strategyProfile: "PROFILE_UNIVERSAL_STOCH100_STOCH8",
     gateType: "STOCH100_STOCH8",
-    stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", level: 50 },
+    stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", buyLevel: 47, sellLevel: 53 },
     stoch8Params: { k: 8, d: 1, slowing: 1, method: "Simple", levels: [10, 50, 90] },
     initialGateMode: "STOCH100_ONLY",
     initialBreakoutType: "HIGH_LOW",
@@ -237,7 +357,7 @@ export const INSTRUMENT_PROFILES = {
     trailBufferUsd: 2.00,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "R_100": {
     symbol: "R_100",
@@ -250,7 +370,7 @@ export const INSTRUMENT_PROFILES = {
     commissionUsd: 0.15,
     strategyProfile: "PROFILE_UNIVERSAL_STOCH100_STOCH8",
     gateType: "STOCH100_STOCH8",
-    stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", level: 50 },
+    stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", buyLevel: 47, sellLevel: 53 },
     stoch8Params: { k: 8, d: 1, slowing: 1, method: "Simple", levels: [10, 50, 90] },
     initialGateMode: "STOCH100_ONLY",
     initialBreakoutType: "HIGH_LOW",
@@ -269,7 +389,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 5.00,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "1HZ100V": {
     symbol: "1HZ100V",
@@ -282,6 +402,7 @@ export const INSTRUMENT_PROFILES = {
     commissionUsd: 0.15,
     strategyProfile: "PROFILE_UNIVERSAL_STOCH100_STOCH8",
     gateType: "STOCH100_STOCH8",
+    stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", buyLevel: 47, sellLevel: 53 },
     initialGateMode: "STOCH100_ONLY",
     initialBreakoutType: "HIGH_LOW",
     initialTriggerExec: "CLOSE",
@@ -299,7 +420,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 2.20,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "1HZ25V": {
     symbol: "1HZ25V",
@@ -312,7 +433,7 @@ export const INSTRUMENT_PROFILES = {
     commissionUsd: 0.15,
     strategyProfile: "PROFILE_UNIVERSAL_STOCH100_STOCH8",
     gateType: "STOCH100_STOCH8",
-    stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", level: 50 },
+    stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", buyLevel: 47, sellLevel: 53 },
     stoch8Params: { k: 8, d: 1, slowing: 1, method: "Simple", levels: [10, 50, 90] },
     initialGateMode: "STOCH100_ONLY",
     initialBreakoutType: "HIGH_LOW",
@@ -323,7 +444,7 @@ export const INSTRUMENT_PROFILES = {
     profitManagementMode: "SUPERTREND_DIRECTION_FLIP", // Supertrend (21, 1, 0) direction flip exit when in profit
     supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
     stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
-    takeProfitUsd: 7.00,
+    takeProfitUsd: 15.00,
     dailyTargetLockEnabled: true,
     minTakeProfitPoints: 600.0,
     minTakeProfitUsd: 3.00,
@@ -331,7 +452,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 5.00,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "R_25": {
     symbol: "R_25",
@@ -344,7 +465,7 @@ export const INSTRUMENT_PROFILES = {
     commissionUsd: 0.32,
     strategyProfile: "PROFILE_UNIVERSAL_STOCH100_STOCH8",
     gateType: "STOCH100_STOCH8",
-    stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", level: 50 },
+    stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", buyLevel: 47, sellLevel: 53 },
     stoch8Params: { k: 8, d: 1, slowing: 1, method: "Simple", levels: [10, 50, 90] },
     initialGateMode: "STOCH100_ONLY",
     initialBreakoutType: "HIGH_LOW",
@@ -356,7 +477,7 @@ export const INSTRUMENT_PROFILES = {
     supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
     stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
     takeProfitUsd: 7.00,
-    dailyTargetLockEnabled: false,
+    dailyTargetLockEnabled: true,
     minTakeProfitPoints: 6.00,
     minTakeProfitUsd: 3.00,
     softwareSlUsd: null,
@@ -364,7 +485,7 @@ export const INSTRUMENT_PROFILES = {
     trailBufferUsd: 1.50,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "R_50": {
     symbol: "R_50",
@@ -377,7 +498,7 @@ export const INSTRUMENT_PROFILES = {
     commissionUsd: 0.16,
     strategyProfile: "PROFILE_UNIVERSAL_STOCH100_STOCH8",
     gateType: "STOCH100_STOCH8",
-    stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", level: 50 },
+    stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", buyLevel: 47, sellLevel: 53 },
     stoch8Params: { k: 8, d: 1, slowing: 1, method: "Simple", levels: [10, 50, 90] },
     initialGateMode: "STOCH100_ONLY",
     initialBreakoutType: "HIGH_LOW",
@@ -397,7 +518,7 @@ export const INSTRUMENT_PROFILES = {
     trailBufferUsd: 1.50,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "R_10": {
     symbol: "R_10",
@@ -410,7 +531,7 @@ export const INSTRUMENT_PROFILES = {
     commissionUsd: 0.80,
     strategyProfile: "PROFILE_UNIVERSAL_STOCH100_STOCH8",
     gateType: "STOCH100_STOCH8",
-    stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", level: 50 },
+    stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", buyLevel: 47, sellLevel: 53 },
     stoch8Params: { k: 8, d: 1, slowing: 1, method: "Simple", levels: [10, 50, 90] },
     initialGateMode: "STOCH100_ONLY",
     initialBreakoutType: "HIGH_LOW",
@@ -429,7 +550,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 4.50,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 50 cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   }
 };
 
@@ -501,6 +622,8 @@ const SOFTWARE_SL_USD = rawEnvSl !== null
 
 const SERVER_TP_USD = 7.00;
 const CATASTROPHIC_PNL_FLOOR = -5.00;
+const STRATEGY_MODE = (process.env.STRATEGY_MODE || "baseline").toLowerCase();
+const CTRADER_ACCOUNT_ID = process.env.CTRADER_ACCOUNT_ID || "2596044";
 const DAILY_PROFIT_TARGET_USD = 7.00;
 const rawAppId = String(process.env.DERIV_APP_ID || process.env.APP_ID || "1089").trim();
 const MARKET_DATA_APP_ID = /^\d+$/.test(rawAppId) ? rawAppId : "1089";
@@ -556,13 +679,20 @@ export function getFractalBreakoutLabel(fractal, direction, breakoutTypeOverride
 //    - If the M5 fractal candle considered for the trade is BEARISH (close < open), use OPEN price of that fractal candle as SL.
 // Precedence: Takes strict precedence over Hard SL.
 // =========================================================================
-export function deriveCalibratedStopLossPrice(entryPrice, direction, entryCandle, fractal) {
+export function deriveCalibratedStopLossPrice(entryPrice, direction, entryCandle, fractal, prevCandle = null) {
   const isBuy = direction === "BUY";
   const cLow = entryCandle ? parseFloat(entryCandle.low) : entryPrice;
   const cHigh = entryCandle ? parseFloat(entryCandle.high) : entryPrice;
   let candidateSl = null;
 
-  if (fractal && typeof fractal.open === "number" && typeof fractal.close === "number") {
+  if (STRATEGY_MODE === "experimental_sweep") {
+    // User Directive: Software SL is strictly determined by ONLY the candle that confirms the fractal break.
+    // For BUY: lowest point of breakout candle.
+    // For SELL: highest point of breakout candle.
+    const bLow = (entryCandle && typeof entryCandle.low === "number") ? parseFloat(entryCandle.low) : entryPrice;
+    const bHigh = (entryCandle && typeof entryCandle.high === "number") ? parseFloat(entryCandle.high) : entryPrice;
+    candidateSl = isBuy ? bLow : bHigh;
+  } else if (fractal && typeof fractal.open === "number" && typeof fractal.close === "number") {
     const isFractalBullish = fractal.close >= fractal.open;
     if (isBuy) {
       // Scenario 1: BUY Trade
@@ -576,6 +706,8 @@ export function deriveCalibratedStopLossPrice(entryPrice, direction, entryCandle
       candidateSl = isFractalBullish ? fractal.close : fractal.open;
     }
   } else {
+    // Defensive safeguard only (Mandatory rule: All entries must have a confirmed fractal body anchor)
+    console.warn(`[SL CALCULATION WARNING] Fractal body missing for ${direction} entry @ ${entryPrice}. Using candle extreme fallback.`);
     candidateSl = isBuy ? cLow : cHigh;
   }
 
@@ -792,7 +924,7 @@ async function gatewayFetch(endpoint, method = "GET", body = null, timeoutMs = 1
 async function getOpenPortfolio() {
   if (EXECUTION_MODE === "ctrader") {
     try {
-      const res = await gatewayFetch("/ctrader/positions");
+      const res = await gatewayFetch(`/ctrader/positions?accountId=${encodeURIComponent(CTRADER_ACCOUNT_ID)}`);
       if (res && res.ok && Array.isArray(res.positions)) {
         const CTRADER_ID_TO_SYMBOL = {
           2435: "1HZ75V",
@@ -828,13 +960,15 @@ async function getOpenPortfolio() {
           };
         }).filter(Boolean);
       }
+      return null;
     } catch (e) {
-      dbg(`[PORTFOLIO] cTrader query failed (${e.message}), falling back to Deriv gateway...`);
+      console.warn(`[PORTFOLIO] cTrader query failed (${e.message}). Returning null to protect active trade.`);
+      return null;
     }
   }
 
   try {
-    const res = await gatewayFetch("/portfolio");
+    const res = await gatewayFetch(`/portfolio?accountId=${encodeURIComponent(CTRADER_ACCOUNT_ID)}`);
     if (res && res.ok !== false) {
       const rawList = Array.isArray(res.portfolio)
         ? res.portfolio
@@ -850,22 +984,52 @@ async function getOpenPortfolio() {
 }
 
 async function executeTrade(direction, orderContext = {}) {
+  // Defensive Concurrency Guard: Never send an order if state already tracks an active contract
+  if (state.openTrade && state.openTrade.contractId) {
+    console.warn(`[CONCURRENCY LOCK CRITICAL] executeTrade aborted: state already tracks active contract #${state.openTrade.contractId}.`);
+    return null;
+  }
+
   if (EXECUTION_MODE === "ctrader") {
     try {
+      // Live Broker verification against cTrader positions endpoint right before sending ticket
+      try {
+        const liveBrokerCheck = await gatewayFetch(`/ctrader/positions?accountId=${encodeURIComponent(CTRADER_ACCOUNT_ID)}`);
+        if (liveBrokerCheck && liveBrokerCheck.ok && Array.isArray(liveBrokerCheck.positions)) {
+          const CTRADER_ID_TO_SYMBOL = {
+            2435: "1HZ75V", 2434: "R_75", 2432: "R_50", 2431: "1HZ25V",
+            2433: "1HZ50V", 2430: "R_25", 2428: "R_10", 2429: "1HZ10V",
+            2436: "R_100", 2437: "1HZ100V"
+          };
+          const symPositions = liveBrokerCheck.positions.filter(p => {
+            const symId = Number(p.tradeData?.symbolId || p.symbolId);
+            const mapped = CTRADER_ID_TO_SYMBOL[symId];
+            return mapped === SYMBOL || p.symbol === SYMBOL || p.symbolName === SYMBOL_NAME;
+          });
+          if (symPositions.length > 0) {
+            console.warn(`[CONCURRENCY LOCK CRITICAL] cTrader Account ${CTRADER_ACCOUNT_ID} already holds ${symPositions.length} active position(s) for ${SYMBOL} (#${symPositions.map(p => p.positionId).join(', ')}). Aborting order to enforce strict 1-trade invariant.`);
+            return null;
+          }
+        }
+      } catch (checkErr) {
+        console.warn(`[CONCURRENCY CHECK PRE-ORDER] Pre-order broker check error: ${checkErr.message}`);
+      }
+
       // Software SL is evaluated strictly on M5 candle CLOSE in software.
       // Broker SL order sent to cTrader is purely catastrophic Hard SL placed behind Software SL.
       // Take Profit is placed at Dynamic Fractal Range TP on cTrader ticket, and also monitored in fast-path and trailing with Supertrend.
       const brokerSlPrice = orderContext.brokerSlPrice || orderContext.brokerHardSlPrice || null;
       const targetTpPrice = orderContext.tpPrice || orderContext.fibTpPrice || null;
       const payload = {
+        accountId: CTRADER_ACCOUNT_ID,
         symbol: SYMBOL_NAME || SYMBOL,
         side: direction,
         lots: CTRADER_LOT_SIZE,
         slPrice: brokerSlPrice,
         tpPrice: targetTpPrice,
-        slUsd: brokerSlPrice ? null : 10.00,
+        slUsd: brokerSlPrice ? null : 15.00,
         tpUsd: null,
-        comment: `${REPO_LABEL} cTrader`
+        comment: `${REPO_LABEL} [${STRATEGY_MODE}]`
       };
       console.log(`[CTRADER ORDER] Sending ${direction} order: ${CTRADER_LOT_SIZE} lots on ${SYMBOL_NAME || SYMBOL} (Broker Hard SL: ${payload.slPrice || payload.slUsd}, Fractal Range TP: ${payload.tpPrice || 'None'})`);
       let lastError = null;
@@ -918,7 +1082,7 @@ async function executeTrade(direction, orderContext = {}) {
 async function closeContract(contractId) {
   if (EXECUTION_MODE === "ctrader") {
     try {
-      const res = await gatewayFetch("/ctrader/close", "POST", { positionId: Number(contractId) });
+      const res = await gatewayFetch("/ctrader/close", "POST", { positionId: Number(contractId), accountId: CTRADER_ACCOUNT_ID });
       if (res && (res.alreadyClosed || res.positionNotFound || res.ok)) {
         return res;
       }
@@ -943,7 +1107,7 @@ async function getContractProfitFromHistory(contractId, approxOpenEpoch) {
   if (EXECUTION_MODE === "ctrader") {
     try {
       const fromMs = approxOpenEpoch ? (approxOpenEpoch * 1000 - 120000) : (Date.now() - 24 * 60 * 60 * 1000);
-      const res = await gatewayFetch(`/ctrader/deals?positionId=${encodeURIComponent(contractId)}&from=${fromMs}&to=${Date.now()}`);
+      const res = await gatewayFetch(`/ctrader/deals?positionId=${encodeURIComponent(contractId)}&from=${fromMs}&to=${Date.now()}&accountId=${encodeURIComponent(CTRADER_ACCOUNT_ID)}`);
       if (res && res.ok && Array.isArray(res.deals)) {
         // Match only the CLOSING deal (which contains closePositionDetail), never the opening deal
         const match = res.deals.find(d => String(d.positionId) === String(contractId) && d.closePositionDetail);
@@ -1603,10 +1767,62 @@ function checkStochastic8HrLookback(candles, stoch, dir, type = "MIDLINE") {
   return false;
 }
 
+// =========================================================================
+// 🎯 CHECK INITIAL BREAKOUT WITHIN +/- 3 CANDLES OF STOCH 100 CROSS
+// Evaluates whether an M5 close beyond the fractal level occurred within
+// +/- 3 candles of the Stoch 100 Level 50 cross (before, at, or after the cross).
+// =========================================================================
+export function checkInitialBreakoutWithin3Candles(candles, si, waveStartEpoch, dir, targetBreakoutPrice) {
+  if (!candles || si < 1 || !waveStartEpoch || targetBreakoutPrice === null || isNaN(targetBreakoutPrice)) {
+    return { valid: false, expired: false, candlesSinceCross: 0 };
+  }
+
+  const currentEpoch = candles[si].epoch;
+  const candlesSinceCross = Math.floor((currentEpoch - waveStartEpoch) / 300);
+  // Note: No 3-candle forward expiration here! Fresh breakouts while Stoch 8 holds in trend remain valid.
+
+  const cClose = parseFloat(candles[si].close);
+  const prevClose = parseFloat(candles[si - 1].close);
+
+  // Scenario A: Fresh breakout on this current closed candle (candlesSinceCross <= 3)
+  const isFreshBreakThisCandle = dir === "BUY"
+    ? (prevClose <= targetBreakoutPrice && cClose > targetBreakoutPrice)
+    : (prevClose >= targetBreakoutPrice && cClose < targetBreakoutPrice);
+
+  if (isFreshBreakThisCandle) {
+    return { valid: true, expired: false, candlesSinceCross, reason: "FRESH_BREAKOUT_ON_OR_AFTER_CROSS" };
+  }
+
+  // Scenario B: Breakout occurred up to 3 candles BEFORE the Stoch 100 cross (and Stoch 100 just crossed on/around this candle)
+  // Check if Stoch 100 cross is fresh (candlesSinceCross <= 1) and price broke out within [si - 3, si] and is still beyond targetBreakoutPrice
+  if (candlesSinceCross <= 1) {
+    const isPriceBeyondTarget = dir === "BUY" ? (cClose > targetBreakoutPrice) : (cClose < targetBreakoutPrice);
+    if (isPriceBeyondTarget) {
+      for (let lookback = 1; lookback <= 3; lookback++) {
+        const idx = si - lookback;
+        if (idx < 1) break;
+        const bClose = parseFloat(candles[idx].close);
+        const bPrevClose = parseFloat(candles[idx - 1].close);
+        const brokeHere = dir === "BUY"
+          ? (bPrevClose <= targetBreakoutPrice && bClose > targetBreakoutPrice)
+          : (bPrevClose >= targetBreakoutPrice && bClose < targetBreakoutPrice);
+        if (brokeHere) {
+          return { valid: true, expired: false, candlesSinceCross: -lookback, reason: `BREAKOUT_${lookback}_CANDLES_BEFORE_CROSS` };
+        }
+      }
+    }
+  }
+
+  return { valid: false, expired: false, candlesSinceCross };
+}
+
 // Finds the candle epoch when the latest continuous cross/arming occurred
-function findStochasticCrossCandleEpoch(candles, stoch, dir, type = "MIDLINE") {
+function findStochasticCrossCandleEpoch(candles, stoch, dir, type = "MIDLINE", customThreshold = null) {
   if (!candles || candles.length < 2 || !stoch || !stoch.k) return null;
   const lastIdx = candles.length - 2;
+
+  const buyThresh = customThreshold !== null ? customThreshold : (type === "MIDLINE" ? 47.0 : 20.0);
+  const sellThresh = customThreshold !== null ? customThreshold : (type === "MIDLINE" ? 53.0 : 80.0);
 
   // Walk backwards from latest completed candle
   for (let i = lastIdx; i >= 1; i--) {
@@ -1616,11 +1832,11 @@ function findStochasticCrossCandleEpoch(candles, stoch, dir, type = "MIDLINE") {
 
     if (type === "MIDLINE") {
       if (dir === "BUY") {
-        if (k < 50.0) return candles[i + 1] ? candles[i + 1].epoch : null;
-        if (prevK <= 50.0 && k >= 50.0) return candles[i].epoch;
+        if (k < buyThresh) return candles[i + 1] ? candles[i + 1].epoch : null;
+        if (prevK < buyThresh && k >= buyThresh) return candles[i].epoch;
       } else if (dir === "SELL") {
-        if (k > 50.0) return candles[i + 1] ? candles[i + 1].epoch : null;
-        if (prevK >= 50.0 && k <= 50.0) return candles[i].epoch;
+        if (k > sellThresh) return candles[i + 1] ? candles[i + 1].epoch : null;
+        if (prevK > sellThresh && k <= sellThresh) return candles[i].epoch;
       }
     } else if (type === "BOUNDARIES_20_80") {
       if (dir === "BUY") {
@@ -1637,15 +1853,12 @@ function findStochasticCrossCandleEpoch(candles, stoch, dir, type = "MIDLINE") {
 
 const checkStochasticStateArmed = checkStochastic8HrLookback;
 
-function deriveHardStopPrice(entry, direction, lots = CTRADER_LOT_SIZE, softwareSlPrice = null) {
+function deriveHardStopPrice(entry, direction, lots = CTRADER_LOT_SIZE, softwareSlPrice = null, breakoutExtreme = null) {
   const activeLots = (lots && lots > 0) ? lots : CTRADER_LOT_SIZE;
-  const defaultHardLossUsd = 5.00;
-  let hardLossUsd = defaultHardLossUsd;
-  if (softwareSlPrice !== null && !isNaN(softwareSlPrice) && softwareSlPrice > 0) {
-    const softDistUsd = Math.abs(entry - softwareSlPrice) * activeLots;
-    // Software SL takes strict precedence: broker hard stop placed safely behind software SL
-    hardLossUsd = Math.max(defaultHardLossUsd, softDistUsd + 2.00);
-  }
+  // Maximum Hard SL is USD 15.00 for each bot per Trader Directive (Nov 14, 2026)
+  // Provides maximum breathing room so broker hard stop is not prematurely triggered by market noise before TP
+  const hardLossUsd = 15.00;
+
   if (EXECUTION_MODE === "ctrader") {
     const priceMove = hardLossUsd / activeLots;
     return direction === "BUY" ? (entry - priceMove) : (entry + priceMove);
@@ -1933,6 +2146,9 @@ const ALLOWED_STATE_KEYS = new Set([
   "stoch8CrossEpochBuy",
   "stoch100CrossEpochSell",
   "stoch100CrossEpochBuy",
+  "stoch100BuyWaveSkipped",
+  "stoch100SellWaveSkipped",
+  "stoch100Regime",
   "engineVersion", "codeTimestamp", "symbol", "strategyProfile", "currentPrice",
   "lastPriceUpdate", "openTrade", "lastProcessedEpoch", "lastTgUpdateId", "armed", "armedEpoch",
   "armedTime", "confirm", "dailyBiasPrice", "last50Origin", "lastTriggeredSetup",
@@ -2341,23 +2557,31 @@ async function manageOpenTradesFastPath() {
     // Intra-trade daily target ceiling disabled: Trades run unhindered to full Fractal Range TP or Supertrend flip exit
     const dailyTargetCeilingHit = false;
 
-    // 🎯 Dynamic Fractal Range Take Profit Check (Fast-Path Hit):
+    // 🎯 Dynamic Fractal Range & Hard Take Profit Check (Fast-Path Hit):
+    const targetHardTpUsd = (SYMBOL === "1HZ25V") ? 15.00 : (PROFILE.takeProfitUsd || null);
     const activeTpTarget = openTrade.tpPrice || openTrade.fibTpPrice || null;
-    const tpHit = activeTpTarget ? (isBuy ? currentPrice >= activeTpTarget : currentPrice <= activeTpTarget) : false;
+    const tpHitByPrice = activeTpTarget ? (isBuy ? currentPrice >= activeTpTarget : currentPrice <= activeTpTarget) : false;
+    const tpHitByPnl = targetHardTpUsd !== null && pnl >= targetHardTpUsd;
+    const tpHit = tpHitByPrice || tpHitByPnl;
 
-    // 🛡️ Unified Fractal Candle Open/Close Software Stop Loss vs Catastrophic Broker Hard SL:
-    // Software SL (openTrade.sl) is evaluated and executed strictly on confirmed M5 candle CLOSE in runSlowPathScan.
+    // 🛡️ Unified Dual-Confirmed Software Stop Loss vs Catastrophic Broker Hard SL:
+    // Software SL (openTrade.sl + confirming breakout candle extreme) is evaluated and executed strictly on confirmed M5 candle CLOSE.
     // Fast-path pulse checks catastrophic broker hard stop (openTrade.brokerSlPrice) as a safeguard.
+    const bExtreme = isBuy
+      ? (openTrade.breakoutCandleLow || openTrade.entryCandleLow || null)
+      : (openTrade.breakoutCandleHigh || openTrade.entryCandleHigh || null);
     const brokerHardSl = (typeof openTrade.brokerSlPrice === "number" && openTrade.brokerSlPrice > 0)
       ? openTrade.brokerSlPrice
-      : deriveHardStopPrice(openTrade.entry, openTrade.direction, openTrade.lots, openTrade.sl);
+      : deriveHardStopPrice(openTrade.entry, openTrade.direction, openTrade.lots, openTrade.sl, bExtreme);
     const hardStopBreached = isBuy ? currentPrice <= brokerHardSl : currentPrice >= brokerHardSl;
 
     let reason = null;
     if (tpHit) {
-      reason = `Fractal Range Take Profit Hit at ${currentPrice.toFixed(4)} (TP: ${Number(activeTpTarget).toFixed(4)}, PnL: +$${pnl.toFixed(2)})`;
+      reason = tpHitByPnl
+        ? `Hard Take Profit ($${pnl.toFixed(2)} >= $${targetHardTpUsd.toFixed(2)}) Hit at ${currentPrice.toFixed(4)}`
+        : `Fractal Range Take Profit Hit at ${currentPrice.toFixed(4)} (TP: ${Number(activeTpTarget).toFixed(4)}, PnL: +${pnl.toFixed(2)})`;
     } else if (hardStopBreached) {
-      reason = `Emergency Broker Hard SL breached at ${currentPrice.toFixed(4)} (Hard SL: ${brokerHardSl.toFixed(4)}, PnL: -$${Math.abs(pnl).toFixed(2)})`;
+      reason = `Emergency Broker Hard SL breached at ${currentPrice.toFixed(4)} (Hard SL: ${brokerHardSl.toFixed(4)}, PnL: -${Math.abs(pnl).toFixed(2)})`;
     }
     if (!reason) {
       state.openTrade = {
@@ -2737,6 +2961,8 @@ async function checkAndExecuteImmediateReentry(spotPrice) {
     id: `${SYMBOL}-${Date.now()}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry: price, sl, rr: null, entryType: setupLabel, brokerSlAmount: STAKE_USD,
     lots: CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE, is_ctrader: EXECUTION_MODE === "ctrader",
     entryEpoch: nowEpoch, purchaseTimeEpoch: nowEpoch, purchase_time: nowEpoch,
+    breakoutCandleEpoch: (cM5 && cM5.length > 0) ? cM5[cM5.length - 1].epoch : (nowEpoch - (nowEpoch % 300)),
+    entryCandleEpoch: nowEpoch - (nowEpoch % 300),
     entryCandleHigh: (cM5 && cM5.length > 0) ? parseFloat(cM5[cM5.length - 1].high) : price,
     entryCandleLow: (cM5 && cM5.length > 0) ? parseFloat(cM5[cM5.length - 1].low) : price,
     stoch25_touched_extreme: false,
@@ -2843,91 +3069,111 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   try {
     // 1. Gateway Portfolio Sync
     const allPortfolio = await getOpenPortfolio();
-    const allLiveIdSet = new Set((Array.isArray(allPortfolio) ? allPortfolio : []).map(c => String(c.contract_id || c.id || c.contractId)));
-    const liveContracts = (Array.isArray(allPortfolio) ? allPortfolio : []).filter(c => getContractSymbol(c).toUpperCase() === TRADING_SYMBOL.toUpperCase());
-    
-    for (const live of liveContracts) {
-      const liveCid = String(live.contract_id || live.contractId || live.id);
-      const actualLots = (typeof live.lots === "number" && live.lots > 0) ? live.lots : CTRADER_LOT_SIZE;
-      if (!trades.find(t => String(t.contractId) === liveCid)) {
-        const entryPrice = live.buy_price ? parseFloat(live.buy_price) : await fetchCurrentSpotPrice(); 
-        const dir = (live.contract_type === "MULTUP" || (live.shortcode && live.shortcode.startsWith("MULTUP"))) ? "BUY" : "SELL";
-        trades.push({
-          id: `${SYMBOL}-${Date.now()}`, contractId: Number(liveCid) || liveCid, pending: false, repo: REPO_LABEL, symbol: SYMBOL,
-          direction: dir, entry: entryPrice, sl: live.stopLoss || deriveHardStopPrice(entryPrice, dir, actualLots), brokerSlPrice: live.stopLoss || deriveHardStopPrice(entryPrice, dir, actualLots), rr: null, entryType: "RECOVERED_LIVE", brokerSlAmount: STAKE_USD,
-          lots: actualLots, executionMode: EXECUTION_MODE, is_ctrader: EXECUTION_MODE === "ctrader",
-          entryEpoch: live.date_start, fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false,
-          tpPrice: live.takeProfit || null, fibTpPrice: live.takeProfit || null, keyLevel: null,
-          openTime: new Date((live.date_start || Math.floor(Date.now() / 1000)) * 1000).toISOString().replace("T", " ").substring(0, 19), closeTime: null, result: null
-        });
-        await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted unmanaged live contract \`${liveCid}\` (${dir}, ${actualLots} lots).`);
+    if (allPortfolio === null) {
+      dbg(`[PORTFOLIO SYNC] Portfolio query returned null; skipping reconciliation this tick to protect active trade.`);
+    } else {
+      const allLiveIdSet = new Set((Array.isArray(allPortfolio) ? allPortfolio : []).map(c => String(c.contract_id || c.id || c.contractId)));
+      const liveContracts = (Array.isArray(allPortfolio) ? allPortfolio : []).filter(c => getContractSymbol(c).toUpperCase() === TRADING_SYMBOL.toUpperCase());
+      
+      for (const live of liveContracts) {
+        const liveCid = String(live.contract_id || live.contractId || live.id);
+        const actualLots = (typeof live.lots === "number" && live.lots > 0) ? live.lots : CTRADER_LOT_SIZE;
+        if (!trades.find(t => String(t.contractId) === liveCid)) {
+          const entryPrice = live.buy_price ? parseFloat(live.buy_price) : await fetchCurrentSpotPrice(); 
+          const dir = (live.contract_type === "MULTUP" || (live.shortcode && live.shortcode.startsWith("MULTUP"))) ? "BUY" : "SELL";
+          trades.push({
+            id: `${SYMBOL}-${Date.now()}`, contractId: Number(liveCid) || liveCid, pending: false, repo: REPO_LABEL, symbol: SYMBOL,
+            direction: dir, entry: entryPrice, sl: live.stopLoss || deriveHardStopPrice(entryPrice, dir, actualLots), brokerSlPrice: live.stopLoss || deriveHardStopPrice(entryPrice, dir, actualLots), rr: null, entryType: "RECOVERED_LIVE", brokerSlAmount: STAKE_USD,
+            lots: actualLots, executionMode: EXECUTION_MODE, is_ctrader: EXECUTION_MODE === "ctrader",
+            entryEpoch: live.date_start, fractalSl: null, fractalEpoch: null, fractalTimeframe: null, m30FractalUpgraded: false,
+            tpPrice: live.takeProfit || null, fibTpPrice: live.takeProfit || null, keyLevel: null,
+            openTime: new Date((live.date_start || Math.floor(Date.now() / 1000)) * 1000).toISOString().replace("T", " ").substring(0, 19), closeTime: null, result: null
+          });
+          await sendTelegram(`⚠️ *${REPO_LABEL}* — Adopted unmanaged live contract \`${liveCid}\` (${dir}, ${actualLots} lots).`);
+        }
       }
-    }
-    
-    for (const t of trades.filter(t => t.contractId && (!t.result || (EXECUTION_MODE === "ctrader" && t.resultSource !== "ctrader_deal_confirmed")))) {
-      // Strict Check: Only reconcile as closed if contract is absent from the ENTIRE broker portfolio (all symbols)
-      const isStillInBrokerPortfolio = allLiveIdSet.has(String(t.contractId));
-      if (!isStillInBrokerPortfolio && !closingContracts.has(t.contractId)) {
-        const rec = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
-        if (rec && typeof rec.profit === "number") {
-          const hadResult = Boolean(t.result);
-          const oldPnl = typeof t.serverPnl === "number" ? t.serverPnl : (typeof t.profit === "number" ? t.profit : 0);
-          t.result = rec.profit >= 0 ? "WIN" : "LOSS";
-          t.serverPnl = rec.profit;
-          t.profit = rec.profit;
-          t.amount = rec.profit;
-          t.resultSource = "ctrader_deal_confirmed";
-          t.closeTime = new Date(rec.sellTime * 1000).toISOString().replace("T", " ").substring(0, 19);
-          if (!t.exitReason) {
-            if (t.result === "WIN") {
-              if (rec.profit >= 9.0) t.exitReason = "$10.00 Hard Broker TP";
-              else if (rec.profit >= 7.5 && SYMBOL === "R_25") t.exitReason = "$8.00 Hard Broker TP";
-              else if (rec.profit >= 6.5) t.exitReason = "+$7.00 Daily Strike TP";
-              else if (rec.profit >= 4.5 && (SYMBOL === "R_10" || SYMBOL === "R_25")) t.exitReason = "$5.00 Hard Broker TP";
-              else if (rec.profit >= 3.2) t.exitReason = "+$3.50 Software Take Profit";
-              else if (rec.profit >= 5.5 && SYMBOL === "1HZ75V") t.exitReason = "+$6.00 Take Profit Target";
-              else if (rec.profit >= 1.4 && SYMBOL === "1HZ75V" && t.lockedPnlFloor && t.lockedPnlFloor >= 1.50) t.exitReason = "+$1.50 Software SL Floor Lock (Stoch 8 Level 50)";
-              else if (rec.profit >= 2.4 && (SYMBOL === "R_50" || SYMBOL === "R_75")) t.exitReason = "+$2.50 Hard Broker TP";
-              else if (rec.profit >= 1.8) t.exitReason = "+$2.00 Software Take Profit";
-              else if (rec.profit <= 0.45 && t.lockedPnlFloor && t.lockedPnlFloor >= 0.30) t.exitReason = "+$0.30 Software SL Lock (Stoch 15 Lvl 80/20 Touch)";
-              else t.exitReason = "Stoch (15,1,1) Level 50 Profit Exit";
-            } else {
-              if (rec.profit <= -4.8) t.exitReason = "-$5.00 Hard Broker SL";
-              else if (rec.profit <= -3.5) t.exitReason = "-$4.00 Software Stop Loss";
-              else t.exitReason = "-$2.00 Software Stop Loss";
+      
+      const nowSec = Math.floor(Date.now() / 1000);
+      for (const t of trades.filter(t => t.contractId && (!t.result || (EXECUTION_MODE === "ctrader" && t.resultSource !== "ctrader_deal_confirmed" && (nowSec - (t.entryEpoch || nowSec)) < 86400)))) {
+        // Strict Check: Only reconcile as closed if contract is absent from the ENTIRE broker portfolio (all symbols)
+        const isStillInBrokerPortfolio = allLiveIdSet.has(String(t.contractId));
+        if (isStillInBrokerPortfolio) {
+          t.portfolioMissCount = 0;
+        } else if (!closingContracts.has(t.contractId)) {
+          const rec = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
+          if (rec && typeof rec.profit === "number") {
+            const hadResult = Boolean(t.result);
+            const oldPnl = typeof t.serverPnl === "number" ? t.serverPnl : (typeof t.profit === "number" ? t.profit : 0);
+            t.result = rec.profit >= 0 ? "WIN" : "LOSS";
+            t.serverPnl = rec.profit;
+            t.profit = rec.profit;
+            t.amount = rec.profit;
+            t.resultSource = "ctrader_deal_confirmed";
+            t.closeTime = new Date(rec.sellTime * 1000).toISOString().replace("T", " ").substring(0, 19);
+            if (!t.exitReason) {
+              if (t.result === "WIN") {
+                if (rec.profit >= 9.0) t.exitReason = "$10.00 Hard Broker TP";
+                else if (rec.profit >= 7.5 && SYMBOL === "R_25") t.exitReason = "$8.00 Hard Broker TP";
+                else if (rec.profit >= 6.5) t.exitReason = "+$7.00 Daily Strike TP";
+                else if (rec.profit >= 4.5 && (SYMBOL === "R_10" || SYMBOL === "R_25")) t.exitReason = "$5.00 Hard Broker TP";
+                else if (rec.profit >= 3.2) t.exitReason = "+$3.50 Software Take Profit";
+                else if (rec.profit >= 5.5 && SYMBOL === "1HZ75V") t.exitReason = "+$6.00 Take Profit Target";
+                else if (rec.profit >= 1.4 && SYMBOL === "1HZ75V" && t.lockedPnlFloor && t.lockedPnlFloor >= 1.50) t.exitReason = "+$1.50 Software SL Floor Lock (Stoch 8 Level 50)";
+                else if (rec.profit >= 2.4 && (SYMBOL === "R_50" || SYMBOL === "R_75")) t.exitReason = "+$2.50 Hard Broker TP";
+                else if (rec.profit >= 1.8) t.exitReason = "+$2.00 Software Take Profit";
+                else if (rec.profit <= 0.45 && t.lockedPnlFloor && t.lockedPnlFloor >= 0.30) t.exitReason = "+$0.30 Software SL Lock (Stoch 15 Lvl 80/20 Touch)";
+                else t.exitReason = "Stoch (15,1,1) Level 50 Profit Exit";
+              } else {
+                if (rec.profit <= -4.8) t.exitReason = "-$5.00 Hard Broker SL";
+                else if (rec.profit <= -3.5) t.exitReason = "-$4.00 Software Stop Loss";
+                else t.exitReason = "-$2.00 Software Stop Loss";
+              }
+              t.reason = t.exitReason;
             }
+            if (state.openTrade && String(state.openTrade.contractId) === String(t.contractId)) {
+              state.openTrade = null;
+              onTradeClosedCleanup(rec.sellTime || Math.floor(Date.now() / 1000));
+            }
+            const diff = hadResult ? (rec.profit - oldPnl) : rec.profit;
+            state.dailyNetPnl = Number(((state.dailyNetPnl || 0) + diff).toFixed(2));
+            saveState();
+            saveTrades(trades);
+            if (DAILY_TARGET_LOCK_ENABLED && state.dailyNetPnl >= DAILY_PROFIT_TARGET_USD) {
+              state.dailyTargetReached = true;
+              state.dailyTargetDate = todayStr;
+            }
+            if (!hadResult && !isExitAlreadyReported(t.contractId)) {
+              const pnlLabel = rec.profit >= 0 ? `+${rec.profit.toFixed(2)}` : `-${Math.abs(rec.profit).toFixed(2)}`;
+              await sendTelegram(
+                `${t.result === "WIN" ? "✅" : "❌"} *[EXIT - BROKER CONFIRMED] ${SYMBOL_NAME} — ${REPO_LABEL}*\n\n` +
+                `• Direction: *${t.direction === "BUY" ? "🟢 BUY" : "🔴 SELL"}*\n` +
+                `• Final P&L: *${pnlLabel}* (Net of comm.)\n` +
+                `• Daily Net Total: *${state.dailyNetPnl.toFixed(2)}*\n` +
+                `• Contract: \`${t.contractId}\``,
+                { contractId: t.contractId }
+              );
+            }
+          } else if (!t.result) {
+            // Guard against transient broker API snapshot dropouts: require 3 consecutive misses before marking CLOSED_EXTERNAL
+            t.portfolioMissCount = (t.portfolioMissCount || 0) + 1;
+            if (t.portfolioMissCount < 3) {
+              console.warn(`[PORTFOLIO SYNC] Contract ${t.contractId} not in open portfolio snapshot, but no deal in history (miss ${t.portfolioMissCount}/3). Preserving active trade protection.`);
+              continue;
+            }
+            t.result = "CLOSED_EXTERNAL";
+            t.serverPnl = 0;
+            t.resultSource = "server_portfolio_reconciled";
+            const eSec = t.entryEpoch ? (t.entryEpoch < 1e11 ? t.entryEpoch : Math.floor(t.entryEpoch / 1000)) : nowSec;
+            const inferredCloseSec = (nowSec - eSec > 7200) ? (eSec + 1800) : nowSec;
+            t.closeTime = new Date(inferredCloseSec * 1000).toISOString().replace("T", " ").substring(0, 19);
+            t.exitReason = "Reconciled External Broker Close";
             t.reason = t.exitReason;
+            if (state.openTrade && String(state.openTrade.contractId) === String(t.contractId)) {
+              state.openTrade = null;
+              onTradeClosedCleanup(inferredCloseSec);
+            }
+            console.log(`[PORTFOLIO SYNC] Contract ${t.contractId} confirmed gone after ${t.portfolioMissCount} cycles. Reconciled as CLOSED_EXTERNAL to unblock bot.`);
           }
-          state.openTrade = null;
-          onTradeClosedCleanup(rec.sellTime || Math.floor(Date.now() / 1000));
-          const diff = hadResult ? (rec.profit - oldPnl) : rec.profit;
-          state.dailyNetPnl = Number(((state.dailyNetPnl || 0) + diff).toFixed(2));
-          saveState();
-          saveTrades(trades);
-          if (DAILY_TARGET_LOCK_ENABLED && state.dailyNetPnl >= DAILY_PROFIT_TARGET_USD) {
-            state.dailyTargetReached = true;
-            state.dailyTargetDate = todayStr;
-          }
-          if (!hadResult && !isExitAlreadyReported(t.contractId)) {
-            const pnlLabel = rec.profit >= 0 ? `+${rec.profit.toFixed(2)}` : `-${Math.abs(rec.profit).toFixed(2)}`;
-            await sendTelegram(
-              `${t.result === "WIN" ? "✅" : "❌"} *[EXIT - BROKER CONFIRMED] ${SYMBOL_NAME} — ${REPO_LABEL}*\n\n` +
-              `• Direction: *${t.direction === "BUY" ? "🟢 BUY" : "🔴 SELL"}*\n` +
-              `• Final P&L: *${pnlLabel}* (Net of comm.)\n` +
-              `• Daily Net Total: *${state.dailyNetPnl.toFixed(2)}*\n` +
-              `• Contract: \`${t.contractId}\``,
-              { contractId: t.contractId }
-            );
-          }
-        } else {
-          // Fallback: Contract is confirmed closed on broker (absent from entire broker portfolio). Reconcile to unblock execution gate.
-          t.result = "CLOSED_EXTERNAL";
-          t.serverPnl = 0;
-          t.resultSource = "server_portfolio_reconciled";
-          t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
-          state.openTrade = null;
-          onTradeClosedCleanup(Math.floor(Date.now() / 1000));
-          console.log(`[PORTFOLIO SYNC] Contract ${t.contractId} no longer in portfolio. Reconciled as CLOSED_EXTERNAL to unblock bot.`);
         }
       }
     }
@@ -3196,6 +3442,11 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const cLow = parseFloat(candles[si].low);
     const cHigh = parseFloat(candles[si].high);
 
+    // 🛡️ Supertrend (21, 1, 0) Direction Against Active Trade (Opposite Flip Validator):
+    // For BUY: Supertrend flipped BEARISH (curSt.trend === -1)
+    // For SELL: Supertrend flipped BULLISH (curSt.trend === 1)
+    const isSupertrendOppositeFlip = isBuy ? (curSt && curSt.trend === -1) : (curSt && curSt.trend === 1);
+
     // If trade opened intrabar during this M5 candle, finalize its full entry candle High/Low & SL at candle close
     if (t.openedIntrabar && t.entryM5Bucket === candles[si].epoch) {
       t.entryCandleLow = cLow;
@@ -3213,6 +3464,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     // 🛡️ CALIBRATED PER-PROFILE STOP LOSS INVALIDATION (MAIN SL):
     // - When SL_EXECUTION_TYPE === "CLOSE": Liquidate if confirmed closed M5 candle closes beyond t.sl
     // - When SL_EXECUTION_TYPE === "TOUCH": Also check if M5 candle Low/High or Close breached t.sl
+    // User Directive: Dual-Confirmed SL executes directly on confirmed M5 close without requiring Supertrend validation.
     // =========================================================================
     if (isPostEntry) {
       const activeSl = (typeof t.sl === "number" && t.sl > 0)
@@ -3223,7 +3475,17 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       let invalidationDetail = "";
 
       if (activeSl !== undefined && activeSl !== null) {
-        if (SL_EXECUTION_TYPE === "TOUCH") {
+        if (STRATEGY_MODE === "experimental_sweep") {
+          // User Directive: Software SL uses lowest/highest point of entry candle or candle before entry candle.
+          // Evaluated strictly on confirmed M5 Close:
+          if (isBuy && cClose <= activeSl) {
+            invalidationExit = true;
+            invalidationDetail = `Candle-Extreme Software SL (M5 Close): M5 close ${cClose.toFixed(4)} broke below SL (${parseFloat(activeSl).toFixed(4)})`;
+          } else if (!isBuy && cClose >= activeSl) {
+            invalidationExit = true;
+            invalidationDetail = `Candle-Extreme Software SL (M5 Close): M5 close ${cClose.toFixed(4)} broke above SL (${parseFloat(activeSl).toFixed(4)})`;
+          }
+        } else if (SL_EXECUTION_TYPE === "TOUCH") {
           if (isBuy && (cLow <= activeSl || cClose <= activeSl)) {
             invalidationExit = true;
             invalidationDetail = `${SL_REFERENCE_TYPE} Stop Loss (TOUCH): M5 candle breached SL (${ parseFloat(activeSl).toFixed(4) }, Low=${cLow.toFixed(4)})`;
@@ -3232,12 +3494,23 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             invalidationDetail = `${SL_REFERENCE_TYPE} Stop Loss (TOUCH): M5 candle breached SL (${ parseFloat(activeSl).toFixed(4) }, High=${cHigh.toFixed(4)})`;
           }
         } else {
-          if (isBuy && cClose <= activeSl) {
+          // Standard Unified Rule for all bots (all candle types):
+          // In addition to breaking the Fractal Candle SL anchor, the price must also close beyond the confirming Breakout Candle extreme:
+          // BUY: M5 Close <= activeSl AND M5 Close < breakoutCandleLow
+          // SELL: M5 Close >= activeSl AND M5 Close > breakoutCandleHigh
+          const bLow = (typeof t.breakoutCandleLow === "number" && t.breakoutCandleLow > 0)
+            ? t.breakoutCandleLow
+            : (typeof t.entryCandleLow === "number" ? t.entryCandleLow : activeSl);
+          const bHigh = (typeof t.breakoutCandleHigh === "number" && t.breakoutCandleHigh > 0)
+            ? t.breakoutCandleHigh
+            : (typeof t.entryCandleHigh === "number" ? t.entryCandleHigh : activeSl);
+
+          if (isBuy && cClose <= activeSl && cClose < bLow) {
             invalidationExit = true;
-            invalidationDetail = `Fractal Candle Open/Close Software SL (M5 Close): M5 candle closed at ${cClose.toFixed(4)} below SL (${parseFloat(activeSl).toFixed(4)})`;
-          } else if (!isBuy && cClose >= activeSl) {
+            invalidationDetail = `Dual-Confirmed Software SL (M5 Close): M5 close ${cClose.toFixed(4)} broke below Fractal SL (${parseFloat(activeSl).toFixed(4)}) and Breakout Low (${bLow.toFixed(4)})`;
+          } else if (!isBuy && cClose >= activeSl && cClose > bHigh) {
             invalidationExit = true;
-            invalidationDetail = `Fractal Candle Open/Close Software SL (M5 Close): M5 candle closed at ${cClose.toFixed(4)} above SL (${parseFloat(activeSl).toFixed(4)})`;
+            invalidationDetail = `Dual-Confirmed Software SL (M5 Close): M5 close ${cClose.toFixed(4)} broke above Fractal SL (${parseFloat(activeSl).toFixed(4)}) and Breakout High (${bHigh.toFixed(4)})`;
           }
         }
       }
@@ -3286,6 +3559,90 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         closingContracts.delete(t.contractId);
         continue;
       }
+    }
+
+    // =========================================================================
+    // 🛡️ OPPOSITE M5 FRACTAL ON BREAKOUT OR ENTRY CANDLE EARLY EXIT (CAPITAL SAVER)
+    // User Directive (Fleetwide): If an opposite M5 fractal draws on:
+    //   1. The Breakout confirmation candle (t.breakoutCandleEpoch), OR
+    //   2. The Entry candle on which the trade was placed (t.entryCandleEpoch)
+    // AND the trade is currently in loss (currentPnl < 0):
+    // 🛡️ USER DIRECTIVE: MUST BE VALIDATED BY SUPERTREND OPPOSITE FLIP!
+    // Even if an opposite fractal draws, keep the trade active until Supertrend flips opposite!
+    // - For BUY trade: Opposite fractal is an UP (Top/Peak) Fractal
+    // - For SELL trade: Opposite fractal is a DOWN (Bottom/Valley) Fractal
+    // =========================================================================
+    let oppositeFractalExit = false;
+    let oppositeFractalDetail = "";
+
+    if (isPostEntry && currentPnl < 0) {
+      const targetOppositeType = isBuy ? "UP" : "DOWN";
+      const bEpoch = t.breakoutCandleEpoch || (t.entryEpoch ? (t.entryEpoch < 1e11 ? t.entryEpoch : Math.floor(t.entryEpoch / 1000)) - 300 : null);
+      const eEpoch = t.entryCandleEpoch || (t.entryEpoch ? (t.entryEpoch < 1e11 ? t.entryEpoch : Math.floor(t.entryEpoch / 1000)) : null);
+
+      const hasOppositeOnBreakout = bEpoch ? hasConfirmedM5FractalAtEpoch(candles, si, bEpoch, targetOppositeType) : false;
+      const hasOppositeOnEntry = eEpoch ? hasConfirmedM5FractalAtEpoch(candles, si, eEpoch, targetOppositeType) : false;
+
+      if (hasOppositeOnBreakout || hasOppositeOnEntry) {
+        const candleLabel = hasOppositeOnBreakout ? "Breakout Candle" : "Entry Candle";
+        const detail = `Opposite M5 ${targetOppositeType} (Top/Peak) Fractal confirmed on ${candleLabel} while in loss (PnL: -$${Math.abs(currentPnl).toFixed(2)})`;
+        
+        if (isSupertrendOppositeFlip) {
+          oppositeFractalExit = true;
+          oppositeFractalDetail = `${detail} [Validated by Supertrend (21, 1) ${isBuy ? 'BEARISH' : 'BULLISH'} Flip]`;
+        } else {
+          t.oppositeFractalConditionMet = true;
+          t.oppositeFractalPendingDetail = detail;
+          saveTrades(trades);
+          console.log(`[OPPOSITE FRACTAL GATED BY SUPERTREND ${SYMBOL}] Active ${t.direction} #${t.contractId}: ${detail}, but Supertrend (21, 1) has NOT flipped opposite (Trend: ${curSt ? (curSt.trend === 1 ? 'BULLISH' : 'BEARISH') : 'N/A'}). Keeping trade active until Supertrend flips opposite.`);
+        }
+      }
+    }
+
+    if (oppositeFractalExit) {
+      closingContracts.add(t.contractId);
+      console.log(`[OPPOSITE FRACTAL EXIT ${SYMBOL}] Active ${t.direction} #${t.contractId}: ${oppositeFractalDetail}. Current PnL: -$${Math.abs(currentPnl).toFixed(2)}. Liquidating immediately.`);
+      t.exitReason = oppositeFractalDetail;
+      try {
+        const closeRes = await closeContract(t.contractId);
+        if (closeRes && closeRes.error && closeRes.error.code !== "ContractNotFound") {
+          console.error(`[OPPOSITE FRACTAL EXIT ERROR ${SYMBOL}] Broker close failed for ${t.contractId}: ${closeRes.error.message || JSON.stringify(closeRes.error)}`);
+          closingContracts.delete(t.contractId);
+          continue;
+        }
+        const settled = await getContractProfitFromHistory(t.contractId, t.entryEpoch);
+        t.serverPnl = (closeRes && closeRes.sell?.profit) ?? (settled !== null ? settled.profit : parseFloat(currentPnl.toFixed(2)));
+        t.resultSource = (closeRes && closeRes.sell?.profit !== undefined) ? "server_close_confirmed" : (settled !== null ? "deriv_settled_official" : "estimated_fallback");
+        t.result = t.serverPnl >= 0 ? "WIN" : "LOSS";
+        t.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+        state.dailyNetPnl = (state.dailyNetPnl || 0) + t.serverPnl;
+        if (DAILY_TARGET_LOCK_ENABLED && state.dailyNetPnl >= DAILY_PROFIT_TARGET_USD) {
+          state.dailyTargetReached = true;
+          state.dailyTargetDate = todayStr;
+        }
+        state.openTrade = null;
+        state.activeReentryOpportunity = null;
+        onTradeClosedCleanup(candles[si].epoch);
+        saveTrades(trades);
+        saveState();
+
+        const icon = "🛑";
+        const pnlStr = t.serverPnl >= 0 ? "+" + t.serverPnl.toFixed(2) : "-" + Math.abs(t.serverPnl).toFixed(2);
+        await sendTelegram(
+          icon + " *[OPPOSITE FRACTAL EARLY EXIT] " + SYMBOL_NAME + " — " + REPO_LABEL + "*\n\n" +
+          "• Direction: *" + (t.direction === "BUY" ? "🟢 BUY" : "🔴 SELL") + "*\n" +
+          "• Exit Trigger: *" + oppositeFractalDetail + "*\n" +
+          "• Net P&L: *" + pnlStr + "*\n" +
+          "• Daily Net Total: *" + state.dailyNetPnl.toFixed(2) + "*\n" +
+          "• Contract: `" + t.contractId + "`"
+        );
+      } catch (e) {
+        console.error(`[OPPOSITE FRACTAL EXIT EXCEPTION ${SYMBOL}] Exception closing ${t.contractId}:`, e.message);
+        closingContracts.delete(t.contractId);
+        continue;
+      }
+      closingContracts.delete(t.contractId);
+      continue;
     }
 
     // =========================================================================
@@ -3380,11 +3737,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     // immediately when Supertrend changes direction against the trade!
     // - For BUY: Flipped to Bearish (trend === -1)
     // - For SELL: Flipped to Bullish (trend === 1)
+    // Note: Standalone early loss exit removed per Trader Directive. Supertrend flip
+    // strictly manages profit preservation when currentPnl > 0.
     // =========================================================================
     let supertrendExit = false;
     let supertrendExitDetail = "";
 
-    if (isPostEntry && currentPnl > 0 && curSt) {
+    if (isPostEntry && curSt && currentPnl > 0) {
       if (isBuy && curSt.trend === -1) {
         supertrendExit = true;
         supertrendExitDetail = `Supertrend (21, 1) Direction Flip to BEARISH: M5 candle closed at ${cClose.toFixed(4)} (below Lower Band ${curSt.lowerBand ? curSt.lowerBand.toFixed(4) : "N/A"}) while in profit (+$${currentPnl.toFixed(2)})`;
@@ -3396,7 +3755,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     if (supertrendExit) {
       closingContracts.add(t.contractId);
-      console.log(`[SUPERTREND PROFIT EXIT ${SYMBOL}] Active ${t.direction} #${t.contractId}: ${supertrendExitDetail}. Current PnL: +$${currentPnl.toFixed(2)}. Liquidating immediately to lock in profit.`);
+      console.log(`[SUPERTREND EXIT ${SYMBOL}] Active ${t.direction} #${t.contractId}: ${supertrendExitDetail}. Current PnL: ${currentPnl >= 0 ? "+$" : "-$"}${Math.abs(currentPnl).toFixed(2)}. Liquidating immediately.`);
       t.exitReason = supertrendExitDetail;
       try {
         const closeRes = await closeContract(t.contractId);
@@ -3684,15 +4043,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const cHigh = parseFloat(candles[si].high);
   const cLow = parseFloat(candles[si].low);
   const prevClose = si > 0 ? parseFloat(candles[si - 1].close) : cOpen;
+  const prevLow = si > 0 ? parseFloat(candles[si - 1].low) : cLow;
+  const prevHigh = si > 0 ? parseFloat(candles[si - 1].high) : cHigh;
 
-  // Compute intrabar High/Low touch for M5 Stoch (8, 1, 1 Simple) on closed candle `si`
-  const sl8 = candles.slice(Math.max(0, si - 7), si + 1);
-  const hh8 = Math.max(...sl8.map(c => parseFloat(c.high)));
-  const ll8 = Math.min(...sl8.map(c => parseFloat(c.low)));
-  const highK8 = hh8 === ll8 ? 100 : ((cHigh - ll8) / (hh8 - ll8)) * 100;
-  const lowK8 = hh8 === ll8 ? 0 : ((cLow - ll8) / (hh8 - ll8)) * 100;
-  const stoch8TouchedOrClosed10 = (sK8 !== null && sK8 <= 10.0) || lowK8 <= 10.0;
-  const stoch8TouchedOrClosed90 = (sK8 !== null && sK8 >= 90.0) || highK8 >= 90.0;
+  // M5 Stoch (8, 1, 1 Simple) strictly on confirmed closed candle
+  const stoch8TouchedOrClosed10 = (sK8 !== null && sK8 <= 10.0);
+  const stoch8TouchedOrClosed90 = (sK8 !== null && sK8 >= 90.0);
 
   // Active trades by direction (enabling Position Flipping on opposite signal)
   const hasActiveBuy = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "BUY");
@@ -3704,14 +4060,36 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   let triggeredFractalForSl = null;
 
   // Gate 1: Macro Trend Gate — Closed M5 Stoch (100, 1, 1 Simple)
-  const stoch100AlignedBuy = sK100 !== null && sK100 > 50.0;
-  const stoch100AlignedSell = sK100 !== null && sK100 < 50.0;
-  const stoch100CrossUp50 = prevK100 !== null && sK100 !== null && prevK100 <= 50.0 && sK100 > 50.0;
-  const stoch100CrossDown50 = prevK100 !== null && sK100 !== null && prevK100 >= 50.0 && sK100 < 50.0;
+  // Per User Directive: Level 47 for BUY (sK100 >= 47.0), Level 53 for SELL (sK100 <= 53.0)
+  const STOCH100_BUY_THRESHOLD = 47.0;
+  const STOCH100_SELL_THRESHOLD = 53.0;
+
+  const stoch100CrossUp50 = prevK100 !== null && sK100 !== null && prevK100 < STOCH100_BUY_THRESHOLD && sK100 >= STOCH100_BUY_THRESHOLD;
+  const stoch100CrossDown50 = prevK100 !== null && sK100 !== null && prevK100 > STOCH100_SELL_THRESHOLD && sK100 <= STOCH100_SELL_THRESHOLD;
+
+  let stoch100Regime = state.stoch100Regime || null;
+  if (stoch100CrossUp50) {
+    stoch100Regime = 'BUY';
+  } else if (stoch100CrossDown50) {
+    stoch100Regime = 'SELL';
+  } else if (sK100 !== null && sK100 > STOCH100_SELL_THRESHOLD) {
+    stoch100Regime = 'BUY';
+  } else if (sK100 !== null && sK100 < STOCH100_BUY_THRESHOLD) {
+    stoch100Regime = 'SELL';
+  } else if (!stoch100Regime && sK100 !== null) {
+    const lastCrossBuyEpoch = findStochasticCrossCandleEpoch(candles, stoch100, "BUY", "MIDLINE", STOCH100_BUY_THRESHOLD) || 0;
+    const lastCrossSellEpoch = findStochasticCrossCandleEpoch(candles, stoch100, "SELL", "MIDLINE", STOCH100_SELL_THRESHOLD) || 0;
+    stoch100Regime = lastCrossBuyEpoch >= lastCrossSellEpoch ? 'BUY' : 'SELL';
+  }
+  state.stoch100Regime = stoch100Regime;
+
+  const stoch100AlignedBuy = sK100 !== null && stoch100Regime === 'BUY' && sK100 >= STOCH100_BUY_THRESHOLD;
+  const stoch100AlignedSell = sK100 !== null && stoch100Regime === 'SELL' && sK100 <= STOCH100_SELL_THRESHOLD;
 
   // Track Stoch 100 cross epoch and handle direction flips / invalidation
   if (stoch100CrossUp50) {
     state.stoch100CrossEpochBuy = m5BoundaryEpoch;
+    state.stoch100BuyWaveSkipped = null;
     state.initialBuyArmed = true;
     state.initialBuyDone = false;
     state.stoch8_pulled_back_10 = false;
@@ -3721,11 +4099,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.stoch8_pulled_back_90 = false;
     state.stoch8_crossed_50_in_trend_SELL = false;
     state.stoch100CrossEpochSell = null;
+    state.stoch100SellWaveSkipped = null;
     state.armedTouchSetup = null;
-    console.log(`[${REPO_LABEL}] 🎯 Macro Trend Transition: Stoch (100,1,1) crossed UP > 50.0. SELL setups invalidated; Initial BUY Armed (watching for M5 close > High Fractal).`);
+    console.log(`[${REPO_LABEL}] 🎯 Macro Trend Transition: Stoch (100,1,1) crossed UP >= 47.0. SELL setups invalidated; Initial BUY Armed (watching for M5 close > High Fractal).`);
   }
   if (stoch100CrossDown50) {
     state.stoch100CrossEpochSell = m5BoundaryEpoch;
+    state.stoch100SellWaveSkipped = null;
     state.initialSellArmed = true;
     state.initialSellDone = false;
     state.stoch8_pulled_back_90 = false;
@@ -3735,8 +4115,9 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.stoch8_pulled_back_10 = false;
     state.stoch8_crossed_50_in_trend_BUY = false;
     state.stoch100CrossEpochBuy = null;
+    state.stoch100BuyWaveSkipped = null;
     state.armedTouchSetup = null;
-    console.log(`[${REPO_LABEL}] 🎯 Macro Trend Transition: Stoch (100,1,1) crossed DOWN < 50.0. BUY setups invalidated; Initial SELL Armed (watching for M5 close < Low Fractal).`);
+    console.log(`[${REPO_LABEL}] 🎯 Macro Trend Transition: Stoch (100,1,1) crossed DOWN <= 53.0. BUY setups invalidated; Initial SELL Armed (watching for M5 close < Low Fractal).`);
   }
 
   // If Macro Trend not aligned, invalidate armed setups
@@ -3757,15 +4138,19 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.armedTouchSetup = null;
   }
 
-  // Verify whether Initial Trade has actually been taken in the current Stoch 100 wave
+  // Verify whether Initial Trade has actually been taken or skipped in the current Stoch 100 wave
+  let waveStartBuy = null;
   if (stoch100AlignedBuy) {
-    const waveStartBuy = findStochasticCrossCandleEpoch(candles, stoch100, "BUY", "MIDLINE") || state.stoch100CrossEpochBuy || m5BoundaryEpoch;
+    waveStartBuy = findStochasticCrossCandleEpoch(candles, stoch100, "BUY", "MIDLINE") || state.stoch100CrossEpochBuy || m5BoundaryEpoch;
     state.stoch100CrossEpochBuy = waveStartBuy;
     const tradeTakenInBuyWave = trades.some(t =>
       t.direction === "BUY" &&
       ((t.entryEpoch && t.entryEpoch >= waveStartBuy) || (t.entryM5Bucket && t.entryM5Bucket >= waveStartBuy))
     );
-    if (tradeTakenInBuyWave) {
+    const reEntryKickedInBuy = Boolean(state.stoch8_pulled_back_10 || (sK8 !== null && sK8 < 50.0));
+    const waveSkippedBuy = state.stoch100BuyWaveSkipped === waveStartBuy && reEntryKickedInBuy;
+    const waveAlreadyDoneBuy = Boolean(state.initialBuyDone && state.stoch100CrossEpochBuy === waveStartBuy && reEntryKickedInBuy);
+    if (tradeTakenInBuyWave || waveSkippedBuy || waveAlreadyDoneBuy) {
       state.initialBuyDone = true;
       state.initialBuyArmed = false;
     } else {
@@ -3773,14 +4158,19 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.initialBuyArmed = true;
     }
   }
+
+  let waveStartSell = null;
   if (stoch100AlignedSell) {
-    const waveStartSell = findStochasticCrossCandleEpoch(candles, stoch100, "SELL", "MIDLINE") || state.stoch100CrossEpochSell || m5BoundaryEpoch;
+    waveStartSell = findStochasticCrossCandleEpoch(candles, stoch100, "SELL", "MIDLINE") || state.stoch100CrossEpochSell || m5BoundaryEpoch;
     state.stoch100CrossEpochSell = waveStartSell;
     const tradeTakenInSellWave = trades.some(t =>
       t.direction === "SELL" &&
       ((t.entryEpoch && t.entryEpoch >= waveStartSell) || (t.entryM5Bucket && t.entryM5Bucket >= waveStartSell))
     );
-    if (tradeTakenInSellWave) {
+    const reEntryKickedInSell = Boolean(state.stoch8_pulled_back_90 || (sK8 !== null && sK8 > 50.0));
+    const waveSkippedSell = state.stoch100SellWaveSkipped === waveStartSell && reEntryKickedInSell;
+    const waveAlreadyDoneSell = Boolean(state.initialSellDone && state.stoch100CrossEpochSell === waveStartSell && reEntryKickedInSell);
+    if (tradeTakenInSellWave || waveSkippedSell || waveAlreadyDoneSell) {
       state.initialSellDone = true;
       state.initialSellArmed = false;
     } else {
@@ -3789,37 +4179,192 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
   }
 
-  // --- 1B. INITIAL BUY SETUP MONITORING (M5 CLOSE > HIGH FRACTAL HIGH) ---
-  if (!indicatorsSatisfied && state.initialBuyArmed && stoch100AlignedBuy && recentHighFractal) {
-    const targetBreakout = recentHighFractal.high;
-    if (targetBreakout !== null && cClose > targetBreakout && !hasActiveBuy) {
-      indicatorsSatisfied = true;
-      signalDirection = "BUY";
-      setupLabel = `${SYMBOL}_INITIAL_FRACTAL_HIGH_BREAK (BUY)`;
-      triggeredFractalForSl = recentHighFractal;
-      state.initialBuyArmed = false;
-      state.initialBuyDone = true;
-      state.stoch8_pulled_back_10 = false;
-      state.stoch8_crossed_50_in_trend_BUY = false;
-      state.lastUsedFractalEpochBuy = recentHighFractal.epoch;
-      console.log(`[${REPO_LABEL}] 🚀 Initial BUY Triggered: M5 close (${cClose.toFixed(4)}) > High Fractal High (${targetBreakout.toFixed(4)}).`);
+
+  // Experimental Sweep Target Derivation (if enabled via STRATEGY_MODE=experimental_sweep)
+  const isExpSweep = STRATEGY_MODE === "experimental_sweep";
+  let buySweepTarget = null;
+  let buySweepFractal = null;
+  let sellSweepTarget = null;
+  let sellSweepFractal = null;
+
+  if (isExpSweep) {
+    // User Directive:
+    // "the lowest point of the most recent up or down fractal. that means the m5 price below it then broke and closed above it. opposite applies to sell logic."
+    // Determine the most recent fractal (whether UP fractal or DOWN fractal)
+    let mostRecentFractal = null;
+    if (recentHighFractal && recentLowFractal) {
+      mostRecentFractal = (recentHighFractal.epoch >= recentLowFractal.epoch) ? recentHighFractal : recentLowFractal;
+    } else {
+      mostRecentFractal = recentHighFractal || recentLowFractal;
+    }
+
+    if (mostRecentFractal) {
+      // For BUY: Lowest point (.low) of the most recent up or down fractal
+      buySweepFractal = mostRecentFractal;
+      buySweepTarget = parseFloat(mostRecentFractal.low);
+
+      // For SELL: Highest point (.high) of the most recent up or down fractal
+      sellSweepFractal = mostRecentFractal;
+      sellSweepTarget = parseFloat(mostRecentFractal.high);
     }
   }
 
-  // --- 1A. INITIAL SELL SETUP MONITORING (M5 CLOSE < LOW FRACTAL LOW) ---
-  if (!indicatorsSatisfied && state.initialSellArmed && stoch100AlignedSell && recentLowFractal) {
-    const targetBreakout = recentLowFractal.low;
-    if (targetBreakout !== null && cClose < targetBreakout && !hasActiveSell) {
-      indicatorsSatisfied = true;
-      signalDirection = "SELL";
-      setupLabel = `${SYMBOL}_INITIAL_FRACTAL_LOW_BREAK (SELL)`;
-      triggeredFractalForSl = recentLowFractal;
+  // --- 1B. INITIAL BUY SETUP MONITORING (3-CANDLE LOOKBACK & FRESH BREAKOUT GATING) ---
+  // User Directive:
+  // 1. If fractal break happened <= 3 candles ago before/at Stoch 100 cross -> trigger trade!
+  //    If it happened > 3 candles ago -> skip that trade!
+  // 2. If fractal break has not yet happened at Stoch 100 cross -> wait for fresh fractal break,
+  //    as long as condition for Re-entry has not kicked in (Stoch 8 <= 10).
+  if (!indicatorsSatisfied && state.initialBuyArmed && stoch100AlignedBuy && (isExpSweep ? buySweepFractal : recentHighFractal)) {
+    const targetBreakout = isExpSweep ? buySweepTarget : recentHighFractal.high;
+    const refFractal = isExpSweep ? buySweepFractal : recentHighFractal;
+
+    // Check if Re-Entry condition kicked in before initial breakout occurred
+    if (stoch8TouchedOrClosed10) {
+      state.initialBuyArmed = false;
+      state.initialBuyDone = true;
+      state.stoch100BuyWaveSkipped = waveStartBuy;
+      state.stoch8_pulled_back_10 = true;
+      console.log(`[${REPO_LABEL}] ⏳ Initial BUY window expired: Stoch (8,1,1) pulled back to <= 10.0 before initial fractal break. Transitioning to Re-Entry mode.`);
+    } else if (isExpSweep) {
+      // Experimental Sweep Initial Entry
+      if (stoch8TouchedOrClosed90) {
+        state.initialBuyArmed = false;
+        state.initialBuyDone = true;
+        state.stoch100BuyWaveSkipped = waveStartBuy;
+        console.log(`[${REPO_LABEL}] ⏳ Initial BUY window expired: Stoch 8 >= 90.0 (overbought ceiling). Transitioning to Re-Entry mode.`);
+      } else {
+        const crossIdx = candles.findIndex(c => c.epoch === waveStartBuy);
+        const candlesSinceCross = crossIdx >= 0 ? (si - crossIdx) : 999;
+        if (candlesSinceCross > 3) {
+          state.initialBuyArmed = false;
+          state.initialBuyDone = true;
+          state.stoch100BuyWaveSkipped = waveStartBuy;
+          console.log(`[${REPO_LABEL}] 🚫 Initial BUY Skipped: ${candlesSinceCross} candles since Stoch 100 cross (> 3). Setup stale; awaiting Re-Entry.`);
+        } else {
+          // Fresh M5 close ABOVE targetBreakout (the lowest point of the fractal)
+          const wasBelow = prevClose <= targetBreakout || prevLow < targetBreakout || cLow < targetBreakout;
+          const isBroken = cClose > targetBreakout && wasBelow;
+          const isFreshFractalOrBreak = refFractal.epoch !== state.lastUsedFractalEpochBuy || prevClose <= targetBreakout;
+          if (isBroken && isFreshFractalOrBreak && !hasActiveBuy) {
+            indicatorsSatisfied = true;
+            signalDirection = "BUY";
+            setupLabel = `${SYMBOL}_SWEEP_LOW_RECLAIM (BUY)`;
+            triggeredFractalForSl = refFractal;
+            state.initialBuyArmed = false;
+            state.initialBuyDone = true;
+            state.stoch8_pulled_back_10 = false;
+            state.stoch8_crossed_50_in_trend_BUY = false;
+            state.lastUsedFractalEpochBuy = refFractal.epoch;
+            console.log(`[${REPO_LABEL}] 🚀 Initial BUY Triggered: Fresh M5 close (${cClose.toFixed(4)}) > Recent Fractal Low (${targetBreakout.toFixed(4)}) [${candlesSinceCross} candle(s) since cross <= 3].`);
+          } else {
+            dbg(`[${REPO_LABEL}] Initial BUY Armed: Awaiting fresh M5 close > Recent Fractal Low (${targetBreakout.toFixed(4)}), Re-entry condition not yet kicked in.`);
+          }
+        }
+      }
+    } else {
+      // Baseline Initial BUY: Enforce +/- 3 candles relative to Stoch 100 cross
+      // Initial BUY expires ONLY when Stoch 8 pulls back to <= 10.0 (transitioning to Re-Entry) or drops below 50.0
+      if (stoch8TouchedOrClosed10 || (sK8 !== null && sK8 < 50.0)) {
+        state.initialBuyArmed = false;
+        state.initialBuyDone = true;
+        state.stoch100BuyWaveSkipped = waveStartBuy;
+        state.stoch8_pulled_back_10 = Boolean(stoch8TouchedOrClosed10);
+        console.log(`[${REPO_LABEL}] ⏳ Initial BUY window expired: Stoch (8,1,1) pulled back (k: ${sK8 !== null ? sK8.toFixed(1) : 'N/A'}). Transitioning to Re-Entry mode.`);
+      } else {
+        const checkRes = checkInitialBreakoutWithin3Candles(candles, si, waveStartBuy, "BUY", targetBreakout);
+        if (checkRes.valid && !hasActiveBuy) {
+          indicatorsSatisfied = true;
+          signalDirection = "BUY";
+          setupLabel = `${SYMBOL}_INITIAL_FRACTAL_HIGH_BREAK (BUY)`;
+          triggeredFractalForSl = refFractal;
+          state.initialBuyArmed = false;
+          state.initialBuyDone = true;
+          state.stoch8_pulled_back_10 = false;
+          state.stoch8_crossed_50_in_trend_BUY = false;
+          state.lastUsedFractalEpochBuy = refFractal.epoch;
+          console.log(`[${REPO_LABEL}] 🚀 Initial BUY Triggered: High Fractal Breakout confirmed (M5 close ${cClose.toFixed(4)} > ${targetBreakout.toFixed(4)}) [${checkRes.reason}, offset: ${checkRes.candlesSinceCross}].`);
+        } else {
+          dbg(`[${REPO_LABEL}] Initial BUY Armed: Awaiting M5 close > High Fractal (${targetBreakout.toFixed(4)}) within +/- 3 candle window (currently candle ${checkRes.candlesSinceCross}/3).`);
+        }
+      }
+    }
+  }
+
+  // --- 1A. INITIAL SELL SETUP MONITORING (3-CANDLE LOOKBACK & FRESH BREAKOUT GATING) ---
+  if (!indicatorsSatisfied && state.initialSellArmed && stoch100AlignedSell && (isExpSweep ? sellSweepFractal : recentLowFractal)) {
+    const targetBreakout = isExpSweep ? sellSweepTarget : recentLowFractal.low;
+    const refFractal = isExpSweep ? sellSweepFractal : recentLowFractal;
+
+    // Check if Re-Entry condition kicked in before initial breakout occurred
+    if (stoch8TouchedOrClosed90) {
       state.initialSellArmed = false;
       state.initialSellDone = true;
-      state.stoch8_pulled_back_90 = false;
-      state.stoch8_crossed_50_in_trend_SELL = false;
-      state.lastUsedFractalEpochSell = recentLowFractal.epoch;
-      console.log(`[${REPO_LABEL}] 🚀 Initial SELL Triggered: M5 close (${cClose.toFixed(4)}) < Low Fractal Low (${targetBreakout.toFixed(4)}).`);
+      state.stoch100SellWaveSkipped = waveStartSell;
+      state.stoch8_pulled_back_90 = true;
+      console.log(`[${REPO_LABEL}] ⏳ Initial SELL window expired: Stoch (8,1,1) reached >= 90.0 before initial fractal break. Transitioning to Re-Entry mode.`);
+    } else if (isExpSweep) {
+      // Experimental Sweep Initial Entry
+      if (stoch8TouchedOrClosed10) {
+        state.initialSellArmed = false;
+        state.initialSellDone = true;
+        state.stoch100SellWaveSkipped = waveStartSell;
+        console.log(`[${REPO_LABEL}] ⏳ Initial SELL window expired: Stoch (8,1,1) <= 10.0 (oversold floor). Transitioning to Re-Entry mode.`);
+      } else {
+        const crossIdx = candles.findIndex(c => c.epoch === waveStartSell);
+        const candlesSinceCross = crossIdx >= 0 ? (si - crossIdx) : 999;
+        if (candlesSinceCross > 3) {
+          state.initialSellArmed = false;
+          state.initialSellDone = true;
+          state.stoch100SellWaveSkipped = waveStartSell;
+          console.log(`[${REPO_LABEL}] 🚫 Initial SELL Skipped: ${candlesSinceCross} candles since Stoch 100 cross (> 3). Setup stale; awaiting Re-Entry.`);
+        } else {
+          // Fresh M5 close BELOW targetBreakout (the highest point of the fractal)
+          const wasAbove = prevClose >= targetBreakout || prevHigh > targetBreakout || cHigh > targetBreakout;
+          const isBroken = cClose < targetBreakout && wasAbove;
+          const isFreshFractalOrBreak = refFractal.epoch !== state.lastUsedFractalEpochSell || prevClose >= targetBreakout;
+          if (isBroken && isFreshFractalOrBreak && !hasActiveSell) {
+            indicatorsSatisfied = true;
+            signalDirection = "SELL";
+            setupLabel = `${SYMBOL}_SWEEP_HIGH_REJECT (SELL)`;
+            triggeredFractalForSl = refFractal;
+            state.initialSellArmed = false;
+            state.initialSellDone = true;
+            state.stoch8_pulled_back_90 = false;
+            state.stoch8_crossed_50_in_trend_SELL = false;
+            state.lastUsedFractalEpochSell = refFractal.epoch;
+            console.log(`[${REPO_LABEL}] 🚀 Initial SELL Triggered: Fresh M5 close (${cClose.toFixed(4)}) < Recent Fractal High (${targetBreakout.toFixed(4)}) [${candlesSinceCross} candle(s) since cross <= 3].`);
+          } else {
+            dbg(`[${REPO_LABEL}] Initial SELL Armed: Awaiting fresh M5 close < Recent Fractal High (${targetBreakout.toFixed(4)}), Re-entry condition not yet kicked in.`);
+          }
+        }
+      }
+    } else {
+      // Baseline Initial SELL: Enforce +/- 3 candles relative to Stoch 100 cross
+      // Initial SELL expires ONLY when Stoch 8 pulls back to >= 90.0 (transitioning to Re-Entry) or rises above 50.0
+      if (stoch8TouchedOrClosed90 || (sK8 !== null && sK8 > 50.0)) {
+        state.initialSellArmed = false;
+        state.initialSellDone = true;
+        state.stoch100SellWaveSkipped = waveStartSell;
+        state.stoch8_pulled_back_90 = Boolean(stoch8TouchedOrClosed90);
+        console.log(`[${REPO_LABEL}] ⏳ Initial SELL window expired: Stoch (8,1,1) pulled back (k: ${sK8 !== null ? sK8.toFixed(1) : 'N/A'}). Transitioning to Re-Entry mode.`);
+      } else {
+        const checkRes = checkInitialBreakoutWithin3Candles(candles, si, waveStartSell, "SELL", targetBreakout);
+        if (checkRes.valid && !hasActiveSell) {
+          indicatorsSatisfied = true;
+          signalDirection = "SELL";
+          setupLabel = `${SYMBOL}_INITIAL_FRACTAL_LOW_BREAK (SELL)`;
+          triggeredFractalForSl = refFractal;
+          state.initialSellArmed = false;
+          state.initialSellDone = true;
+          state.stoch8_pulled_back_90 = false;
+          state.stoch8_crossed_50_in_trend_SELL = false;
+          state.lastUsedFractalEpochSell = refFractal.epoch;
+          console.log(`[${REPO_LABEL}] 🚀 Initial SELL Triggered: Low Fractal Breakout confirmed (M5 close ${cClose.toFixed(4)} < ${targetBreakout.toFixed(4)}) [${checkRes.reason}, offset: ${checkRes.candlesSinceCross}].`);
+        } else {
+          dbg(`[${REPO_LABEL}] Initial SELL Armed: Awaiting M5 close < Low Fractal (${targetBreakout.toFixed(4)}) within +/- 3 candle window (currently candle ${checkRes.candlesSinceCross}/3).`);
+        }
+      }
     }
   }
 
@@ -3842,18 +4387,38 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
       }
 
-      if (state.stoch8_pulled_back_10 && recentHighFractal && !hasActiveBuy) {
-        const targetBreakout = recentHighFractal.high;
-        const isFreshFractalOrBreak = recentHighFractal.epoch !== state.lastUsedFractalEpochBuy || prevClose <= targetBreakout;
-        if (targetBreakout !== null && cClose > targetBreakout && isFreshFractalOrBreak) {
+      const usedFractals = new Set();
+      if (state.lastUsedFractalEpochBuy) usedFractals.add(state.lastUsedFractalEpochBuy);
+      if (state.lastUsedFractalEpochSell) usedFractals.add(state.lastUsedFractalEpochSell);
+      trades.forEach(t => {
+        if (t.fractalEpoch) usedFractals.add(t.fractalEpoch);
+      });
+
+      const refFractal = isExpSweep ? buySweepFractal : recentHighFractal;
+      const targetBreakout = isExpSweep ? buySweepTarget : (recentHighFractal ? recentHighFractal.high : null);
+
+      if (state.stoch8_pulled_back_10 && refFractal && !usedFractals.has(refFractal.epoch) && !hasActiveBuy) {
+        let isBroken = false;
+        if (isExpSweep) {
+          // Fresh M5 close ABOVE targetBreakout (the lowest point of the fractal)
+          // Price was below it, then broke and closed above it
+          const wasBelow = prevClose <= targetBreakout || prevLow < targetBreakout || cLow < targetBreakout;
+          isBroken = cClose > targetBreakout && wasBelow;
+        } else {
+          isBroken = cClose > targetBreakout;
+        }
+
+        const isFreshFractalOrBreak = !usedFractals.has(refFractal.epoch);
+
+        if (targetBreakout !== null && isBroken && isFreshFractalOrBreak) {
           indicatorsSatisfied = true;
           signalDirection = "BUY";
-          setupLabel = `${SYMBOL}_REENTRY_FRACTAL_HIGH_BREAK (BUY)`;
-          triggeredFractalForSl = recentHighFractal;
+          setupLabel = isExpSweep ? `${SYMBOL}_REENTRY_SWEEP_LOW_RECLAIM (BUY)` : `${SYMBOL}_REENTRY_FRACTAL_HIGH_BREAK (BUY)`;
+          triggeredFractalForSl = refFractal;
           state.stoch8_pulled_back_10 = false;
           state.stoch8_crossed_50_in_trend_BUY = false;
-          state.lastUsedFractalEpochBuy = recentHighFractal.epoch;
-          console.log(`[${REPO_LABEL}] 🚀 Re-Entry BUY Triggered: M5 close (${cClose.toFixed(4)}) > High Fractal High (${targetBreakout.toFixed(4)}). Pullback <= 10 confirmed.`);
+          state.lastUsedFractalEpochBuy = refFractal.epoch;
+          console.log(`[${REPO_LABEL}] 🚀 Re-Entry BUY Triggered: Fresh M5 close (${cClose.toFixed(4)}) > ${isExpSweep ? 'Recent Fractal Low' : 'High Fractal High'} (${targetBreakout.toFixed(4)}) after price was below it. Pullback <= 10 confirmed.`);
         }
       }
     }
@@ -3873,18 +4438,38 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
       }
 
-      if (state.stoch8_pulled_back_90 && recentLowFractal && !hasActiveSell) {
-        const targetBreakout = recentLowFractal.low;
-        const isFreshFractalOrBreak = recentLowFractal.epoch !== state.lastUsedFractalEpochSell || prevClose >= targetBreakout;
-        if (targetBreakout !== null && cClose < targetBreakout && isFreshFractalOrBreak) {
+      const usedFractals = new Set();
+      if (state.lastUsedFractalEpochBuy) usedFractals.add(state.lastUsedFractalEpochBuy);
+      if (state.lastUsedFractalEpochSell) usedFractals.add(state.lastUsedFractalEpochSell);
+      trades.forEach(t => {
+        if (t.fractalEpoch) usedFractals.add(t.fractalEpoch);
+      });
+
+      const refFractal = isExpSweep ? sellSweepFractal : recentLowFractal;
+      const targetBreakout = isExpSweep ? sellSweepTarget : (recentLowFractal ? recentLowFractal.low : null);
+
+      if (state.stoch8_pulled_back_90 && refFractal && !usedFractals.has(refFractal.epoch) && !hasActiveSell) {
+        let isBroken = false;
+        if (isExpSweep) {
+          // Fresh M5 close BELOW targetBreakout (the highest point of the fractal)
+          // Price was above it, then broke and closed below it
+          const wasAbove = prevClose >= targetBreakout || prevHigh > targetBreakout || cHigh > targetBreakout;
+          isBroken = cClose < targetBreakout && wasAbove;
+        } else {
+          isBroken = cClose < targetBreakout;
+        }
+
+        const isFreshFractalOrBreak = !usedFractals.has(refFractal.epoch);
+
+        if (targetBreakout !== null && isBroken && isFreshFractalOrBreak) {
           indicatorsSatisfied = true;
           signalDirection = "SELL";
-          setupLabel = `${SYMBOL}_REENTRY_FRACTAL_LOW_BREAK (SELL)`;
-          triggeredFractalForSl = recentLowFractal;
+          setupLabel = isExpSweep ? `${SYMBOL}_REENTRY_SWEEP_HIGH_REJECT (SELL)` : `${SYMBOL}_REENTRY_FRACTAL_LOW_BREAK (SELL)`;
+          triggeredFractalForSl = refFractal;
           state.stoch8_pulled_back_90 = false;
           state.stoch8_crossed_50_in_trend_SELL = false;
-          state.lastUsedFractalEpochSell = recentLowFractal.epoch;
-          console.log(`[${REPO_LABEL}] 🚀 Re-Entry SELL Triggered: M5 close (${cClose.toFixed(4)}) < Low Fractal Low (${targetBreakout.toFixed(4)}). Pullback >= 90 confirmed.`);
+          state.lastUsedFractalEpochSell = refFractal.epoch;
+          console.log(`[${REPO_LABEL}] 🚀 Re-Entry SELL Triggered: Fresh M5 close (${cClose.toFixed(4)}) < ${isExpSweep ? 'Recent Fractal High' : 'Low Fractal Low'} (${targetBreakout.toFixed(4)}) after price was above it. Pullback >= 90 confirmed.`);
         }
       }
     }
@@ -3899,8 +4484,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const targetStr = getFractalBreakoutLabel(recentHighFractal, "BUY", "HIGH_LOW", "CLOSE");
     if (state.initialBuyArmed && !state.initialBuyDone) {
       state.armed = { dir: "BUY", lbl: `Initial BUY Armed (Await M5 ${targetStr})` };
-      state.nextPhase = `Initial BUY Armed — Awaiting M5 candle ${targetStr} (Invalidates if Stoch 100 < 50)`;
-      state.nextTrigger = `Awaiting M5 candle ${targetStr} (Invalidates if Stoch 100 < 50)`;
+      state.nextPhase = `Initial BUY Armed — Awaiting M5 candle ${targetStr} (Invalidates if Stoch 100 < 47)`;
+      state.nextTrigger = `Awaiting M5 candle ${targetStr} (Invalidates if Stoch 100 < 47)`;
     } else {
       const inPullback = Boolean(state.stoch8_pulled_back_10);
       if (inPullback) {
@@ -3917,8 +4502,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const targetStr = getFractalBreakoutLabel(recentLowFractal, "SELL", "HIGH_LOW", "CLOSE");
     if (state.initialSellArmed && !state.initialSellDone) {
       state.armed = { dir: "SELL", lbl: `Initial SELL Armed (Await M5 ${targetStr})` };
-      state.nextPhase = `Initial SELL Armed — Awaiting M5 candle ${targetStr} (Invalidates if Stoch 100 > 50)`;
-      state.nextTrigger = `Awaiting M5 candle ${targetStr} (Invalidates if Stoch 100 > 50)`;
+      state.nextPhase = `Initial SELL Armed — Awaiting M5 candle ${targetStr} (Invalidates if Stoch 100 > 53)`;
+      state.nextTrigger = `Awaiting M5 candle ${targetStr} (Invalidates if Stoch 100 > 53)`;
     } else {
       const inPullback = Boolean(state.stoch8_pulled_back_90);
       if (inPullback) {
@@ -3933,8 +4518,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
   } else {
     state.armed = null;
-    state.nextPhase = "Monitoring Stoch (100,1,1) Level 50 Macro Trend Gate";
-    state.nextTrigger = "Awaiting Stoch (100,1,1) Level 50 Macro Trend Alignment";
+    state.nextPhase = "Monitoring Stoch (100,1,1) Macro Trend Gate (Buy >= 47, Sell <= 53)";
+    state.nextTrigger = "Awaiting Stoch (100,1,1) Macro Trend Alignment (Buy >= 47, Sell <= 53)";
   }
 
   // Fallback Fibonacci TP Target Calculation
@@ -3976,7 +4561,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   if (signalTriggered) {
     // Just-In-Time Execution Gate: If opposing contract is active, flip position; if same direction, gate
     trades = loadTrades();
-    const activeTrade = trades.find(t => !t.result);
+    const nowSec = Math.floor(Date.now() / 1000);
+    // Strictly verify against active trade in state.openTrade OR trades list within the last 24 hours
+    const activeTrade = (state.openTrade && state.openTrade.contractId)
+      ? trades.find(t => String(t.contractId) === String(state.openTrade.contractId) && !t.result && ((nowSec - (t.entryEpoch || nowSec)) < 86400))
+      : trades.find(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && ((nowSec - (t.entryEpoch || nowSec)) < 86400));
+
     if (activeTrade) {
       if (activeTrade.direction !== direction) {
         console.log(`[POSITION FLIP] Reversal signal ${entryType} (${direction}) confirmed while opposing contract ${activeTrade.contractId} (${activeTrade.direction}) is active. Liquidating opposing trade immediately.`);
@@ -3988,14 +4578,25 @@ async function runSlowPathScan(m5BoundaryEpoch) {
             closingContracts.delete(activeTrade.contractId);
             return;
           }
-          const settled = await getContractProfitFromHistory(activeTrade.contractId, activeTrade.entryEpoch);
-          const pnl = calcUnrealizedPnL(activeTrade, currentPrice);
-          activeTrade.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
-          activeTrade.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
-          activeTrade.result = activeTrade.serverPnl >= 0 ? "WIN" : "LOSS";
-          activeTrade.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
-          activeTrade.exitReason = `Opposite Signal Position Flip (${direction})`;
-          state.dailyNetPnl = (state.dailyNetPnl || 0) + activeTrade.serverPnl;
+          if (closeRes && closeRes.error && closeRes.error.code === "ContractNotFound") {
+            // Already expired or closed externally
+            console.log(`[POSITION FLIP] Contract ${activeTrade.contractId} already expired/not found on broker. Reconciling record.`);
+            activeTrade.result = "CLOSED_EXTERNAL";
+            activeTrade.serverPnl = 0;
+            const inferredClose = (activeTrade.entryEpoch && (nowSec - activeTrade.entryEpoch > 7200)) ? (activeTrade.entryEpoch + 1800) : nowSec;
+            activeTrade.closeTime = new Date(inferredClose * 1000).toISOString().replace("T", " ").substring(0, 19);
+            activeTrade.exitReason = "Reconciled External Broker Close";
+          } else {
+            const settled = await getContractProfitFromHistory(activeTrade.contractId, activeTrade.entryEpoch);
+            const pnl = calcUnrealizedPnL(activeTrade, currentPrice);
+            activeTrade.serverPnl = settled !== null ? settled.profit : parseFloat(pnl.toFixed(2));
+            activeTrade.resultSource = settled !== null ? "deriv_settled_official" : "estimated_fallback";
+            activeTrade.result = activeTrade.serverPnl >= 0 ? "WIN" : "LOSS";
+            activeTrade.closeTime = new Date().toISOString().replace("T", " ").substring(0, 19);
+            activeTrade.exitReason = `Opposite Signal Position Flip (${direction})`;
+            state.dailyNetPnl = (state.dailyNetPnl || 0) + activeTrade.serverPnl;
+          }
+          state.openTrade = null;
           saveTrades(trades);
           saveState();
         } catch (e) {
@@ -4013,7 +4614,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
     // Calibrated Per-Profile Stop Loss Anchor (Strictly Validated on SL Side of Entry)
     const activeFractal = triggeredFractalForSl || (direction === "BUY" ? recentHighFractal : recentLowFractal);
-    const sl = deriveCalibratedStopLossPrice(entry, direction, candles[si], activeFractal);
+    const sl = deriveCalibratedStopLossPrice(entry, direction, candles[si], activeFractal, candles[si - 1]);
 
     // 🎯 Dynamic Fractal Distance Take Profit (Structural Measured Move):
     // Measures the exact structural swing distance between the most recent confirmed M5 UP fractal and DOWN fractal:
@@ -4027,7 +4628,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     if (!fractalDistance || fractalDistance <= 0) {
       fractalDistance = Math.abs(entry - sl) * 2.0;
     }
-    const tpPrice = direction === "BUY"
+    let tpPrice = direction === "BUY"
       ? parseFloat((entry + fractalDistance).toFixed(tpDigits))
       : parseFloat((entry - fractalDistance).toFixed(tpDigits));
     const fibTpPrice = tpPrice;
@@ -4048,7 +4649,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       : (isFracBull ? "Bullish Fractal Candle Close (Top of Body)" : "Bearish Fractal Candle Open (Top of Body)");
     const tpTargetDesc = `Fractal Range TP @ ${tpPrice.toFixed(tpDigits)} (Swing Range: ${fractalDistance.toFixed(tpDigits)} pts / Supertrend trailing protection)`;
     const confluenceLines =
-      `• Gate 1 (Macro Trend): *M5 Stoch (100,1,1) %K ${(sK100 !== null ? sK100.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">50 [BULLISH]" : "<50 [BEARISH]"})\n` +
+      `• Gate 1 (Macro Trend): *M5 Stoch (100,1,1) %K ${(sK100 !== null ? sK100.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">=47 [BULLISH]" : "<=53 [BEARISH]"})\n` +
       `• Gate 2 (Momentum): *M5 Stoch (8,1,1) %K ${(sK8 !== null ? sK8.toFixed(1) : "N/A")}* (${isInitialSignal ? "Initial Entry (Stoch 100 Fresh Cross)" : `Re-Entry Pullback ${direction === "BUY" ? "<=10" : ">=90"}`})\n` +
       `• Gate 3 (Fractal Trigger): *${setupLabel}* (M5 Close ${direction === "BUY" ? "> High Fractal High" : "< Low Fractal Low"})\n` +
       `• Gate 4 (Profit Management): *${tpTargetDesc}*\n` +
@@ -4070,7 +4671,18 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       `⏰ Time (UTC): ${timeFormatted}\n\n` +
       `💡 To close manually: send \`/close win\` or \`/close loss\``;
 
-    const brokerHardSlPrice = deriveHardStopPrice(entry, direction, CTRADER_LOT_SIZE, sl);
+    const bExtreme = direction === "BUY"
+      ? (candles[si] ? parseFloat(candles[si].low) : entry)
+      : (candles[si] ? parseFloat(candles[si].high) : entry);
+    const brokerHardSlPrice = deriveHardStopPrice(entry, direction, CTRADER_LOT_SIZE, sl, bExtreme);
+
+    // Hard TP for 1HZ25V is calibrated to exactly $15.00
+    if (SYMBOL === "1HZ25V") {
+      const hardTpDist = 15.00 / CTRADER_LOT_SIZE;
+      tpPrice = direction === "BUY"
+        ? parseFloat((entry + hardTpDist).toFixed(tpDigits))
+        : parseFloat((entry - hardTpDist).toFixed(tpDigits));
+    }
 
     const pendingTradeRecord = {
       id: `${SYMBOL}-${Date.now()}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, brokerSlPrice: brokerHardSlPrice, rr: null, fractalDistance, entryType, brokerSlAmount: STAKE_USD,
@@ -4078,8 +4690,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       entryEpoch: m5BoundaryEpoch, purchaseTimeEpoch: m5BoundaryEpoch, purchase_time: m5BoundaryEpoch,
       entryM5Bucket: candles[si].epoch,
       openedIntrabar: false,
+      breakoutCandleEpoch: (candles && candles[si]) ? candles[si].epoch : (m5BoundaryEpoch - 300),
+      entryCandleEpoch: m5BoundaryEpoch,
       entryCandleHigh: (candles && candles[si]) ? parseFloat(candles[si].high) : entry,
       entryCandleLow: (candles && candles[si]) ? parseFloat(candles[si].low) : entry,
+      breakoutCandleHigh: (candles && candles[si]) ? parseFloat(candles[si].high) : entry,
+      breakoutCandleLow: (candles && candles[si]) ? parseFloat(candles[si].low) : entry,
+      prevCandleHigh: (candles && si > 0 && candles[si - 1]) ? parseFloat(candles[si - 1].high) : entry,
+      prevCandleLow: (candles && si > 0 && candles[si - 1]) ? parseFloat(candles[si - 1].low) : entry,
       slReferenceType: SL_REFERENCE_TYPE,
       slExecutionType: SL_EXECUTION_TYPE,
       profitManagementMode: "FRACTAL_RANGE_TP_AND_SUPERTREND_TRAILING",
@@ -4087,12 +4705,52 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       supertrendAtEntry: curSt ? curSt.trend : null,
       stoch8EarlyExit: false,
       fractalSl: initialM5Fractal,
-      fractalEpoch: null,
+      fractalEpoch: triggeredFractalForSl ? triggeredFractalForSl.epoch : null,
       fractalTimeframe: "M5",
       m5Fractal: initialM5Fractal,
       m30FractalUpgraded: false, tpPrice, fibTpPrice: tpPrice,
       openTime: timeFormatted, closeTime: null, result: null
     };
+    // ABSOLUTE CONCURRENCY LOCK (ONE BOT, ONE TRADE INVARIANT)
+    // 0. State memory verification
+    if (state.openTrade && state.openTrade.contractId) {
+      console.warn(`[CONCURRENCY LOCK] Bot state already has an active trade in memory (#${state.openTrade.contractId}, ${state.openTrade.direction}). Aborting duplicate execution.`);
+      state.lastProcessedEpoch = m5BoundaryEpoch;
+      saveState();
+      return;
+    }
+
+    // 1. Local list verification
+    const existingActiveLocal = trades.find(t => !t.result && !t.closeTime && (t.contractId || !t.pending));
+    if (existingActiveLocal) {
+      console.warn(`[CONCURRENCY LOCK] Bot already has an active trade in memory (#${existingActiveLocal.contractId}, ${existingActiveLocal.direction}). Aborting duplicate execution.`);
+      state.lastProcessedEpoch = m5BoundaryEpoch;
+      saveState();
+      return;
+    }
+
+    // 2. Live Broker verification against cTrader positions endpoint
+    if (EXECUTION_MODE === "ctrader") {
+      try {
+        const liveBrokerCheck = await gatewayFetch(`/ctrader/positions?accountId=${encodeURIComponent(CTRADER_ACCOUNT_ID)}`);
+        if (liveBrokerCheck && liveBrokerCheck.ok && Array.isArray(liveBrokerCheck.positions)) {
+          const symPositions = liveBrokerCheck.positions.filter(p => {
+            const symId = Number(p.tradeData?.symbolId || p.symbolId);
+            const CTRADER_ID_TO_SYMBOL = { 2435: "1HZ75V", 2434: "R_75", 2432: "R_50", 2431: "1HZ25V", 2433: "1HZ50V", 2430: "R_25", 2428: "R_10", 2429: "1HZ10V", 2436: "R_100", 2437: "1HZ100V" };
+            return CTRADER_ID_TO_SYMBOL[symId] === SYMBOL;
+          });
+          if (symPositions.length > 0) {
+            console.warn(`[CONCURRENCY LOCK] cTrader Account ${CTRADER_ACCOUNT_ID} already holds ${symPositions.length} active position(s) for ${SYMBOL} (#${symPositions.map(p => p.positionId).join(', ')}). Aborting order to prevent duplicate trades.`);
+            state.lastProcessedEpoch = m5BoundaryEpoch;
+            saveState();
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn(`[CONCURRENCY CHECK] Live broker check error: ${err.message}`);
+      }
+    }
+
     trades.push(pendingTradeRecord);
     saveTrades(trades);
 
@@ -4174,8 +4832,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     nextTrigger = "Idling until 00:00 UTC daily rollover";
   } else {
     state.openTrade = null;
-    const stoch100Buy = sK100 !== null && sK100 >= 50.0;
-    const stoch100Sell = sK100 !== null && sK100 < 50.0;
+    const stoch100Buy = stoch100AlignedBuy;
+    const stoch100Sell = stoch100AlignedSell;
     const isReentry = Boolean(state.isReentryMode || state.initialBuyDone || state.initialSellDone);
 
     if (state.nextTrigger) {
@@ -4185,15 +4843,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     if (stoch100Buy) {
       if (!isReentry) {
         blockerReason = state.initialBuyArmed
-          ? `Initial BUY Armed (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} > 50 | ${INITIAL_GATE_MODE})`
-          : `Macro Trend Bullish (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} > 50)`;
+          ? `Initial BUY Armed (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} >= 47 | ${INITIAL_GATE_MODE})`
+          : `Macro Trend Bullish (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} >= 47)`;
         if (!nextTrigger) {
           nextTrigger = state.initialBuyArmed
             ? `Awaiting ${getFractalBreakoutLabel(recentHighFractal, "BUY", INITIAL_BREAKOUT_TYPE, INITIAL_TRIGGER_EXEC)}`
             : `Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) cross > 50 for Initial BUY`;
         }
       } else {
-        blockerReason = `BUY Re-Entry Mode Active (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} > 50)`;
+        blockerReason = `BUY Re-Entry Mode Active (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} >= 47)`;
         if (!nextTrigger) {
           nextTrigger = state.stoch8_pulled_back_10
             ? `BUY Re-Entry Armed: Awaiting M5 ${getFractalBreakoutLabel(recentHighFractal, "BUY", ENTRY_BREAKOUT_TYPE, "CLOSE")}`
@@ -4203,15 +4861,15 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     } else if (stoch100Sell) {
       if (!isReentry) {
         blockerReason = state.initialSellArmed
-          ? `Initial SELL Armed (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} < 50 | ${INITIAL_GATE_MODE})`
-          : `Macro Trend Bearish (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} < 50)`;
+          ? `Initial SELL Armed (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} <= 53 | ${INITIAL_GATE_MODE})`
+          : `Macro Trend Bearish (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} <= 53)`;
         if (!nextTrigger) {
           nextTrigger = state.initialSellArmed
             ? `Awaiting ${getFractalBreakoutLabel(recentLowFractal, "SELL", INITIAL_BREAKOUT_TYPE, INITIAL_TRIGGER_EXEC)}`
             : `Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) cross < 50 for Initial SELL`;
         }
       } else {
-        blockerReason = `SELL Re-Entry Mode Active (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} < 50)`;
+        blockerReason = `SELL Re-Entry Mode Active (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} <= 53)`;
         if (!nextTrigger) {
           nextTrigger = state.stoch8_pulled_back_90
             ? `SELL Re-Entry Armed: Awaiting M5 ${getFractalBreakoutLabel(recentLowFractal, "SELL", ENTRY_BREAKOUT_TYPE, "CLOSE")}`
@@ -4219,8 +4877,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         }
       }
     } else {
-      blockerReason = "Awaiting Stoch (100,1,1) macro trend definition";
-      if (!nextTrigger) nextTrigger = "Awaiting Stoch (100,1,1) cross 50.0";
+      blockerReason = "Awaiting Stoch (100,1,1) macro trend definition (Buy >= 47, Sell <= 53)";
+      if (!nextTrigger) nextTrigger = "Awaiting Stoch (100,1,1) cross 47/53";
     }
   }
 
@@ -4316,14 +4974,23 @@ async function checkIntrabarInitialTouchEntry(currentM5Boundary) {
     close: entry
   };
   const sl = deriveCalibratedStopLossPrice(entry, direction, provisionalCandle, setup.fractal);
-  const brokerHardSlPrice = deriveHardStopPrice(entry, direction, CTRADER_LOT_SIZE, sl);
+  const bExtremeIntra = direction === "BUY" ? provisionalCandle.low : provisionalCandle.high;
+  const brokerHardSlPrice = deriveHardStopPrice(entry, direction, CTRADER_LOT_SIZE, sl, bExtremeIntra);
 
   // 🎯 Dynamic Fractal Distance Take Profit (Structural Measured Move):
   const tpDigits = SYMBOL === "R_50" ? 4 : ((SYMBOL === "R_25" || SYMBOL === "R_10") ? 3 : 2);
   let fractalDistance = Math.abs(entry - sl) * 2.0;
-  const tpPrice = direction === "BUY"
+  let tpPrice = direction === "BUY"
     ? parseFloat((entry + fractalDistance).toFixed(tpDigits))
     : parseFloat((entry - fractalDistance).toFixed(tpDigits));
+
+  // Hard TP for 1HZ25V is calibrated to exactly $15.00
+  if (SYMBOL === "1HZ25V") {
+    const hardTpDist = 15.00 / CTRADER_LOT_SIZE;
+    tpPrice = direction === "BUY"
+      ? parseFloat((entry + hardTpDist).toFixed(tpDigits))
+      : parseFloat((entry - hardTpDist).toFixed(tpDigits));
+  }
   const fibTpPrice = tpPrice;
 
   const nowEpoch = Math.floor(Date.now() / 1000);
@@ -4332,7 +4999,7 @@ async function checkIntrabarInitialTouchEntry(currentM5Boundary) {
 
   const tpTargetDesc = `Fractal Range TP @ ${tpPrice.toFixed(tpDigits)} (Swing Range: ${fractalDistance.toFixed(tpDigits)} pts / Supertrend trailing protection)`;
   const confluenceLines =
-    `• Gate 1 (Macro Trend): *M5 Stoch (100,1,1) ${direction === "BUY" ? ">50 [BULLISH]" : "<50 [BEARISH]"}*\n` +
+    `• Gate 1 (Macro Trend): *M5 Stoch (100,1,1) ${direction === "BUY" ? ">=47 [BULLISH]" : "<=53 [BEARISH]"}*\n` +
     `• Gate 2 (Initial Mode): *${INITIAL_GATE_MODE}* (Intrabar Touch Armed)\n` +
     `• Gate 3 (Fractal Trigger): *${entryType}* (Target: ${setup.targetPrice.toFixed(4)})\n` +
     `• Gate 4 (Profit Management): *${tpTargetDesc}*\n` +
@@ -4358,10 +5025,16 @@ async function checkIntrabarInitialTouchEntry(currentM5Boundary) {
     id: `${SYMBOL}-${Date.now()}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry, sl, brokerSlPrice: brokerHardSlPrice, rr: null, fractalDistance, entryType, brokerSlAmount: STAKE_USD,
     lots: CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE, is_ctrader: EXECUTION_MODE === "ctrader",
     entryEpoch: nowEpoch, purchaseTimeEpoch: nowEpoch, purchase_time: nowEpoch,
+    breakoutCandleEpoch: (cM5 && cM5.length > 0) ? cM5[cM5.length - 1].epoch : (nowEpoch - (nowEpoch % 300)),
+    entryCandleEpoch: nowEpoch - (nowEpoch % 300),
     entryM5Bucket: currentM5Boundary,
     openedIntrabar: true,
+    breakoutCandleEpoch: (candles && candles[si]) ? candles[si].epoch : currentM5Boundary,
+    entryCandleEpoch: currentM5Boundary,
     entryCandleHigh: provisionalCandle.high,
     entryCandleLow: provisionalCandle.low,
+    breakoutCandleHigh: provisionalCandle.high,
+    breakoutCandleLow: provisionalCandle.low,
     slReferenceType: SL_REFERENCE_TYPE,
     slExecutionType: SL_EXECUTION_TYPE,
     profitManagementMode: "FRACTAL_RANGE_TP_AND_SUPERTREND_TRAILING",
