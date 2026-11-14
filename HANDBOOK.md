@@ -1,60 +1,29 @@
 # MASTER OPERATIONS & TRADER HANDBOOK
 ### Lery's Trading Bot System -- Complete Reference Bible & Disaster Recovery Manual
-#### Version 8.3 -- October 2026 (Gateway 500 Connection Resilience, 2.5-Minute Persistent Execution Queue, Calibrated -$4.00 / -$3.50 Software SL Architecture, Dynamic Runner $20 Ceilings, Closed-M5 Stoch (25,2,5) Exits, V25 20-Min Execution Window, and Unified Strategy Governance)
+#### Version 10.0 -- November 2026 (Universal Dual-Fleet Architecture: Baseline Continuation Account 2596044 vs. Experimental Sweep Account 2450642, Universal $15.00 Hard Stop Loss Cap, $15.00 1HZ25V Take Profit Lock, Confirmed Breakout-Candle-Only Software Stop Loss, Automated GitHub Push & Continuous Multi-Server Daemon Sync Pipeline)
 
 ---
 
 > [!] **CRITICAL INSTRUCTION FOR ANY AI ASSISTANT / OPERATOR PICKING THIS UP:**
 > 
 > You are acting as the Lead Systems & Quantitative Engineer for Lery's Trading Bot System.
-> This document is the **absolute, immutable Single Source of Truth**. You must strictly adhere to the following operational protocols:
+> This document is the **absolute, immutable Single Source of Truth ("The Bible")**. You must strictly adhere to the following operational protocols:
 >
-> 1. **STRICT FIDELITY & ZERO ASSUMPTION MANDATE (FINANCIAL CAPITAL SAFETY):**
->    - **In live automated trading, assumptions directly endanger capital. There is absolute zero tolerance for assumptions, guessing, or unverified extrapolation.**
->    - **MANDATORY INVESTIGATION BEFORE PRESENTATION:** The AI assistant MUST check empirical data, server logs, flight recorder ledgers (`ledger_*.csv`), and actual indicator calculations before presenting ANY diagnostic findings to the operator. Never rationalize, guess, or assume market conditions or indicator values without empirical proof.
->    - Real financial capital is on the line: there is absolute **ZERO TOLERANCE** for assumptions, speculation, guessing, or unverified extrapolation across trading logic, server infrastructure, PM2 process configs, and operator actions.
->    - **Trading Rules:** Every rule, level, and condition in this handbook is a strict mathematical specification. NEVER assume, extrapolate, or invent setups, unlisted levels, bounce targets, or generalized rules.
->    - **Strict Scope Boundaries:** Execute ONLY what is explicitly instructed by the trader. Do NOT add, remove, "clean up", or modify unrelated strategy components, target engines, or parameter rules beyond the trader's explicit instruction.
->    - **Halt & Clarify on Ambiguity:** If any user request is underspecified, ambiguous, or open to interpretation, the AI MUST HALT execution and ask the trader for explicit clarification before touching code or strategy rules.
->    - **Infrastructure & Configurations:** NEVER assume, guess, or state as fact that a command was run, a setting was applied (e.g., `--restart-delay`, timeouts, intervals), or a server state exists without direct empirical verification.
->    - **Zero Rationalization:** NEVER invent narratives or theories to explain observed telemetry numbers (e.g., PM2 restart counts, uptime) without verifying actual configuration files.
->    - **Mandatory Clarification:** If any condition, parameter, configuration state, or operator intent is ambiguous or unverified, STOP and state the verified facts or ask the operator directly rather than guessing.
->
-> 2. **OPERATIONAL PROTOCOL (CONFIRMATION BEFORE CODE):**
->    - When troubleshooting, discussing strategy changes, or refining logic, **DO NOT generate or rewrite code immediately**.
->    - First explain the logic, present the exact mathematical mapping, and wait for the operator to give an **explicit thumbs up** before outputting deployment code.
->
-> 3. **MANDATORY PRE-DELIVERY CODE AUDIT:**
->    - Whenever you provide, modify, or update code, you MUST accompany it with a line-by-line **Verification Audit** proving:
->      - **Syntax & Scoping:** All imports, variables, and asynchronous promises are declared and valid.
->      - **Logic Path Tracing:** Every condition (Bullish vs. Bearish, Long vs. Short, Continuation vs. Reversal) is traced through its actual execution path.
->      - **Zero Omissions Check:** Confirm that no features, functions, or established rules were accidentally stripped or omitted.
->
-> 4. **REGRESSION PREVENTION:**
->    - When updating code, explicitly verify that all established production fixes remain 100% intact:
->      - 24/7 continuous in-memory engine (adaptive risk pulse: 3s in-trade / 10s idle, 5m closed candle scan).
->      - Request/response market data via `fetchAllData()` and `fetchCurrentSpotPrice()` (NO `subscribe: 1` push streams).
->      - Persistent origin tracking (`last50Origin`) for 50% midline reversals across trades.
->      - Strict Stochastic 50 midline crossing for continuations (no loose tolerances).
->      - Active M15 wrong-side invalidation and dynamic direction flipping.
->      - Rich Telegram diagnostic confirmation cards.
->      - Full-tree recursive File Explorer with clean nested paths and subfolder support.
->      - Dynamic PM2 alias resolution and mtime-sorted log file retrieval.
->
-> 5. **FLIGHT RECORDER AUDITING:**
->    - When debugging missed or unexpected trades, base your diagnosis strictly on data from the Daily Flight Recorder (`ledger_<SYMBOL>_<DATE>.csv`), `trades.json`, and `state.json`.
->
-> 6. **STRICT GOOGLE AI STUDIO DEPLOYMENT PIPELINE (ABSOLUTE BAN ON IN-SERVER EDITS):**
->    - **NEVER edit files directly on the server terminal using `nano`, `vim`, or curl scripts.** AI agents and operators must strictly prepare code in this Google AI Studio environment and execute the automated sync scripts to push to GitHub.
->    - **Why Server-Side Direct Edits Automatically Reset:** Both Server 1 and Server 2 run `pull-trades.sh` continuously in the background, which executes `git pull` from GitHub. Any files edited directly on the server terminal will cause Git working tree conflicts or be immediately overwritten and reset back to the GitHub commit state on the next pull cycle.
->    - **The Immutable Pipeline:** Code and handbook updates prepared here in Google AI Studio are committed and pushed directly to `Kwekugrind/Google-ai-studio.git` and `Kwekugrind/dashboard.git`. The background pull script (`pull-trades.sh`) on both servers detects GitHub commits and automatically pulls the latest code within minutes.
->    - The server terminal must **only** be used for monitoring (`pm2 status`, `pm2 logs`), safe service restarts (`pm2 restart <name>`), or reading diagnostic files.
->
-> 7. **ZERO TRUNCATION & MANDATORY CHANGE-LOG MANDATE (CODE INTEGRITY):**
->    - **NEVER provide truncated, summarized, partial, or shortened code replacements.** Any file provided to the operator must be 100% complete, maintaining all logic routines, event handlers, mathematical functions, and comments intact.
->
-> 8. **STRICT STRATEGY PRESERVATION & ANTI-TAMPERING MANDATE:**
->    - The AI assistant is **STRICTLY FORBIDDEN** from implementing, adding, modifying, omitting, or tweaking ANY trading strategy rules, entry criteria, direction filters, exit logic, indicator thresholds, or setup matrices without the user's **PRIOR EXPLICIT APPROVAL**.
+> ### THE OPERATIONAL MANDATE & SYSTEM IDENTITY
+> 1. **The Mission:** The trader is building generational wealth through rigorous, quantitative, automated execution across synthetic volatility indices on Deriv (Multipliers / Options) and cTrader (Open API / FIX Bridge). Every dollar of capital is real; zero speculation or unverified modification is tolerated.
+> 2. **Current System State (14 Active Trading Daemons across 2 Accounts):**
+>    * **System 1: Baseline Fleet (Account `2596044`):** 7 bots running Breakout Continuation (`cClose > highFractal.high` for BUY, `cClose < lowFractal.low` for SELL).
+>    * **System 2: Experimental Fleet (Account `2450642`):** 7 bots running Liquidity Sweep Reversals (`cClose > fractal.low` after low dip for BUY, `cClose < fractal.high` after high peak for SELL).
+>    * **Universal Risk Laws:** $15.00 USD Maximum Hard Broker Loss Cap on every order; +$7.00/day daily profit target per bot; $15.00 Take Profit locked on `1HZ25V` (Ice Cream); Software SL anchored **strictly and only to the confirmed breakout candle** (`breakoutCandle.low` for BUY, `breakoutCandle.high` for SELL) with zero post-entry shifts.
+> 3. **The Deployment Pipeline Invariant (Absolute Ban on Direct Server Edits):**
+>    * **NEVER edit files directly on Server 1 or Server 2 terminal via nano, vim, or curl.**
+>    * All changes are made here in the local Google AI Studio workspace and pushed directly to the 10 GitHub repositories.
+>    * The continuous background daemon `pull-trades.sh` on both Server 1 and Server 2 scans every 60 seconds, executes `git fetch` and `git reset --hard origin/main`, copies `alert_experimental.js` to the experimental directories, and cleanly reloads both baseline and experimental PM2 processes.
+> 4. **Zero-Hallucination Audit Protocol:**
+>    * When the trader asks: *"Which candle was the fractal?"* or *"Why was a trade stopped out?"*, **NEVER guess, speculate, or rationalize**.
+>    * Immediately query `trades.json` directly via the Server 1 / Server 2 REST API. The exact fields `fractalEpoch`, `breakoutCandleEpoch`, `entryCandleEpoch`, `sl`, and `tp` are recorded in the trade ledger.
+> 5. **Two-System Strict Separation:**
+>    * NEVER merge, overwrite, or confuse the two strategy engines. Baseline files (`alert.js` / `alert_baseline_master.js`) and Experimental files (`alert_experimental.js` / `alert_experimental_master.js`) must remain distinct and separated.
 >
 > A live version of this handbook is served directly at: `http://79.76.120.30:4000/handbook`.
 
@@ -154,15 +123,32 @@ Managed centrally via an integrated browser dashboard (`:4000`), Server Hub API 
 | **Public IPv4 Address** | `138.2.169.72` | `79.76.120.30` |
 | **Operating System** | Ubuntu 22.04 LTS (x86_64) | Ubuntu 22.04 LTS (x86_64) |
 | **Base Directory** | `/home/ubuntu/trading-bots` | `/home/ubuntu/trading-bots` |
-| **Primary Services** | `deriv-gateway` (:3000), `s1-api` (:4001) | `dashboard` (:4000), `command-bot`, `watchdog` |
-| **Active Bot Fleet** | `lery-v75`, `coffee-v75-1s`, `milk-v100`, `tea-v25` | `ice-cream-100-1s`, `omni-v50`, `test-v10` |
+| **Primary Services** | `deriv-gateway` (:3000), `s1-api` (:4001), `pull-trades` daemon | `dashboard` (:4000), `command-bot`, `gateway-watchdog`, `pull-trades` daemon |
+| **Baseline Fleet (Acct 2596044)** | `lery-v75`, `coffee-v75-1s`, `milk-v100`, `tea-v25` | `ice-cream-100-1s`, `omni-v50`, `test-v10` |
+| **Experimental Fleet (Acct 2450642)** | `lery-exp-v75`, `coffee-exp-v75-1s`, `milk-exp-v100`, `tea-exp-v25` | `ice-exp-v25-1s`, `omni-exp-v50`, `test-exp-v10` |
 
-### Multi-Bot Fleet Parameter Master Table (Unified Initial Entry, Re-Entry, Bullish/Bearish Fractal Open/Close Stop Loss, Dynamic Fractal Range Take Profit & Supertrend 21, 1, 0 Trailing Profit Engine)
+---
 
-All 7 active bots run the **Unified Initial Entry, Re-Entry, Bullish/Bearish Fractal Open/Close Stop Loss, Dynamic Fractal Range Take Profit & Supertrend (21, 1, 0) Trailing Profit Engine** (Gate 1: Closed M5 Stoch `100,1,1 Simple` Level 50 Macro Trend; Initial Entry: Closed M5 candle closes above High Fractal `HIGH` for BUY or below Low Fractal `LOW` for SELL; Re-Entry: Strictly after Initial Trade is taken in the wave, M5 Stoch `8,1,1 Simple` touches/closes `<= 10.0` BUY / `>= 90.0` SELL + Closed M5 candle closes beyond Fractal `HIGH`/`LOW`, expiring if Stoch 8 crosses 50 and back across 50; Stop Loss: Bullish/Bearish Fractal Candle Open/Close with strict precedence over Hard SL; Profit Management: Dynamic Fractal Range Take Profit ($D = |\text{recentHighFractal.high} - \text{recentLowFractal.low}|$, BUY = Entry + D, SELL = Entry - D) placed on cTrader broker ticket & verified in fast path, plus Supertrend (Periods: 21, Multiplier: 1, Shift: 0) trailing flip exit when trade is in profit):
+### Master 14-Bot Multi-Fleet Specification Table
 
-| Bot Label | PM2 Name | Server | Directory Path | Symbol | Symbol ID | Lot Size | Initial Entry Rule (`Stoch 100` Cross `50`) | Re-Entry Rule (`Stoch 8 10/90` After Initial Trade) | Stop Loss Rule (Software SL on M5 Close; Precedence over Hard SL) | Take Profit & Profit Management Rule (Fractal Range TP & Supertrend 21, 1, 0) | Daily Lock (`+$7.00`) |
-|---|---|---|---|---|---|---|---|---|---|---|---|
+The system operates **14 distinct trading daemons** running concurrently across Deriv and cTrader, bifurcated into two strategically separated accounts:
+
+| Bot Label | PM2 Process Name | Server | System Fleet | cTrader Account | Symbol | Volume / Lot Size | Entry Trigger Mandate | Software Stop Loss Rule | Broker Hard SL Cap | Hard Take Profit | Daily Profit Target |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Lery V75** | `lery-v75` | Server 1 | Baseline (Old) | **2596044** | `R_75` | 0.01 lots | M5 Close > High Fractal High (BUY) / < Low Fractal Low (SELL) | Bill Williams Body Anchor | $15.00 Max | Swing Distance D | +$7.00 / day |
+| **Lery Exp** | `lery-exp-v75` | Server 1 | Experimental (New) | **2450642** | `R_75` | 0.01 lots | Sweep Low & Close > Low (BUY) / Sweep High & Close < High (SELL) | Breakout Candle Extreme | $15.00 Max | Swing Distance D | +$7.00 / day |
+| **Coffee V75 (1s)** | `coffee-v75-1s` | Server 1 | Baseline (Old) | **2596044** | `1HZ75V` | 0.01 lots | M5 Close > High Fractal High (BUY) / < Low Fractal Low (SELL) | Bill Williams Body Anchor | $15.00 Max | Swing Distance D | +$7.00 / day |
+| **Coffee Exp** | `coffee-exp-v75-1s` | Server 1 | Experimental (New) | **2450642** | `1HZ75V` | 0.01 lots | Sweep Low & Close > Low (BUY) / Sweep High & Close < High (SELL) | Breakout Candle Extreme | $15.00 Max | Swing Distance D | +$7.00 / day |
+| **Milk V100** | `milk-v100` | Server 1 | Baseline (Old) | **2596044** | `R_100` | 0.20 lots | M5 Close > High Fractal High (BUY) / < Low Fractal Low (SELL) | Bill Williams Body Anchor | $15.00 Max | Swing Distance D | +$7.00 / day |
+| **Milk Exp** | `milk-exp-v100` | Server 1 | Experimental (New) | **2450642** | `R_100` | 0.20 lots | Sweep Low & Close > Low (BUY) / Sweep High & Close < High (SELL) | Breakout Candle Extreme | $15.00 Max | Swing Distance D | +$7.00 / day |
+| **Tea V25** | `tea-v25` | Server 1 | Baseline (Old) | **2596044** | `R_25` | 0.50 lots | M5 Close > High Fractal High (BUY) / < Low Fractal Low (SELL) | Bill Williams Body Anchor | $15.00 Max | Swing Distance D | +$7.00 / day |
+| **Tea Exp** | `tea-exp-v25` | Server 1 | Experimental (New) | **2450642** | `R_25` | 0.50 lots | Sweep Low & Close > Low (BUY) / Sweep High & Close < High (SELL) | Breakout Candle Extreme | $15.00 Max | Swing Distance D | +$7.00 / day |
+| **Ice Cream V25 (1s)**| `ice-cream-100-1s` | Server 2 | Baseline (Old) | **2596044** | `1HZ25V` | 0.01 lots | M5 Close > High Fractal High (BUY) / < Low Fractal Low (SELL) | Bill Williams Body Anchor | $15.00 Max | **$15.00 Fixed** | +$7.00 / day |
+| **Ice Exp** | `ice-exp-v25-1s` | Server 2 | Experimental (New) | **2450642** | `1HZ25V` | 0.01 lots | Sweep Low & Close > Low (BUY) / Sweep High & Close < High (SELL) | Breakout Candle Extreme | $15.00 Max | **$15.00 Fixed** | +$7.00 / day |
+| **OmniSight V50** | `omni-v50` | Server 2 | Baseline (Old) | **2596044** | `R_50` | 1.00 lots | M5 Close > High Fractal High (BUY) / < Low Fractal Low (SELL) | Bill Williams Body Anchor | $15.00 Max | Swing Distance D | +$7.00 / day |
+| **Omni Exp** | `omni-exp-v50` | Server 2 | Experimental (New) | **2450642** | `R_50` | 1.00 lots | Sweep Low & Close > Low (BUY) / Sweep High & Close < High (SELL) | Breakout Candle Extreme | $15.00 Max | Swing Distance D | +$7.00 / day |
+| **Test Bot V10** | `test-v10` | Server 2 | Baseline (Old) | **2596044** | `R_10` | 0.50 lots | M5 Close > High Fractal High (BUY) / < Low Fractal Low (SELL) | Bill Williams Body Anchor | $15.00 Max | Swing Distance D | +$7.00 / day |
+| **Test Exp** | `test-exp-v10` | Server 2 | Experimental (New) | **2450642** | `R_10` | 0.50 lots | Sweep Low & Close > Low (BUY) / Sweep High & Close < High (SELL) | Breakout Candle Extreme | $15.00 Max | Swing Distance D | +$7.00 / day |
 | **Lery's Alerts** | `lery-v75` | S1 | `~/trading-bots/Lery-s-Alerts` | Volatility 75 | `R_75` | 0.01 Lots | M5 Close `>` Fractal `HIGH` / `<` Fractal `LOW` | `Stoch 8 <= 10 / >= 90` + M5 Close `>` Fractal `HIGH` / `<` `LOW` | **Fractal Bullish/Bearish Open/Close** (`M5 Close Software SL`) | **Dynamic Fractal Range TP** (Broker Ticket) + **Supertrend (21, 1, 0) Trailing Flip Exit** | **OFF** (Uncapped) |
 | **Coffee Machine** | `coffee-v75-1s` | S1 | `~/trading-bots/coffee` | Volatility 75 (1s) | `1HZ75V` | 0.15 Lots | M5 Close `>` Fractal `HIGH` / `<` Fractal `LOW` | `Stoch 8 <= 10 / >= 90` + M5 Close `>` Fractal `HIGH` / `<` `LOW` | **Fractal Bullish/Bearish Open/Close** (`M5 Close Software SL`) | **Dynamic Fractal Range TP** (Broker Ticket) + **Supertrend (21, 1, 0) Trailing Flip Exit** | **ON** (`+$7.00` Lock) |
 | **Milk Machine** | `milk-v100` | S1 | `~/trading-bots/milk` | Volatility 100 | `R_100` | 1.00 Lot | M5 Close `>` Fractal `HIGH` / `<` Fractal `LOW` | `Stoch 8 <= 10 / >= 90` + M5 Close `>` Fractal `HIGH` / `<` `LOW` | **Fractal Bullish/Bearish Open/Close** (`M5 Close Software SL`) | **Dynamic Fractal Range TP** (Broker Ticket) + **Supertrend (21, 1, 0) Trailing Flip Exit** | **ON** (`+$7.00` Lock) |
