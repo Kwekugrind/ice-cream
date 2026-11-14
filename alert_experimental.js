@@ -51,6 +51,189 @@ export function getMostRecentM5FractalByType(candles, currentIndex, targetType) 
   return null;
 }
 
+
+// ==================== ALL CONFIRMED M5 BILL WILLIAMS FRACTALS ====================
+export function getAllConfirmedFractals(candles, maxIdx, lookback = 100) {
+  const fractals = [];
+  if (!candles || maxIdx < 4) return fractals;
+  const start = Math.max(2, maxIdx - lookback);
+  for (let k = start; k <= maxIdx - 2; k++) {
+    const high = parseFloat(candles[k].high);
+    const low = parseFloat(candles[k].low);
+
+    const isUp = high > parseFloat(candles[k - 1].high) &&
+                 high > parseFloat(candles[k - 2].high) &&
+                 high > parseFloat(candles[k + 1].high) &&
+                 high > parseFloat(candles[k + 2].high);
+
+    const isDown = low < parseFloat(candles[k - 1].low) &&
+                   low < parseFloat(candles[k - 2].low) &&
+                   low < parseFloat(candles[k + 1].low) &&
+                   low < parseFloat(candles[k + 2].low);
+
+    if (isUp) {
+      fractals.push({
+        type: 'UP',
+        pivotIndex: k,
+        epoch: candles[k].epoch,
+        time: new Date(candles[k].epoch * 1000).toISOString().substr(11, 8),
+        high,
+        low,
+        open: parseFloat(candles[k].open),
+        close: parseFloat(candles[k].close),
+        price: high
+      });
+    }
+    if (isDown) {
+      fractals.push({
+        type: 'DOWN',
+        pivotIndex: k,
+        epoch: candles[k].epoch,
+        time: new Date(candles[k].epoch * 1000).toISOString().substr(11, 8),
+        high,
+        low,
+        open: parseFloat(candles[k].open),
+        close: parseFloat(candles[k].close),
+        price: low
+      });
+    }
+  }
+  return fractals;
+}
+
+// ==================== SUPPORT/RESISTANCE RE-ENTRY EVALUATORS ====================
+// Mandate:
+// Stoch 100 in line with trend AND Initial entry has already completed in this wave.
+// 1. BUY: Scan past Down fractals (support), verify retracement touch, verify new Down fractal confirmation, trigger on green candle close.
+// 2. SELL: Scan past Up fractals (resistance), verify retracement touch, verify new Up fractal confirmation, trigger on red candle close.
+export function checkSupportReentryBuy(candles, si, stoch100, lastUsedEpoch) {
+  const sK100 = stoch100 && stoch100.k ? stoch100.k[si] : null;
+  if (sK100 === null || sK100 < 47.0) return null;
+
+  const currentCandle = candles[si];
+  const cOpen = parseFloat(currentCandle.open);
+  const cClose = parseFloat(currentCandle.close);
+  const isGreenCandle = cClose > cOpen;
+
+  const allFractals = getAllConfirmedFractals(candles, si);
+  const downFractals = allFractals.filter(f => f.type === 'DOWN');
+  if (downFractals.length < 2) return null;
+
+  const newDownFractal = downFractals[downFractals.length - 1];
+  if (newDownFractal.pivotIndex < si - 5) return null;
+  if (lastUsedEpoch && newDownFractal.epoch === lastUsedEpoch) return null;
+
+  const pastDownFractals = downFractals.filter(f => f.pivotIndex < newDownFractal.pivotIndex && f.pivotIndex >= newDownFractal.pivotIndex - 50);
+  if (pastDownFractals.length === 0) return null;
+
+  for (let i = pastDownFractals.length - 1; i >= 0; i--) {
+    const pastF = pastDownFractals[i];
+    const supportPrice = pastF.low;
+
+    let touched = false;
+    for (let cIdx = pastF.pivotIndex + 2; cIdx <= si; cIdx++) {
+      const c = candles[cIdx];
+      const supportZoneTop = Math.max(pastF.open, pastF.close, pastF.low * 1.001);
+      const supportZoneBottom = pastF.low * 0.999;
+      if (parseFloat(c.low) <= supportZoneTop && parseFloat(c.high) >= supportZoneBottom) {
+        touched = true;
+        break;
+      }
+    }
+
+    if (touched) {
+      const supportHeld = newDownFractal.low >= pastF.low * 0.995 && cClose >= newDownFractal.low * 0.999;
+      if (supportHeld) {
+        if (isGreenCandle) {
+          return {
+            triggered: true,
+            direction: 'BUY',
+            supportFractal: pastF,
+            newDownFractal,
+            slPrice: newDownFractal.low,
+            reason: 'Support touch @ ' + supportPrice.toFixed(4) + ' by Down Fractal @ ' + pastF.time + ', confirmed by new Down Fractal @ ' + newDownFractal.time + ', Green candle closed @ ' + cClose.toFixed(4)
+          };
+        } else {
+          return {
+            triggered: false,
+            armed: true,
+            direction: 'BUY',
+            supportFractal: pastF,
+            newDownFractal,
+            slPrice: newDownFractal.low,
+            reason: 'Support re-test valid @ ' + supportPrice.toFixed(4) + ', new Down Fractal confirmed. Awaiting green candle close.'
+          };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+export function checkResistanceReentrySell(candles, si, stoch100, lastUsedEpoch) {
+  const sK100 = stoch100 && stoch100.k ? stoch100.k[si] : null;
+  if (sK100 === null || sK100 > 53.0) return null;
+
+  const currentCandle = candles[si];
+  const cOpen = parseFloat(currentCandle.open);
+  const cClose = parseFloat(currentCandle.close);
+  const isRedCandle = cClose < cOpen;
+
+  const allFractals = getAllConfirmedFractals(candles, si);
+  const upFractals = allFractals.filter(f => f.type === 'UP');
+  if (upFractals.length < 2) return null;
+
+  const newUpFractal = upFractals[upFractals.length - 1];
+  if (newUpFractal.pivotIndex < si - 5) return null;
+  if (lastUsedEpoch && newUpFractal.epoch === lastUsedEpoch) return null;
+
+  const pastUpFractals = upFractals.filter(f => f.pivotIndex < newUpFractal.pivotIndex && f.pivotIndex >= newUpFractal.pivotIndex - 50);
+  if (pastUpFractals.length === 0) return null;
+
+  for (let i = pastUpFractals.length - 1; i >= 0; i--) {
+    const pastF = pastUpFractals[i];
+    const resistancePrice = pastF.high;
+
+    let touched = false;
+    for (let cIdx = pastF.pivotIndex + 2; cIdx <= si; cIdx++) {
+      const c = candles[cIdx];
+      const resistanceZoneBottom = Math.min(pastF.open, pastF.close, pastF.high * 0.999);
+      const resistanceZoneTop = pastF.high * 1.001;
+      if (parseFloat(c.high) >= resistanceZoneBottom && parseFloat(c.low) <= resistanceZoneTop) {
+        touched = true;
+        break;
+      }
+    }
+
+    if (touched) {
+      const resistanceHeld = newUpFractal.high <= pastF.high * 1.005 && cClose <= newUpFractal.high * 1.001;
+      if (resistanceHeld) {
+        if (isRedCandle) {
+          return {
+            triggered: true,
+            direction: 'SELL',
+            resistanceFractal: pastF,
+            newUpFractal,
+            slPrice: newUpFractal.high,
+            reason: 'Resistance touch @ ' + resistancePrice.toFixed(4) + ' by Up Fractal @ ' + pastF.time + ', confirmed by new Up Fractal @ ' + newUpFractal.time + ', Red candle closed @ ' + cClose.toFixed(4)
+          };
+        } else {
+          return {
+            triggered: false,
+            armed: true,
+            direction: 'SELL',
+            resistanceFractal: pastF,
+            newUpFractal,
+            slPrice: newUpFractal.high,
+            reason: 'Resistance re-test valid @ ' + resistancePrice.toFixed(4) + ', new Up Fractal confirmed. Awaiting red candle close.'
+          };
+        }
+      }
+    }
+  }
+  return null;
+}
+
 export function getMostRecentM5Fractal(candles, currentIndex) {
   if (!candles || currentIndex < 3) return null;
   for (let k = currentIndex - 1; k >= 2; k--) {
@@ -762,13 +945,16 @@ export function getFractalBreakoutLabel(fractal, direction, breakoutTypeOverride
 //    - If the M5 fractal candle considered for the trade is BEARISH (close < open), use OPEN price of that fractal candle as SL.
 // Precedence: Takes strict precedence over Hard SL.
 // =========================================================================
-export function deriveCalibratedStopLossPrice(entryPrice, direction, entryCandle, fractal, prevCandle = null) {
+export function deriveCalibratedStopLossPrice(entryPrice, direction, entryCandle, fractal, prevCandle = null, entryType = "") {
   const isBuy = direction === "BUY";
   const cLow = entryCandle ? parseFloat(entryCandle.low) : entryPrice;
   const cHigh = entryCandle ? parseFloat(entryCandle.high) : entryPrice;
   let candidateSl = null;
 
-  if (STRATEGY_MODE === "experimental_sweep") {
+  if (entryType && entryType.includes("REENTRY") && fractal && (typeof fractal.low === "number" || typeof fractal.high === "number")) {
+    // User Directive for Re-Entry: Use that new confirming fractal as the software SL
+    candidateSl = isBuy ? parseFloat(fractal.low) : parseFloat(fractal.high);
+  } else if (STRATEGY_MODE === "experimental_sweep") {
     // User Directive: Software SL is strictly determined by ONLY the candle that confirms the fractal break.
     // For BUY: lowest point of breakout candle.
     // For SELL: highest point of breakout candle.
@@ -3927,6 +4113,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.stoch100CrossEpochSell = null;
     state.stoch100SellWaveSkipped = null;
     state.armedTouchSetup = null;
+    state.lastUsedReentryFractalEpochBuy = null;
+    state.lastUsedReentryFractalEpochSell = null;
+    state.reentryBuyArmed = null;
+    state.reentrySellArmed = null;
     console.log(`[${REPO_LABEL}] 🎯 Macro Trend Transition: Stoch (100,1,1) crossed UP >= 47.0. SELL setups invalidated; Initial BUY Armed (watching for M5 close > High Fractal).`);
   }
   if (stoch100CrossDown50) {
@@ -3939,6 +4129,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.stoch100CrossEpochBuy = null;
     state.stoch100BuyWaveSkipped = null;
     state.armedTouchSetup = null;
+    state.lastUsedReentryFractalEpochBuy = null;
+    state.lastUsedReentryFractalEpochSell = null;
+    state.reentryBuyArmed = null;
+    state.reentrySellArmed = null;
     console.log(`[${REPO_LABEL}] 🎯 Macro Trend Transition: Stoch (100,1,1) crossed DOWN <= 53.0. BUY setups invalidated; Initial SELL Armed (watching for M5 close < Low Fractal).`);
   }
 
@@ -4038,9 +4232,61 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
   }
 
-  // --- 2. RE-ENTRY MODE (CLEARED — AWAITING NEW USER RULES) ---
-  state.armedTouchSetup = null;
-  state.isReentryMode = false;
+  // --- 2. RE-ENTRY MODE (SUPPORT/RESISTANCE ZONE RETEST) ---
+  // Mandate:
+  // Stoch 100 in line with trend AND Initial entry has already completed in this wave.
+  // 1. BUY Re-Entry:
+  //    A. Look to the left of chart for past confirmed M5 Down fractals (support levels).
+  //    B. Price retraces to touch a valid Down fractal price recorded in step A.
+  //    D. A new Down fractal draws to confirm that support is valid.
+  //    E. Execute BUY when the first green candle closes. Software SL = new Down fractal low.
+  // 2. SELL Re-Entry:
+  //    A. Look to the left of chart for past confirmed M5 Up fractals (resistance levels).
+  //    B. Price retraces to touch a valid Up fractal price recorded in step A.
+  //    D. A new Up fractal draws to confirm that resistance is valid.
+  //    E. Execute SELL when the first red candle closes. Software SL = new Up fractal high.
+
+  if (!indicatorsSatisfied && state.initialBuyDone && stoch100AlignedBuy && !hasActiveBuy) {
+    const reentryBuy = checkSupportReentryBuy(candles, si, stoch100, state.lastUsedReentryFractalEpochBuy);
+    if (reentryBuy && reentryBuy.triggered) {
+      indicatorsSatisfied = true;
+      signalDirection = "BUY";
+      setupLabel = `${SYMBOL}_REENTRY_SUPPORT_BOUNCE (BUY)`;
+      triggeredFractalForSl = reentryBuy.newDownFractal;
+      state.lastUsedReentryFractalEpochBuy = reentryBuy.newDownFractal.epoch;
+      state.reentryBuyArmed = null;
+      console.log(`[${REPO_LABEL}] 🚀 Re-Entry BUY Triggered: ${reentryBuy.reason}`);
+    } else if (reentryBuy && reentryBuy.armed) {
+      state.reentryBuyArmed = {
+        supportFractal: reentryBuy.supportFractal,
+        newDownFractal: reentryBuy.newDownFractal
+      };
+      state.armed = { dir: "BUY", lbl: `Re-Entry BUY Armed (Support [${reentryBuy.supportFractal.low.toFixed(2)}])` };
+      state.nextPhase = `Support re-test valid at ${reentryBuy.supportFractal.low.toFixed(2)}, new Down fractal confirmed. Awaiting first green candle close.`;
+      state.nextTrigger = `Awaiting green M5 candle close (Bounce from ${reentryBuy.supportFractal.low.toFixed(2)})`;
+    }
+  }
+
+  if (!indicatorsSatisfied && state.initialSellDone && stoch100AlignedSell && !hasActiveSell) {
+    const reentrySell = checkResistanceReentrySell(candles, si, stoch100, state.lastUsedReentryFractalEpochSell);
+    if (reentrySell && reentrySell.triggered) {
+      indicatorsSatisfied = true;
+      signalDirection = "SELL";
+      setupLabel = `${SYMBOL}_REENTRY_RESISTANCE_REJECT (SELL)`;
+      triggeredFractalForSl = reentrySell.newUpFractal;
+      state.lastUsedReentryFractalEpochSell = reentrySell.newUpFractal.epoch;
+      state.reentrySellArmed = null;
+      console.log(`[${REPO_LABEL}] 🚀 Re-Entry SELL Triggered: ${reentrySell.reason}`);
+    } else if (reentrySell && reentrySell.armed) {
+      state.reentrySellArmed = {
+        resistanceFractal: reentrySell.resistanceFractal,
+        newUpFractal: reentrySell.newUpFractal
+      };
+      state.armed = { dir: "SELL", lbl: `Re-Entry SELL Armed (Resistance [${reentrySell.resistanceFractal.high.toFixed(2)}])` };
+      state.nextPhase = `Resistance re-test valid at ${reentrySell.resistanceFractal.high.toFixed(2)}, new Up fractal confirmed. Awaiting first red candle close.`;
+      state.nextTrigger = `Awaiting red M5 candle close (Rejection from ${reentrySell.resistanceFractal.high.toFixed(2)})`;
+    }
+  }
 
   if (stoch100AlignedBuy) {
     const hp = recentHighFractal ? parseFloat(recentHighFractal.high).toFixed(2) : "N/A";
@@ -4048,10 +4294,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.armed = { dir: "BUY", lbl: `Initial BUY Armed (Break High: [${hp}])` };
       state.nextPhase = `Initial BUY Armed — Awaiting fresh M5 close > High Fractal (${hp}) within +/- 3 candle window`;
       state.nextTrigger = `Awaiting fresh M5 close > High Fractal (${hp})`;
+    } else if (state.reentryBuyArmed) {
+      // Retain active Re-entry armed state and UI triggers set above
     } else {
       state.armed = null;
-      state.nextPhase = "Initial BUY Complete — Standing by for New Re-Entry Rules";
-      state.nextTrigger = "Standing by for New Re-Entry Rules";
+      state.nextPhase = "Initial BUY Complete — Scanning M5 support levels for Retrace Bounce Re-Entry";
+      state.nextTrigger = "Awaiting support fractal re-test & bounce confirmation";
     }
   } else if (stoch100AlignedSell) {
     const lp = recentLowFractal ? parseFloat(recentLowFractal.low).toFixed(2) : "N/A";
@@ -4059,10 +4307,12 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       state.armed = { dir: "SELL", lbl: `Initial SELL Armed (Break Low: [${lp}])` };
       state.nextPhase = `Initial SELL Armed — Awaiting fresh M5 close < Low Fractal (${lp}) within +/- 3 candle window`;
       state.nextTrigger = `Awaiting fresh M5 close < Low Fractal (${lp})`;
+    } else if (state.reentrySellArmed) {
+      // Retain active Re-entry armed state and UI triggers set above
     } else {
       state.armed = null;
-      state.nextPhase = "Initial SELL Complete — Standing by for New Re-Entry Rules";
-      state.nextTrigger = "Standing by for New Re-Entry Rules";
+      state.nextPhase = "Initial SELL Complete — Scanning M5 resistance levels for Retrace Reject Re-Entry";
+      state.nextTrigger = "Awaiting resistance fractal re-test & rejection confirmation";
     }
   } else {
     state.armed = null;
@@ -4166,7 +4416,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const breakoutCandle = (candles && candles[si]) ? candles[si] : null;
     const preBreakoutCandle = (si > 0 && candles[si - 1]) ? candles[si - 1] : breakoutCandle;
 
-    const sl = deriveCalibratedStopLossPrice(entry, direction, breakoutCandle, activeFractal, preBreakoutCandle);
+    const sl = deriveCalibratedStopLossPrice(entry, direction, breakoutCandle, activeFractal, preBreakoutCandle, entryType);
 
     // 🎯 Dynamic Fractal Distance Take Profit (Structural Measured Move):
     // Measures the exact structural swing distance between the most recent confirmed M5 UP fractal and DOWN fractal:
@@ -4399,12 +4649,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         if (!nextTrigger) {
           nextTrigger = state.initialBuyArmed
             ? `Awaiting M5 close > High Fractal (${recentHighFractal ? recentHighFractal.high : "N/A"})`
-            : `Initial BUY Complete — Standing by for New Re-Entry Rules`;
+            : `Initial BUY Complete — Scanning Support Levels`;
         }
       } else {
-        blockerReason = `Standing by for New Re-Entry Rules (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} >= 47)`;
+        blockerReason = state.reentryBuyArmed
+          ? `Re-Entry BUY Armed: Awaiting Green Candle Close (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} >= 47)`
+          : `Support Re-Entry Scanning (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} >= 47)`;
         if (!nextTrigger) {
-          nextTrigger = "Standing by for New Re-Entry Rules";
+          nextTrigger = state.reentryBuyArmed ? state.nextTrigger : "Awaiting support fractal re-test & bounce confirmation";
         }
       }
     } else if (stoch100Sell) {
@@ -4415,12 +4667,14 @@ async function runSlowPathScan(m5BoundaryEpoch) {
         if (!nextTrigger) {
           nextTrigger = state.initialSellArmed
             ? `Awaiting M5 close < Low Fractal (${recentLowFractal ? recentLowFractal.low : "N/A"})`
-            : `Initial SELL Complete — Standing by for New Re-Entry Rules`;
+            : `Initial SELL Complete — Scanning Resistance Levels`;
         }
       } else {
-        blockerReason = `Standing by for New Re-Entry Rules (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} <= 53)`;
+        blockerReason = state.reentrySellArmed
+          ? `Re-Entry SELL Armed: Awaiting Red Candle Close (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} <= 53)`
+          : `Resistance Re-Entry Scanning (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} <= 53)`;
         if (!nextTrigger) {
-          nextTrigger = "Standing by for New Re-Entry Rules";
+          nextTrigger = state.reentrySellArmed ? state.nextTrigger : "Awaiting resistance fractal re-test & rejection confirmation";
         }
       }
     } else {
