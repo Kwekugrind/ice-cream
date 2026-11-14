@@ -173,86 +173,46 @@ export function findFirstExperimentalBreakout(candles, fractalUp, fractalDown, d
 }
 
 // =========================================================================
-// 🎯 EXPERIMENTAL INITIAL ENTRY: +/- 3 CANDLES BREAKOUT FROM STOCH 100 CROSS
-// For BUY: M5 close breaks lowest point of either recent UP or DOWN fractal candle within +/- 3 candles of Stoch 100 cross
-// For SELL: M5 close breaks highest point of either recent UP or DOWN fractal candle within +/- 3 candles of Stoch 100 cross
 // =========================================================================
-export function checkInitialExperimentalBreakoutWithin3Candles(candles, si, waveStartEpoch, dir, recentHighFractal, recentLowFractal) {
-  if (!candles || si < 1 || !waveStartEpoch || (!recentHighFractal && !recentLowFractal)) {
+// 🎯 INITIAL ENTRY: +/- 3 CANDLES BREAKOUT FROM STOCH 100 CROSS
+// BUY: Confirmed M5 close > High Fractal High within +/- 3 candles of Stoch 100 cross
+// SELL: Confirmed M5 close < Low Fractal Low within +/- 3 candles of Stoch 100 cross
+// =========================================================================
+export function checkInitialBreakoutWithin3Candles(candles, si, waveStartEpoch, dir, targetBreakoutPrice) {
+  if (!candles || si < 1 || !waveStartEpoch || targetBreakoutPrice === null || isNaN(targetBreakoutPrice)) {
     return { valid: false, expired: false, candlesSinceCross: 0 };
   }
 
   const currentEpoch = candles[si].epoch;
   const candlesSinceCross = Math.floor((currentEpoch - waveStartEpoch) / 300);
-  // Note: No 3-candle expiration here! Fresh breakouts while Stoch 8 holds in trend remain valid.
-
-  const targets = [];
-  if (recentHighFractal) {
-    const pIdx = typeof recentHighFractal.pivotIndex === "number" ? recentHighFractal.pivotIndex : candles.findIndex(c => c && c.epoch === recentHighFractal.epoch);
-    const startIdx = Math.max(0, (pIdx >= 0 ? pIdx : 0) + 1);
-    const price = dir === "BUY" ? parseFloat(recentHighFractal.low) : parseFloat(recentHighFractal.high);
-    targets.push({ fractal: recentHighFractal, price, startIdx, label: "UP_FRACTAL" });
-  }
-  if (recentLowFractal) {
-    const pIdx = typeof recentLowFractal.pivotIndex === "number" ? recentLowFractal.pivotIndex : candles.findIndex(c => c && c.epoch === recentLowFractal.epoch);
-    const startIdx = Math.max(0, (pIdx >= 0 ? pIdx : 0) + 1);
-    const price = dir === "BUY" ? parseFloat(recentLowFractal.low) : parseFloat(recentLowFractal.high);
-    targets.push({ fractal: recentLowFractal, price, startIdx, label: "DOWN_FRACTAL" });
-  }
 
   const cClose = parseFloat(candles[si].close);
-  const cLow = parseFloat(candles[si].low);
-  const cHigh = parseFloat(candles[si].high);
   const prevClose = parseFloat(candles[si - 1].close);
-  const prevLow = parseFloat(candles[si - 1].low);
-  const prevHigh = parseFloat(candles[si - 1].high);
 
-  // Scenario A: Fresh breakout on current closed candle (candlesSinceCross in [0, 3])
-  for (const t of targets) {
-    if (si < t.startIdx) continue;
-    const isFreshBreak = dir === "BUY"
-      ? (cClose > t.price && (cLow <= t.price || prevClose <= t.price))
-      : (cClose < t.price && (cHigh >= t.price || prevClose >= t.price));
-    if (isFreshBreak) {
-      return {
-        valid: true,
-        expired: false,
-        candlesSinceCross,
-        targetPrice: t.price,
-        fractal: t.fractal,
-        targetLabel: t.label,
-        reason: "FRESH_BREAKOUT_ON_OR_AFTER_CROSS"
-      };
-    }
+  // Scenario A: Fresh breakout on this current closed candle
+  const isFreshBreakThisCandle = dir === "BUY"
+    ? (prevClose <= targetBreakoutPrice && cClose > targetBreakoutPrice)
+    : (prevClose >= targetBreakoutPrice && cClose < targetBreakoutPrice);
+
+  if (isFreshBreakThisCandle) {
+    return { valid: true, expired: false, candlesSinceCross, reason: "FRESH_BREAKOUT_ON_OR_AFTER_CROSS" };
   }
 
-  // Scenario B: Breakout occurred up to 3 candles BEFORE the Stoch 100 cross
-  // (and Stoch 100 cross is fresh: candlesSinceCross in [0, 1])
+  // Scenario B: Breakout occurred up to 3 candles BEFORE the Stoch 100 cross (and Stoch 100 just crossed on/around this candle)
+  // Check if Stoch 100 cross is fresh (candlesSinceCross <= 1) and price broke out within [si - 3, si] and is still beyond targetBreakoutPrice
   if (candlesSinceCross <= 1) {
-    for (const t of targets) {
-      const isPriceBeyondTarget = dir === "BUY" ? (cClose > t.price) : (cClose < t.price);
-      if (isPriceBeyondTarget) {
-        for (let lookback = 1; lookback <= 3; lookback++) {
-          const idx = si - lookback;
-          if (idx < t.startIdx || idx < 1) break;
-          const bClose = parseFloat(candles[idx].close);
-          const bLow = parseFloat(candles[idx].low);
-          const bHigh = parseFloat(candles[idx].high);
-          const bPrevClose = parseFloat(candles[idx - 1].close);
-          const brokeHere = dir === "BUY"
-            ? (bClose > t.price && (bLow <= t.price || bPrevClose <= t.price))
-            : (bClose < t.price && (bHigh >= t.price || bPrevClose >= t.price));
-          if (brokeHere) {
-            return {
-              valid: true,
-              expired: false,
-              candlesSinceCross: -lookback,
-              targetPrice: t.price,
-              fractal: t.fractal,
-              targetLabel: t.label,
-              reason: `BREAKOUT_${lookback}_CANDLES_BEFORE_CROSS`
-            };
-          }
+    const isPriceBeyondTarget = dir === "BUY" ? (cClose > targetBreakoutPrice) : (cClose < targetBreakoutPrice);
+    if (isPriceBeyondTarget) {
+      for (let lookback = 1; lookback <= 3; lookback++) {
+        const idx = si - lookback;
+        if (idx < 1) break;
+        const bClose = parseFloat(candles[idx].close);
+        const bPrevClose = parseFloat(candles[idx - 1].close);
+        const brokeHere = dir === "BUY"
+          ? (bPrevClose <= targetBreakoutPrice && bClose > targetBreakoutPrice)
+          : (bPrevClose >= targetBreakoutPrice && bClose < targetBreakoutPrice);
+        if (brokeHere) {
+          return { valid: true, expired: false, candlesSinceCross: -lookback, reason: "BREAKOUT_" + lookback + "_CANDLES_BEFORE_CROSS" };
         }
       }
     }
@@ -440,10 +400,9 @@ export const INSTRUMENT_PROFILES = {
     lotSize: 0.01,
     stakeUsd: 5.0,
     commissionUsd: 0.15,
-    strategyProfile: "PROFILE_UNIVERSAL_STOCH100_STOCH8",
-    gateType: "STOCH100_STOCH8",
+    strategyProfile: "PROFILE_UNIVERSAL_STOCH100",
+    gateType: "STOCH100",
     stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", buyLevel: 47, sellLevel: 53 },
-    stoch8Params: { k: 8, d: 1, slowing: 1, method: "Simple", levels: [10, 50, 90] },
     initialGateMode: "STOCH100_ONLY",         // Initial Entry: Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross + M5 close beyond Fractal High/Low
     initialBreakoutType: "HIGH_LOW",          // Initial Entry: M5 close > High of UP fractal (BUY) / < Low of DOWN fractal (SELL)
     initialTriggerExec: "CLOSE",              // Initial Entry: M5 candle CLOSE
@@ -452,7 +411,6 @@ export const INSTRUMENT_PROFILES = {
     slExecutionType: "CLOSE",                 // Software SL executed strictly on confirmed M5 candle CLOSE
     profitManagementMode: "SUPERTREND_DIRECTION_FLIP", // Supertrend (21, 1, 0) direction flip exit when in profit
     supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
-    stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
     takeProfitUsd: 10.00,                     // Fallback TP ($10.00 / 1,000 pts @ 0.01 lots)
     dailyTargetLockEnabled: true,
     minTakeProfitPoints: 500.0,
@@ -462,7 +420,7 @@ export const INSTRUMENT_PROFILES = {
     trailBufferUsd: 2.00,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross + M5 close > High / < Low Fractal; Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross within +/- 3 candle window + M5 close > High / < Low Fractal; Re-Entry standing by for new user rules; Software SL on confirmed M5 CLOSE; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "1HZ75V": {
     symbol: "1HZ75V",
@@ -473,10 +431,9 @@ export const INSTRUMENT_PROFILES = {
     lotSize: 0.15,
     stakeUsd: 5.0,
     commissionUsd: 0.15,
-    strategyProfile: "PROFILE_UNIVERSAL_STOCH100_STOCH8",
-    gateType: "STOCH100_STOCH8",
+    strategyProfile: "PROFILE_UNIVERSAL_STOCH100",
+    gateType: "STOCH100",
     stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", buyLevel: 47, sellLevel: 53 },
-    stoch8Params: { k: 8, d: 1, slowing: 1, method: "Simple", levels: [10, 50, 90] },
     initialGateMode: "STOCH100_ONLY",
     initialBreakoutType: "HIGH_LOW",
     initialTriggerExec: "CLOSE",
@@ -485,7 +442,6 @@ export const INSTRUMENT_PROFILES = {
     slExecutionType: "CLOSE",
     profitManagementMode: "SUPERTREND_DIRECTION_FLIP", // Supertrend (21, 1, 0) direction flip exit when in profit
     supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
-    stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
     takeProfitUsd: 7.00,
     dailyTargetLockEnabled: true,
     minTakeProfitPoints: 23.33,
@@ -495,7 +451,7 @@ export const INSTRUMENT_PROFILES = {
     trailBufferUsd: 2.00,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross within +/- 3 candle window + M5 close > High / < Low Fractal; Re-Entry standing by for new user rules; Software SL on confirmed M5 CLOSE; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "R_100": {
     symbol: "R_100",
@@ -506,10 +462,9 @@ export const INSTRUMENT_PROFILES = {
     lotSize: 1.00,
     stakeUsd: 5.0,
     commissionUsd: 0.15,
-    strategyProfile: "PROFILE_UNIVERSAL_STOCH100_STOCH8",
-    gateType: "STOCH100_STOCH8",
+    strategyProfile: "PROFILE_UNIVERSAL_STOCH100",
+    gateType: "STOCH100",
     stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", buyLevel: 47, sellLevel: 53 },
-    stoch8Params: { k: 8, d: 1, slowing: 1, method: "Simple", levels: [10, 50, 90] },
     initialGateMode: "STOCH100_ONLY",
     initialBreakoutType: "HIGH_LOW",
     initialTriggerExec: "CLOSE",
@@ -518,7 +473,6 @@ export const INSTRUMENT_PROFILES = {
     slExecutionType: "CLOSE",
     profitManagementMode: "SUPERTREND_DIRECTION_FLIP", // Supertrend (21, 1, 0) direction flip exit when in profit
     supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
-    stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
     takeProfitUsd: 7.00,
     dailyTargetLockEnabled: true,
     minTakeProfitPoints: 3.00,
@@ -527,7 +481,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 5.00,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross within +/- 3 candle window + M5 close > High / < Low Fractal; Re-Entry standing by for new user rules; Software SL on confirmed M5 CLOSE; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "1HZ100V": {
     symbol: "1HZ100V",
@@ -538,8 +492,8 @@ export const INSTRUMENT_PROFILES = {
     lotSize: 1.00,
     stakeUsd: 5.0,
     commissionUsd: 0.15,
-    strategyProfile: "PROFILE_UNIVERSAL_STOCH100_STOCH8",
-    gateType: "STOCH100_STOCH8",
+    strategyProfile: "PROFILE_UNIVERSAL_STOCH100",
+    gateType: "STOCH100",
     stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", buyLevel: 47, sellLevel: 53 },
     initialGateMode: "STOCH100_ONLY",
     initialBreakoutType: "HIGH_LOW",
@@ -549,7 +503,6 @@ export const INSTRUMENT_PROFILES = {
     slExecutionType: "CLOSE",
     profitManagementMode: "SUPERTREND_DIRECTION_FLIP", // Supertrend (21, 1, 0) direction flip exit when in profit
     supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
-    stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
     takeProfitUsd: 7.00,
     dailyTargetLockEnabled: true,
     minTakeProfitPoints: 3.00,
@@ -558,7 +511,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 2.20,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross within +/- 3 candle window + M5 close > High / < Low Fractal; Re-Entry standing by for new user rules; Software SL on confirmed M5 CLOSE; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "1HZ25V": {
     symbol: "1HZ25V",
@@ -569,10 +522,9 @@ export const INSTRUMENT_PROFILES = {
     lotSize: 0.005,
     stakeUsd: 5.0,
     commissionUsd: 0.15,
-    strategyProfile: "PROFILE_UNIVERSAL_STOCH100_STOCH8",
-    gateType: "STOCH100_STOCH8",
+    strategyProfile: "PROFILE_UNIVERSAL_STOCH100",
+    gateType: "STOCH100",
     stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", buyLevel: 47, sellLevel: 53 },
-    stoch8Params: { k: 8, d: 1, slowing: 1, method: "Simple", levels: [10, 50, 90] },
     initialGateMode: "STOCH100_ONLY",
     initialBreakoutType: "HIGH_LOW",
     initialTriggerExec: "CLOSE",
@@ -581,7 +533,6 @@ export const INSTRUMENT_PROFILES = {
     slExecutionType: "CLOSE",
     profitManagementMode: "SUPERTREND_DIRECTION_FLIP", // Supertrend (21, 1, 0) direction flip exit when in profit
     supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
-    stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
     takeProfitUsd: 15.00,
     dailyTargetLockEnabled: true,
     minTakeProfitPoints: 600.0,
@@ -590,7 +541,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 5.00,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross within +/- 3 candle window + M5 close > High / < Low Fractal; Re-Entry standing by for new user rules; Software SL on confirmed M5 CLOSE; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "R_25": {
     symbol: "R_25",
@@ -601,10 +552,9 @@ export const INSTRUMENT_PROFILES = {
     lotSize: 0.50,
     stakeUsd: 5.0,
     commissionUsd: 0.32,
-    strategyProfile: "PROFILE_UNIVERSAL_STOCH100_STOCH8",
-    gateType: "STOCH100_STOCH8",
+    strategyProfile: "PROFILE_UNIVERSAL_STOCH100",
+    gateType: "STOCH100",
     stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", buyLevel: 47, sellLevel: 53 },
-    stoch8Params: { k: 8, d: 1, slowing: 1, method: "Simple", levels: [10, 50, 90] },
     initialGateMode: "STOCH100_ONLY",
     initialBreakoutType: "HIGH_LOW",
     initialTriggerExec: "CLOSE",
@@ -613,7 +563,6 @@ export const INSTRUMENT_PROFILES = {
     slExecutionType: "CLOSE",
     profitManagementMode: "SUPERTREND_DIRECTION_FLIP", // Supertrend (21, 1, 0) direction flip exit when in profit
     supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
-    stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
     takeProfitUsd: 7.00,
     dailyTargetLockEnabled: true,
     minTakeProfitPoints: 6.00,
@@ -623,7 +572,7 @@ export const INSTRUMENT_PROFILES = {
     trailBufferUsd: 1.50,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross within +/- 3 candle window + M5 close > High / < Low Fractal; Re-Entry standing by for new user rules; Software SL on confirmed M5 CLOSE; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "R_50": {
     symbol: "R_50",
@@ -634,10 +583,9 @@ export const INSTRUMENT_PROFILES = {
     lotSize: 4.00,
     stakeUsd: 5.0,
     commissionUsd: 0.16,
-    strategyProfile: "PROFILE_UNIVERSAL_STOCH100_STOCH8",
-    gateType: "STOCH100_STOCH8",
+    strategyProfile: "PROFILE_UNIVERSAL_STOCH100",
+    gateType: "STOCH100",
     stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", buyLevel: 47, sellLevel: 53 },
-    stoch8Params: { k: 8, d: 1, slowing: 1, method: "Simple", levels: [10, 50, 90] },
     initialGateMode: "STOCH100_ONLY",
     initialBreakoutType: "HIGH_LOW",
     initialTriggerExec: "CLOSE",
@@ -646,7 +594,6 @@ export const INSTRUMENT_PROFILES = {
     slExecutionType: "CLOSE",
     profitManagementMode: "SUPERTREND_DIRECTION_FLIP", // Supertrend (21, 1, 0) direction flip exit when in profit
     supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
-    stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
     takeProfitUsd: 7.00,
     dailyTargetLockEnabled: true,
     minTakeProfitPoints: 0.75,
@@ -656,7 +603,7 @@ export const INSTRUMENT_PROFILES = {
     trailBufferUsd: 1.50,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross within +/- 3 candle window + M5 close > High / < Low Fractal; Re-Entry standing by for new user rules; Software SL on confirmed M5 CLOSE; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   },
   "R_10": {
     symbol: "R_10",
@@ -667,10 +614,9 @@ export const INSTRUMENT_PROFILES = {
     lotSize: 0.50,
     stakeUsd: 5.0,
     commissionUsd: 0.80,
-    strategyProfile: "PROFILE_UNIVERSAL_STOCH100_STOCH8",
-    gateType: "STOCH100_STOCH8",
+    strategyProfile: "PROFILE_UNIVERSAL_STOCH100",
+    gateType: "STOCH100",
     stoch100Params: { k: 100, d: 1, slowing: 1, method: "Simple", buyLevel: 47, sellLevel: 53 },
-    stoch8Params: { k: 8, d: 1, slowing: 1, method: "Simple", levels: [10, 50, 90] },
     initialGateMode: "STOCH100_ONLY",
     initialBreakoutType: "HIGH_LOW",
     initialTriggerExec: "CLOSE",
@@ -679,7 +625,6 @@ export const INSTRUMENT_PROFILES = {
     slExecutionType: "CLOSE",
     profitManagementMode: "SUPERTREND_DIRECTION_FLIP", // Supertrend (21, 1, 0) direction flip exit when in profit
     supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
-    stoch8EarlyExit: false,                   // Trades managed by Supertrend (21, 1, 0) direction flip
     takeProfitUsd: 7.00,
     dailyTargetLockEnabled: true,
     minTakeProfitPoints: 6.00,
@@ -688,7 +633,7 @@ export const INSTRUMENT_PROFILES = {
     trailActivationUsd: 4.50,
     maxHardStopPoints: null,
     slType: "FRACTAL_BODY_ANCHOR_CLOSE",
-    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross + M5 close > High Fractal (BUY) / < Low Fractal (SELL); Re-Entry after Initial Trade on Stoch 8 <= 10 / >= 90 + M5 close > High / < Low Fractal; Software SL on Fractal Candle Open/Close on M5 CLOSE; Broker Hard SL placed behind Software SL; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
+    notes: "Unified Fleet Rule: Initial on Stoch 100 Level 47 (BUY) / Level 53 (SELL) cross within +/- 3 candle window + M5 close > High / < Low Fractal; Re-Entry standing by for new user rules; Software SL on confirmed M5 CLOSE; Profit Management: Supertrend (Periods: 21, Multiplier: 1, Shift: 0) direction flip exit when trade is in profit."
   }
 };
 
@@ -891,12 +836,8 @@ function escapeMarkdown(text) {
 
 // ==================== TELEGRAM & UTILS ====================
 function getFriendlyStrategyName() {
-  const initDesc = INITIAL_GATE_MODE === "STOCH100_ONLY"
-    ? `Stoch 100 Cross + Fractal ${INITIAL_BREAKOUT_TYPE} (${INITIAL_TRIGGER_EXEC})`
-    : (INITIAL_GATE_MODE === "STOCH8_POST_2C"
-        ? `Stoch 100 + Stoch 8 (0..+2c) + Fractal ${INITIAL_BREAKOUT_TYPE} (CLOSE)`
-        : `Stoch 100 + Stoch 8 (±2c) + Fractal ${INITIAL_BREAKOUT_TYPE} (CLOSE)`);
-  return `Initial: ${initDesc} | Re-Entry: Stoch 8 (10/90) + Fractal ${ENTRY_BREAKOUT_TYPE} (CLOSE) | SL: ${SL_REFERENCE_TYPE} (${SL_EXECUTION_TYPE}) | Profit: Supertrend (21, 1, 0) Direction Flip`;
+  const initDesc = "Stoch 100 Cross (±3c) + Fractal High/Low Breakout (CLOSE)";
+  return "Initial: " + initDesc + " | Re-Entry: None (Awaiting Rules) | SL: " + SL_REFERENCE_TYPE + " (" + SL_EXECUTION_TYPE + ") | Profit: Supertrend (21, 1, 0) Direction Flip";
 }
 
 function toAsciiJson(obj) {
@@ -2223,16 +2164,16 @@ const ALLOWED_STATE_KEYS = new Set([
   "armedTouchSetup",
   "initialSellArmed",
   "initialBuyArmed",
-  "stoch8_pulled_back_90",
-  "stoch8_pulled_back_10",
-  "stoch8_crossed_50_in_trend_SELL",
-  "stoch8_crossed_50_in_trend_BUY",
+  
+  
+  
+  
   "lastUsedFractalEpochSell",
   "lastUsedFractalEpochBuy",
   "initialSellDone",
   "initialBuyDone",
-  "stoch8CrossEpochSell",
-  "stoch8CrossEpochBuy",
+  
+  
   "stoch100CrossEpochSell",
   "stoch100CrossEpochBuy",
   "stoch100BuyWaveSkipped",
@@ -2284,7 +2225,7 @@ const ALLOWED_STATE_KEYS = new Set([
   "v25_stoch100CrossEpochBuy", "v25_stoch100CrossEpochSell",
   "v25_stoch30CrossEpochBuy", "v25_stoch30CrossEpochSell",
   "v25_stoch302515_touched_50_BUY", "v25_stoch302515_touched_50_SELL",
-  "stoch100Val", "stoch8Val", "stoch8MaxVal", "stoch8MinVal", "v75_1s_stoch8_pulled_back_10", "v75_1s_stoch8_pulled_back_90", "stoch1511Val", "stoch1511MaxVal", "stoch1511MinVal", "v75_1s_stoch15_pulled_back_30", "v75_1s_stoch15_pulled_back_70", "stoch3025Val", "stoch3025Signal", "stoch302515Val", "stoch302515Signal",
+  "stoch100Val",      "stoch1511Val", "stoch1511MaxVal", "stoch1511MinVal", "v75_1s_stoch15_pulled_back_30", "v75_1s_stoch15_pulled_back_70", "stoch3025Val", "stoch3025Signal", "stoch302515Val", "stoch302515Signal",
   "queuedPendingOrder", "dailyLossLockout",
   "healthStatus", "blockerReason", "nextTrigger", "lastScanTime",
   "lastSuccessfulScan", "lastError", "lastErrorTime", "lastErrorStack", "errorCount",
@@ -2804,14 +2745,7 @@ async function manageOpenTradesFastPath() {
         { contractId: openTrade.contractId }
       );
 
-      // ⚡ Immediate Re-Entry Opportunity Evaluation: If a re-entry opportunity was latched while trade was running, fire immediately!
-      if (!state.dailyTargetReached && state.activeReentryOpportunity) {
-        try {
-          await checkAndExecuteImmediateReentry(currentPrice);
-        } catch (e) {
-          console.error(`[${REPO_LABEL}] Immediate re-entry attempt error:`, e.message);
-        }
-      }
+      // Immediate re-entry trigger disabled (standing by for new user rules)
     }
   }
 
@@ -2932,196 +2866,9 @@ async function checkOppositeFractalFakeoutExit(m15Candles, currentPrice) {
 
 // ==================== IMMEDIATE RE-ENTRY ENGINE ====================
 async function checkAndExecuteImmediateReentry(spotPrice) {
-  if (state.dailyTargetReached) return;
-  const opp = state.activeReentryOpportunity;
-  if (!opp) return;
-
-  const nowEpoch = Math.floor(Date.now() / 1000);
-  if (nowEpoch > (opp.expiresEpoch || 0)) {
-    state.activeReentryOpportunity = null;
-    return;
-  }
-
-  const trades = loadTrades();
-  const hasActive = trades.some(t => !t.result && !t.pending);
-  if (hasActive) return;
-
-  const price = spotPrice || (await fetchCurrentSpotPrice());
-  if (!price || price <= 0) return;
-
-  // Strict Universal EMA 100 Directional Filter Verification (Excluded on Stoch 100 + Stoch 15,1,1 fleet per Trader Mandate)
-  const e100 = opp.currentEma100 || (state.ema100Val || null);
-  if (e100 !== null && SYMBOL !== "1HZ75V" && SYMBOL !== "R_75" && SYMBOL !== "R_100" && SYMBOL !== "1HZ25V" && SYMBOL !== "R_25" && STRATEGY_PROFILE !== "PROFILE_V75_1S_STOCH100_STOCH15") {
-    if (opp.direction === "BUY" && price <= e100) {
-      console.log(`[${REPO_LABEL}] Immediate re-entry BUY blocked: Spot (${price.toFixed(2)}) is BELOW EMA 100 (${e100.toFixed(2)})`);
-      state.activeReentryOpportunity = null;
-      return;
-    }
-    if (opp.direction === "SELL" && price >= e100) {
-      console.log(`[${REPO_LABEL}] Immediate re-entry SELL blocked: Spot (${price.toFixed(2)}) is ABOVE EMA 100 (${e100.toFixed(2)})`);
-      state.activeReentryOpportunity = null;
-      return;
-    }
-  }
-
-  // Strict Macro EMA 100 vs EMA 200 Filter for Re-Entries (Applicable ONLY to V75)
-  if (STRATEGY_PROFILE === "PROFILE_V75_EMA_STOCH15" && SYMBOL !== "R_75") {
-    const e200 = opp.currentEma200 || (state.ema200Val || null);
-    if (e100 !== null && e200 !== null) {
-      if (opp.direction === "BUY" && e100 <= e200) {
-        console.log(`[${REPO_LABEL}] Immediate re-entry BUY blocked: EMA 100 (${e100.toFixed(2)}) is not above EMA 200 (${e200.toFixed(2)})`);
-        state.activeReentryOpportunity = null;
-        return;
-      }
-      if (opp.direction === "SELL" && e100 >= e200) {
-        console.log(`[${REPO_LABEL}] Immediate re-entry SELL blocked: EMA 100 (${e100.toFixed(2)}) is not below EMA 200 (${e200.toFixed(2)})`);
-        state.activeReentryOpportunity = null;
-        return;
-      }
-    }
-  }
-
-  console.log(`[${REPO_LABEL}] 🚀 Firing Immediate Re-Entry Order (${opp.direction}) on ${opp.setupLabel} at ${price.toFixed(4)}!`);
+  // Re-entry disabled: standing by for new user rules
   state.activeReentryOpportunity = null;
-
-  const direction = opp.direction;
-  const setupLabel = opp.setupLabel;
-
-  let initialM5Fractal = opp.initialM5Fractal || null;
-  let initialM15Fractal = opp.initialM15Fractal || null;
-
-  try {
-    const { m5: cM5, m15: cM15 } = await fetchAllData();
-    if (cM5 && cM5.length >= 20) {
-      const idx = cM5.length - 2;
-      initialM5Fractal = direction === "BUY" ? findRecentFractalBelow(cM5, idx, price) : findRecentFractalAbove(cM5, idx, price);
-    }
-    if (cM15 && cM15.length >= 10) {
-      initialM15Fractal = findRecentFractalM15(cM15, direction);
-    }
-  } catch (_) {}
-
-  const hardStopPrice = deriveHardStopPrice(price, direction, CTRADER_LOT_SIZE);
-  const reqPnlSoft = EXECUTION_MODE === "ctrader" ? SOFTWARE_SL_USD : (SOFTWARE_SL_USD + COMMISSION_USD);
-  const slCapPrice = EXECUTION_MODE === "ctrader"
-    ? (direction === "BUY" ? price + (reqPnlSoft / CTRADER_LOT_SIZE) : price - (reqPnlSoft / CTRADER_LOT_SIZE))
-    : (direction === "BUY" ? price * (1 + reqPnlSoft / (STAKE_USD * MULTIPLIER)) : price * (1 - reqPnlSoft / (STAKE_USD * MULTIPLIER)));
-
-  let sl;
-  if (SYMBOL === "1HZ25V") {
-    sl = direction === "BUY"
-      ? ((cM5 && cM5.length > 0) ? parseFloat(cM5[cM5.length - 1].low) : price)
-      : ((cM5 && cM5.length > 0) ? parseFloat(cM5[cM5.length - 1].high) : price);
-  } else if (SYMBOL === "1HZ75V" || SYMBOL === "R_75" || SYMBOL === "R_100" || SYMBOL === "R_25" || SYMBOL === "R_50" || SYMBOL === "R_10") {
-    sl = slCapPrice;
-  } else if (PROFILE.slType === "HARD_POINTS") {
-    sl = hardStopPrice;
-  } else if (PROFILE.slType === "M5_FRACTAL") {
-    const minFractalDist = (SYMBOL === "R_25" || STRATEGY_PROFILE === "PROFILE_V25_STOCH200_CCI100") ? 6.00 : 0;
-    const fracDistBuy = initialM5Fractal ? (price - initialM5Fractal) : 0;
-    const fracDistSell = initialM5Fractal ? (initialM5Fractal - price) : 0;
-
-    if (direction === "BUY") {
-      sl = (initialM5Fractal && initialM5Fractal > slCapPrice && initialM5Fractal < price && fracDistBuy >= minFractalDist) ? initialM5Fractal : slCapPrice;
-    } else {
-      sl = (initialM5Fractal && initialM5Fractal < slCapPrice && initialM5Fractal > price && fracDistSell >= minFractalDist) ? initialM5Fractal : slCapPrice;
-    }
-  } else {
-    if (direction === "BUY") {
-      sl = (initialM15Fractal && initialM15Fractal > slCapPrice && initialM15Fractal < price) ? initialM15Fractal : slCapPrice;
-    } else {
-      sl = (initialM15Fractal && initialM15Fractal < slCapPrice && initialM15Fractal > price) ? initialM15Fractal : slCapPrice;
-    }
-  }
-
-  const minRequiredTp = EXECUTION_MODE === "ctrader"
-    ? (direction === "BUY" ? price + (TARGET_MIN_PROFIT / CTRADER_LOT_SIZE) : price - (TARGET_MIN_PROFIT / CTRADER_LOT_SIZE))
-    : (direction === "BUY" ? price * (1 + TARGET_MIN_PROFIT / (STAKE_USD * MULTIPLIER)) : price * (1 - TARGET_MIN_PROFIT / (STAKE_USD * MULTIPLIER)));
-
-  let tpPrice = (SYMBOL === "1HZ75V" || SYMBOL === "R_75" || SYMBOL === "R_100" || SYMBOL === "1HZ25V" || SYMBOL === "R_25" || SYMBOL === "R_10") ? parseFloat(minRequiredTp.toFixed(2)) : (opp.calculatedFibTp || minRequiredTp);
-  if (SYMBOL !== "1HZ75V" && SYMBOL !== "R_75" && SYMBOL !== "R_100" && SYMBOL !== "1HZ25V" && SYMBOL !== "R_25" && SYMBOL !== "R_10") {
-    if (direction === "BUY" && tpPrice < minRequiredTp) tpPrice = minRequiredTp;
-    if (direction === "SELL" && tpPrice > minRequiredTp) tpPrice = minRequiredTp;
-  }
-
-  const timeFormatted = new Date(nowEpoch * 1000).toISOString().replace("T", " ").substring(0, 19);
-
-  const pendingTradeRecord = {
-    id: `${SYMBOL}-${Date.now()}`, contractId: null, pending: true, repo: REPO_LABEL, symbol: SYMBOL, direction, entry: price, sl, rr: null, entryType: setupLabel, brokerSlAmount: STAKE_USD,
-    lots: CTRADER_LOT_SIZE, executionMode: EXECUTION_MODE, is_ctrader: EXECUTION_MODE === "ctrader",
-    entryEpoch: nowEpoch, purchaseTimeEpoch: nowEpoch, purchase_time: nowEpoch,
-    breakoutCandleEpoch: (cM5 && cM5.length > 0) ? cM5[cM5.length - 1].epoch : (nowEpoch - (nowEpoch % 300)),
-    entryCandleEpoch: nowEpoch - (nowEpoch % 300),
-    entryCandleHigh: (cM5 && cM5.length > 0) ? parseFloat(cM5[cM5.length - 1].high) : price,
-    entryCandleLow: (cM5 && cM5.length > 0) ? parseFloat(cM5[cM5.length - 1].low) : price,
-    stoch25_touched_extreme: false,
-    stoch25_touched_extreme_epoch: null,
-    fractalSl: initialM5Fractal || initialM15Fractal,
-    fractalEpoch: null,
-    fractalTimeframe: initialM5Fractal ? "M5" : (initialM15Fractal ? "M15" : null),
-    m5Fractal: initialM5Fractal,
-    m30FractalUpgraded: false, tpPrice, fibTpPrice: tpPrice,
-    openTime: timeFormatted, closeTime: null, result: null
-  };
-  trades.push(pendingTradeRecord);
-  saveTrades(trades);
-
-  try {
-    const contractId = await executeTrade(direction, { slPrice: sl, brokerSlPrice: pendingTradeRecord.brokerSlPrice, fibTpPrice: tpPrice, tpPrice });
-    if (!contractId) {
-      trades.splice(trades.findIndex(t => t.id === pendingTradeRecord.id), 1);
-      saveTrades(trades);
-      await sendTelegram(`❌ *${REPO_LABEL}* — Immediate Re-Entry triggered, but broker returned no contract ID.`);
-    } else {
-      pendingTradeRecord.contractId = contractId;
-      pendingTradeRecord.pending = false;
-      saveTrades(trades);
-      state.openTrade = {
-        ...pendingTradeRecord,
-        entryPrice: pendingTradeRecord.entry,
-        stopLoss: pendingTradeRecord.sl,
-        tpPrice: pendingTradeRecord.tpPrice,
-        unrealizedPnl: 0,
-        livePnl: 0,
-        profit: 0
-      };
-      state.armed = null;
-      state.armedEpoch = null;
-      state.armedTime = null;
-      saveState();
-
-      const dirEmoji = direction === "BUY" ? "🟢 ⬆️ BUY" : "🔴 ⬇️ SELL";
-      await sendTelegram(
-        `⚡ *${SYMBOL_NAME.toUpperCase()} — IMMEDIATE RE-ENTRY EXECUTED* ⚡\n\n` +
-        `Direction: *${dirEmoji}*\n` +
-        `Setup: *${escapeMarkdown(setupLabel)}*\n` +
-        `📍 Entry: *${price.toFixed(4)}*\n` +
-        `🛑 Initial SL: *${sl.toFixed(4)}*\n` +
-        `🎯 Take Profit: *${tpPrice ? tpPrice.toFixed(4) : "Dynamic Runner"}* (Min $${TARGET_MIN_PROFIT.toFixed(2)} Net + Trailing Active)\n` +
-        `💰 Stake: $${STAKE_USD} | Mode: ${EXECUTION_MODE === "ctrader" ? `cTrader CFD (${CTRADER_LOT_SIZE} lots)` : `Multiplier ${MULTIPLIER}x`}\n` +
-        `⏰ Time (UTC): ${timeFormatted}`
-      );
-    }
-  } catch (execErr) {
-    console.error(`[${REPO_LABEL}] Immediate re-entry execution initial attempt failed: ${execErr.message}. Queueing for 2.5-min reconnect...`);
-    state.queuedPendingOrder = {
-      tradeRecordId: pendingTradeRecord.id,
-      direction,
-      orderContext: { slPrice: sl, fibTpPrice: tpPrice, tpPrice },
-      signalEpoch: nowEpoch,
-      expiresEpoch: nowEpoch + 150,
-      message: `⚡ *${SYMBOL_NAME.toUpperCase()} — IMMEDIATE RE-ENTRY EXECUTED* ⚡\n\nDirection: *${direction}*\nSetup: *${escapeMarkdown(setupLabel)}*`,
-      firstFailureMessage: execErr.message,
-      retryAttempts: 1,
-      lastAttemptEpoch: nowEpoch
-    };
-    saveState();
-    await sendTelegram(
-      `⚠️ *${REPO_LABEL} — Immediate Re-Entry Paused (Gateway Transient Error)*\n\n` +
-      `Reason: \`${escapeMarkdown(execErr.message)}\`\n` +
-      `🔄 *Auto-Reconnect Engine Active*: Retrying order execution continuously over the next 2.5 minutes.`
-    );
-  }
+  return;
 }
 
 // ==================== SLOW PATH (RUNS ON CLOSED M5 CANDLE) ====================
@@ -3369,15 +3116,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.stoch1511Val = sK2511;
   }
 
-  // Stoch (8,1,1 Simple) for R_50 OmniSight Trigger & Re-Entry & Trade Management
-  const stoch8 = calculateStoch(candles, 8, 1, 1, "Simple");
-  const sK8 = stoch8.k[si], sD8 = stoch8.d[si], prevK8 = stoch8.k[si - 1], prevD8 = stoch8.d[si - 1];
-  const sMaxK8 = sK8, sMinK8 = sK8;
-  const prevMaxK8 = prevK8, prevMinK8 = prevK8;
-  state.stoch8Val = sK8;
-  state.stoch8MaxVal = sK8;
-  state.stoch8MinVal = sK8;
-  state.stoch1511Val = sK8;
+  // Stoch 8 calculation removed per user strategy update
 
   // Stoch (50, 1, 1 Simple) for R_10 Test Bot Macro Trend Gate
   const stoch50 = calculateStoch(candles, 50, 1, 1, "Simple");
@@ -3426,7 +3165,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const sK = stoch.k[si], sD = stoch.d[si], prevK = stoch.k[si - 1], prevD = stoch.d[si - 1];
 
   if (GATE_TYPE === "STOCH100_STOCH8" || STRATEGY_PROFILE === "PROFILE_UNIVERSAL_STOCH100_STOCH8") {
-    if (sK100 === null || prevK100 === null || sK8 === null || prevK8 === null) {
+    if (sK100 === null || prevK100 === null) {
       state.lastProcessedEpoch = m5BoundaryEpoch;
       saveState();
       return;
@@ -3438,7 +3177,7 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       return;
     }
   } else if (SYMBOL === "R_50" || SYMBOL === "R_75" || SYMBOL === "1HZ75V" || STRATEGY_PROFILE === "PROFILE_V50_STOCH100_STOCH8" || STRATEGY_PROFILE === "PROFILE_V75_STOCH100_STOCH8" || STRATEGY_PROFILE === "PROFILE_V75_1S_STOCH100_STOCH8" || STRATEGY_PROFILE === "PROFILE_V50_MACD_STOCH25") {
-    if (sK100 === null || prevK100 === null || sK8 === null || prevK8 === null) {
+    if (sK100 === null || prevK100 === null) {
       state.lastProcessedEpoch = m5BoundaryEpoch;
       saveState();
       return;
@@ -4138,8 +3877,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
   const prevHigh = si > 0 ? parseFloat(candles[si - 1].high) : cHigh;
 
   // M5 Stoch (8, 1, 1 Simple) strictly on confirmed closed candle
-  const stoch8TouchedOrClosed10 = (sK8 !== null && sK8 <= 10.0);
-  const stoch8TouchedOrClosed90 = (sK8 !== null && sK8 >= 90.0);
+  // stoch8 <= 10 check removed
+  // stoch8 >= 90 check removed
 
   // Active trades by direction (enabling Position Flipping on opposite signal)
   const hasActiveBuy = trades.some(t => !t.result && !t.closeTime && (t.contractId || !t.pending) && t.direction === "BUY");
@@ -4183,12 +3922,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.stoch100BuyWaveSkipped = null;
     state.initialBuyArmed = true;
     state.initialBuyDone = false;
-    state.stoch8_pulled_back_10 = false;
-    state.stoch8_crossed_50_in_trend_BUY = false;
     state.initialSellArmed = false;
     state.initialSellDone = false;
-    state.stoch8_pulled_back_90 = false;
-    state.stoch8_crossed_50_in_trend_SELL = false;
     state.stoch100CrossEpochSell = null;
     state.stoch100SellWaveSkipped = null;
     state.armedTouchSetup = null;
@@ -4199,12 +3934,8 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.stoch100SellWaveSkipped = null;
     state.initialSellArmed = true;
     state.initialSellDone = false;
-    state.stoch8_pulled_back_90 = false;
-    state.stoch8_crossed_50_in_trend_SELL = false;
     state.initialBuyArmed = false;
     state.initialBuyDone = false;
-    state.stoch8_pulled_back_10 = false;
-    state.stoch8_crossed_50_in_trend_BUY = false;
     state.stoch100CrossEpochBuy = null;
     state.stoch100BuyWaveSkipped = null;
     state.armedTouchSetup = null;
@@ -4216,32 +3947,25 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     state.stoch100CrossEpochBuy = null;
     state.initialBuyArmed = false;
     state.initialBuyDone = false;
-    state.stoch8_pulled_back_10 = false;
-    state.stoch8_crossed_50_in_trend_BUY = false;
     state.armedTouchSetup = null;
   }
   if (!stoch100AlignedSell) {
     state.stoch100CrossEpochSell = null;
     state.initialSellArmed = false;
     state.initialSellDone = false;
-    state.stoch8_pulled_back_90 = false;
-    state.stoch8_crossed_50_in_trend_SELL = false;
     state.armedTouchSetup = null;
   }
 
-  // Verify whether Initial Trade has actually been taken or skipped in the current Stoch 100 wave
+  // Verify whether Initial Trade has actually been taken in the current Stoch 100 wave
   let waveStartBuy = null;
   if (stoch100AlignedBuy) {
-    waveStartBuy = findStochasticCrossCandleEpoch(candles, stoch100, "BUY", "MIDLINE") || state.stoch100CrossEpochBuy || m5BoundaryEpoch;
+    waveStartBuy = findStochasticCrossCandleEpoch(candles, stoch100, "BUY", "MIDLINE", STOCH100_BUY_THRESHOLD) || state.stoch100CrossEpochBuy || m5BoundaryEpoch;
     state.stoch100CrossEpochBuy = waveStartBuy;
     const tradeTakenInBuyWave = trades.some(t =>
       t.direction === "BUY" &&
       ((t.entryEpoch && t.entryEpoch >= waveStartBuy) || (t.entryM5Bucket && t.entryM5Bucket >= waveStartBuy))
     );
-    const reEntryKickedInBuy = Boolean(state.stoch8_pulled_back_10 || (sK8 !== null && sK8 < 50.0));
-    const waveSkippedBuy = state.stoch100BuyWaveSkipped === waveStartBuy && reEntryKickedInBuy;
-    const waveAlreadyDoneBuy = Boolean(state.initialBuyDone && state.stoch100CrossEpochBuy === waveStartBuy && reEntryKickedInBuy);
-    if (tradeTakenInBuyWave || waveSkippedBuy || waveAlreadyDoneBuy) {
+    if (tradeTakenInBuyWave) {
       state.initialBuyDone = true;
       state.initialBuyArmed = false;
     } else {
@@ -4252,16 +3976,13 @@ async function runSlowPathScan(m5BoundaryEpoch) {
 
   let waveStartSell = null;
   if (stoch100AlignedSell) {
-    waveStartSell = findStochasticCrossCandleEpoch(candles, stoch100, "SELL", "MIDLINE") || state.stoch100CrossEpochSell || m5BoundaryEpoch;
+    waveStartSell = findStochasticCrossCandleEpoch(candles, stoch100, "SELL", "MIDLINE", STOCH100_SELL_THRESHOLD) || state.stoch100CrossEpochSell || m5BoundaryEpoch;
     state.stoch100CrossEpochSell = waveStartSell;
     const tradeTakenInSellWave = trades.some(t =>
       t.direction === "SELL" &&
       ((t.entryEpoch && t.entryEpoch >= waveStartSell) || (t.entryM5Bucket && t.entryM5Bucket >= waveStartSell))
     );
-    const reEntryKickedInSell = Boolean(state.stoch8_pulled_back_90 || (sK8 !== null && sK8 > 50.0));
-    const waveSkippedSell = state.stoch100SellWaveSkipped === waveStartSell && reEntryKickedInSell;
-    const waveAlreadyDoneSell = Boolean(state.initialSellDone && state.stoch100CrossEpochSell === waveStartSell && reEntryKickedInSell);
-    if (tradeTakenInSellWave || waveSkippedSell || waveAlreadyDoneSell) {
+    if (tradeTakenInSellWave) {
       state.initialSellDone = true;
       state.initialSellArmed = false;
     } else {
@@ -4270,246 +3991,78 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     }
   }
 
-
   // =========================================================================
-  // 🎯 EXPERIMENTAL STRATEGY: EXACT USER DIRECTIVE IMPLEMENTATION
-  // 1. Initial Entry:
-  //    Macro trend: Stoch 100 aligned. +/- 3 candle rule applies.
-  //    BUY: M5 candle must freshly break lowest point of any of recent UP or DOWN fractal candle (whichever first).
-  //    SELL: M5 candle must freshly break highest point of any of recent UP or DOWN fractal candle (whichever first).
-  // 2. Re-Entry:
-  //    Stoch 100 aligned and Stoch 8 activated by level 10/90 touch.
-  //    BUY: M5 candle must freshly break lowest point of any of recent UP or DOWN fractal candle (whichever first).
-  //    SELL: M5 candle must freshly break highest point of any of recent UP or DOWN fractal candle (whichever first).
+  // 🎯 INITIAL ENTRY: EXACT MATCH WITH BASELINE HIGH/LOW FRACTAL BREAKOUT (+/- 3 CANDLES)
+  // BUY: Confirmed M5 close > High Fractal High (recentHighFractal.high) within +/- 3 candles of Stoch 100 cross
+  // SELL: Confirmed M5 close < Low Fractal Low (recentLowFractal.low) within +/- 3 candles of Stoch 100 cross
+  // NOTE: Re-entry logic has been cleared as requested; standing by for new user rules.
   // =========================================================================
 
-  // --- 1B. INITIAL BUY SETUP MONITORING (STOCH 100 BULLISH & +/- 3 CANDLE RULE) ---
-  if (!indicatorsSatisfied && state.initialBuyArmed && stoch100AlignedBuy && (recentHighFractal || recentLowFractal)) {
-    // Check if Re-Entry condition kicked in before initial breakout occurred
-    // Initial BUY expires ONLY when Stoch 8 pulls back to <= 10.0 (transitioning to Re-Entry) or drops below 50.0
-    if (stoch8TouchedOrClosed10 || (sK8 !== null && sK8 < 50.0)) {
+  // --- 1B. INITIAL BUY SETUP MONITORING (HIGH FRACTAL BREAKOUT WITHIN +/- 3 CANDLES) ---
+  if (!indicatorsSatisfied && state.initialBuyArmed && stoch100AlignedBuy && recentHighFractal) {
+    const targetBreakout = recentHighFractal.high;
+    const refFractal = recentHighFractal;
+
+    const checkRes = checkInitialBreakoutWithin3Candles(candles, si, waveStartBuy, "BUY", targetBreakout);
+    if (checkRes.valid && !hasActiveBuy) {
+      indicatorsSatisfied = true;
+      signalDirection = "BUY";
+      setupLabel = `${SYMBOL}_INITIAL_FRACTAL_HIGH_BREAK (BUY)`;
+      triggeredFractalForSl = refFractal;
       state.initialBuyArmed = false;
       state.initialBuyDone = true;
-      state.stoch100BuyWaveSkipped = waveStartBuy;
-      state.stoch8_pulled_back_10 = Boolean(stoch8TouchedOrClosed10);
-      console.log(`[${REPO_LABEL}] ⏳ Initial BUY window expired: Stoch (8,1,1) pulled back (k: ${sK8 !== null ? sK8.toFixed(1) : 'N/A'}). Transitioning to Re-Entry mode.`);
+      state.lastUsedFractalEpochBuy = refFractal.epoch;
+      console.log(`[${REPO_LABEL}] 🚀 Initial BUY Triggered: High Fractal Breakout confirmed (M5 close ${cClose.toFixed(4)} > ${targetBreakout.toFixed(4)}) [${checkRes.reason}, offset: ${checkRes.candlesSinceCross}].`);
     } else {
-      const checkRes = checkInitialExperimentalBreakoutWithin3Candles(candles, si, waveStartBuy, "BUY", recentHighFractal, recentLowFractal);
-      if (checkRes.valid) {
-        const lpHigh = recentHighFractal ? parseFloat(recentHighFractal.low).toFixed(4) : "N/A";
-        const lpLow = recentLowFractal ? parseFloat(recentLowFractal.low).toFixed(4) : "N/A";
-        dbg(`[${REPO_LABEL}] Initial BUY Armed (${checkRes.candlesSinceCross}/3 candles since Stoch 100 cross): Awaiting fresh M5 close > lowest point of recent UP (${lpHigh}) or DOWN (${lpLow}) fractal candle.`);
-      }
+      dbg(`[${REPO_LABEL}] Initial BUY Armed: Awaiting M5 close > High Fractal (${targetBreakout.toFixed(4)}) within +/- 3 candle window (currently candle ${checkRes.candlesSinceCross}/3).`);
     }
   }
 
-  // --- 1A. INITIAL SELL SETUP MONITORING (STOCH 100 BEARISH & +/- 3 CANDLE RULE) ---
-  if (!indicatorsSatisfied && state.initialSellArmed && stoch100AlignedSell && (recentHighFractal || recentLowFractal)) {
-    // Check if Re-Entry condition kicked in before initial breakout occurred
-    // Initial SELL expires ONLY when Stoch 8 pulls back to >= 90.0 (transitioning to Re-Entry) or rises above 50.0
-    if (stoch8TouchedOrClosed90 || (sK8 !== null && sK8 > 50.0)) {
+  // --- 1A. INITIAL SELL SETUP MONITORING (LOW FRACTAL BREAKOUT WITHIN +/- 3 CANDLES) ---
+  if (!indicatorsSatisfied && state.initialSellArmed && stoch100AlignedSell && recentLowFractal) {
+    const targetBreakout = recentLowFractal.low;
+    const refFractal = recentLowFractal;
+
+    const checkRes = checkInitialBreakoutWithin3Candles(candles, si, waveStartSell, "SELL", targetBreakout);
+    if (checkRes.valid && !hasActiveSell) {
+      indicatorsSatisfied = true;
+      signalDirection = "SELL";
+      setupLabel = `${SYMBOL}_INITIAL_FRACTAL_LOW_BREAK (SELL)`;
+      triggeredFractalForSl = refFractal;
       state.initialSellArmed = false;
       state.initialSellDone = true;
-      state.stoch100SellWaveSkipped = waveStartSell;
-      state.stoch8_pulled_back_90 = Boolean(stoch8TouchedOrClosed90);
-      console.log(`[${REPO_LABEL}] ⏳ Initial SELL window expired: Stoch (8,1,1) pulled back (k: ${sK8 !== null ? sK8.toFixed(1) : 'N/A'}). Transitioning to Re-Entry mode.`);
+      state.lastUsedFractalEpochSell = refFractal.epoch;
+      console.log(`[${REPO_LABEL}] 🚀 Initial SELL Triggered: Low Fractal Breakout confirmed (M5 close ${cClose.toFixed(4)} < ${targetBreakout.toFixed(4)}) [${checkRes.reason}, offset: ${checkRes.candlesSinceCross}].`);
     } else {
-      const checkRes = checkInitialExperimentalBreakoutWithin3Candles(candles, si, waveStartSell, "SELL", recentHighFractal, recentLowFractal);
-      if (checkRes.valid) {
-        const hpHigh = recentHighFractal ? parseFloat(recentHighFractal.high).toFixed(4) : "N/A";
-        const hpLow = recentLowFractal ? parseFloat(recentLowFractal.high).toFixed(4) : "N/A";
-        dbg(`[${REPO_LABEL}] Initial SELL Armed (${checkRes.candlesSinceCross}/3 candles since Stoch 100 cross): Awaiting fresh M5 close < highest point of recent UP (${hpHigh}) or DOWN (${hpLow}) fractal candle.`);
-      }
+      dbg(`[${REPO_LABEL}] Initial SELL Armed: Awaiting M5 close < Low Fractal (${targetBreakout.toFixed(4)}) within +/- 3 candle window (currently candle ${checkRes.candlesSinceCross}/3).`);
     }
   }
 
-  // --- 2. RE-ENTRY MODE (STRICTLY AFTER INITIAL TRADE HAS BEEN TAKEN IN CURRENT WAVE) ---
-  const isPostLastEntry = !state.lastTriggeredEpoch || candles[si].epoch > state.lastTriggeredEpoch;
-
-  if (!indicatorsSatisfied && isPostLastEntry) {
-    // 2B. BUY Re-Entry (Stoch 100 > 50 & Stoch 8 touched <= 10)
-    if (stoch100AlignedBuy && Boolean(state.initialBuyDone) && !state.initialBuyArmed) {
-      if (state.stoch8_rebound_completed_BUY === undefined) {
-        state.stoch8_rebound_completed_BUY = (sK8 !== null && sK8 > 15.0);
-      }
-      if (!state.stoch8_rebound_completed_BUY) {
-        if (sK8 !== null && sK8 > 15.0) {
-          state.stoch8_rebound_completed_BUY = true;
-          console.log(`[${REPO_LABEL}] 🔄 BUY Re-Entry Stoch (8,1,1) rebounded out of oversold (${sK8.toFixed(1)} > 15). Now armed to watch for next touch <= 10.`);
-        }
-      }
-
-      if (state.stoch8_rebound_completed_BUY && !hasActiveBuy) {
-        if (stoch8TouchedOrClosed10) {
-          state.stoch8_pulled_back_10 = true;
-          state.stoch8_crossed_50_in_trend_BUY = (sK8 !== null && sK8 > 50.0);
-        } else if (state.stoch8_pulled_back_10) {
-          if (state.stoch8_crossed_50_in_trend_BUY && sK8 !== null && sK8 < 50.0) {
-            state.stoch8_pulled_back_10 = false;
-            state.stoch8_crossed_50_in_trend_BUY = false;
-            state.stoch8_rebound_completed_BUY = false;
-            console.log(`[${REPO_LABEL}] ⏳ BUY Re-Entry Setup expired: Stoch (8,1,1) crossed back below Level 50 (${sK8.toFixed(1)} < 50). Watching for next rebound and <= 10 pullback.`);
-          } else if (sK8 !== null && sK8 > 50.0) {
-            state.stoch8_crossed_50_in_trend_BUY = true;
-          }
-        }
-      }
-
-      if (state.stoch8_pulled_back_10 && !hasActiveBuy && (recentHighFractal || recentLowFractal)) {
-        const usedFractals = new Set();
-        if (state.lastUsedFractalEpochBuy) usedFractals.add(state.lastUsedFractalEpochBuy);
-        if (state.lastUsedFractalEpochSell) usedFractals.add(state.lastUsedFractalEpochSell);
-        trades.forEach(t => {
-          if (t.fractalEpoch) usedFractals.add(t.fractalEpoch);
-        });
-
-        const candidates = [];
-        if (recentHighFractal && !usedFractals.has(recentHighFractal.epoch)) {
-          candidates.push({ fractal: recentHighFractal, price: parseFloat(recentHighFractal.low), lbl: "UP_FRACTAL" });
-        }
-        if (recentLowFractal && !usedFractals.has(recentLowFractal.epoch)) {
-          candidates.push({ fractal: recentLowFractal, price: parseFloat(recentLowFractal.low), lbl: "DOWN_FRACTAL" });
-        }
-
-        let triggeredCandidate = null;
-        for (const cand of candidates) {
-          const isFreshBreak = (cClose > cand.price && (cLow <= cand.price || prevClose <= cand.price));
-          if (isFreshBreak) {
-            triggeredCandidate = cand;
-            break;
-          }
-        }
-
-        if (triggeredCandidate) {
-          indicatorsSatisfied = true;
-          signalDirection = "BUY";
-          setupLabel = `${SYMBOL}_EXP_REENTRY_LOW_BREAK (BUY)`;
-          triggeredFractalForSl = triggeredCandidate.fractal;
-          state.stoch8_pulled_back_10 = false;
-          state.stoch8_crossed_50_in_trend_BUY = false;
-          state.stoch8_rebound_completed_BUY = false;
-          state.lastUsedFractalEpochBuy = triggeredCandidate.fractal.epoch;
-          console.log(`[${REPO_LABEL}] 🚀 Experimental Re-Entry BUY Triggered: Fresh M5 close (${cClose.toFixed(4)}) broke ABOVE lowest point of ${triggeredCandidate.lbl} (${triggeredCandidate.price.toFixed(4)}). Pullback <= 10 confirmed.`);
-        }
-      }
-    }
-
-    // 2A. SELL Re-Entry (Stoch 100 < 50 & Stoch 8 touched >= 90)
-    if (stoch100AlignedSell && Boolean(state.initialSellDone) && !state.initialSellArmed) {
-      if (state.stoch8_rebound_completed_SELL === undefined) {
-        state.stoch8_rebound_completed_SELL = (sK8 !== null && sK8 < 85.0);
-      }
-      if (!state.stoch8_rebound_completed_SELL) {
-        if (sK8 !== null && sK8 < 85.0) {
-          state.stoch8_rebound_completed_SELL = true;
-          console.log(`[${REPO_LABEL}] 🔄 SELL Re-Entry Stoch (8,1,1) rebounded out of overbought (${sK8.toFixed(1)} < 85). Now armed to watch for next touch >= 90.`);
-        }
-      }
-
-      if (state.stoch8_rebound_completed_SELL && !hasActiveSell) {
-        if (stoch8TouchedOrClosed90) {
-          state.stoch8_pulled_back_90 = true;
-          state.stoch8_crossed_50_in_trend_SELL = (sK8 !== null && sK8 < 50.0);
-        } else if (state.stoch8_pulled_back_90) {
-          if (state.stoch8_crossed_50_in_trend_SELL && sK8 !== null && sK8 > 50.0) {
-            state.stoch8_pulled_back_90 = false;
-            state.stoch8_crossed_50_in_trend_SELL = false;
-            state.stoch8_rebound_completed_SELL = false;
-            console.log(`[${REPO_LABEL}] ⏳ SELL Re-Entry Setup expired: Stoch (8,1,1) crossed back above Level 50 (${sK8.toFixed(1)} > 50). Watching for next rebound and >= 90 pullback.`);
-          } else if (sK8 !== null && sK8 < 50.0) {
-            state.stoch8_crossed_50_in_trend_SELL = true;
-          }
-        }
-      }
-
-      if (state.stoch8_pulled_back_90 && !hasActiveSell && (recentHighFractal || recentLowFractal)) {
-        const usedFractals = new Set();
-        if (state.lastUsedFractalEpochBuy) usedFractals.add(state.lastUsedFractalEpochBuy);
-        if (state.lastUsedFractalEpochSell) usedFractals.add(state.lastUsedFractalEpochSell);
-        trades.forEach(t => {
-          if (t.fractalEpoch) usedFractals.add(t.fractalEpoch);
-        });
-
-        const candidates = [];
-        if (recentHighFractal && !usedFractals.has(recentHighFractal.epoch)) {
-          candidates.push({ fractal: recentHighFractal, price: parseFloat(recentHighFractal.high), lbl: "UP_FRACTAL" });
-        }
-        if (recentLowFractal && !usedFractals.has(recentLowFractal.epoch)) {
-          candidates.push({ fractal: recentLowFractal, price: parseFloat(recentLowFractal.high), lbl: "DOWN_FRACTAL" });
-        }
-
-        let triggeredCandidate = null;
-        for (const cand of candidates) {
-          const isFreshBreak = (cClose < cand.price && (cHigh >= cand.price || prevClose >= cand.price));
-          if (isFreshBreak) {
-            triggeredCandidate = cand;
-            break;
-          }
-        }
-
-        if (triggeredCandidate) {
-          indicatorsSatisfied = true;
-          signalDirection = "SELL";
-          setupLabel = `${SYMBOL}_EXP_REENTRY_HIGH_BREAK (SELL)`;
-          triggeredFractalForSl = triggeredCandidate.fractal;
-          state.stoch8_pulled_back_90 = false;
-          state.stoch8_crossed_50_in_trend_SELL = false;
-          state.stoch8_rebound_completed_SELL = false;
-          state.lastUsedFractalEpochSell = triggeredCandidate.fractal.epoch;
-          console.log(`[${REPO_LABEL}] 🚀 Experimental Re-Entry SELL Triggered: Fresh M5 close (${cClose.toFixed(4)}) broke BELOW highest point of ${triggeredCandidate.lbl} (${triggeredCandidate.price.toFixed(4)}). Pullback >= 90 confirmed.`);
-        }
-      }
-    }
-  }
-
+  // --- 2. RE-ENTRY MODE (CLEARED — AWAITING NEW USER RULES) ---
   state.armedTouchSetup = null;
-  state.isReentryMode = Boolean(state.initialBuyDone || state.initialSellDone);
+  state.isReentryMode = false;
 
   if (stoch100AlignedBuy) {
-    const lpHigh = recentHighFractal ? parseFloat(recentHighFractal.low).toFixed(2) : "N/A";
-    const lpLow = recentLowFractal ? parseFloat(recentLowFractal.low).toFixed(2) : "N/A";
+    const hp = recentHighFractal ? parseFloat(recentHighFractal.high).toFixed(2) : "N/A";
     if (state.initialBuyArmed && !state.initialBuyDone) {
-      state.armed = { dir: "BUY", lbl: `Initial BUY Armed (Break Lowest: UP [${lpHigh}] / DOWN [${lpLow}])` };
-      state.nextPhase = `Initial BUY Armed — Awaiting fresh M5 close > lowest point of recent UP (${lpHigh}) or DOWN (${lpLow}) fractal candle`;
-      state.nextTrigger = `Awaiting fresh M5 close > lowest point of recent UP (${lpHigh}) or DOWN (${lpLow})`;
+      state.armed = { dir: "BUY", lbl: `Initial BUY Armed (Break High: [${hp}])` };
+      state.nextPhase = `Initial BUY Armed — Awaiting fresh M5 close > High Fractal (${hp}) within +/- 3 candle window`;
+      state.nextTrigger = `Awaiting fresh M5 close > High Fractal (${hp})`;
     } else {
-      const inPullback = Boolean(state.stoch8_pulled_back_10);
-      if (inPullback) {
-        state.armed = { dir: "BUY", lbl: `BUY Re-Entry Armed (Stoch 8 <= 10 | Await Break: UP [${lpHigh}] / DOWN [${lpLow}])` };
-        state.nextPhase = `BUY Re-Entry Armed — Stoch 8 <= 10 satisfied. Awaiting fresh M5 close > lowest point of UP (${lpHigh}) or DOWN (${lpLow})`;
-        state.nextTrigger = `Awaiting fresh M5 close > lowest point of UP (${lpHigh}) or DOWN (${lpLow})`;
-      } else if (!state.stoch8_rebound_completed_BUY) {
-        state.armed = { dir: "BUY", lbl: `BUY Re-Entry (Await Rebound > 15)` };
-        state.nextPhase = `BUY Re-Entry — Waiting for Stoch 8 to rebound > 15 before next <= 10 pullback`;
-        state.nextTrigger = `Waiting for Stoch 8 to rebound > 15 before next <= 10 pullback`;
-      } else {
-        state.armed = null;
-        state.nextPhase = `Awaiting BUY Pullback — Await Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) touch/close <= 10`;
-        state.nextTrigger = `Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) touch/close <= 10`;
-      }
+      state.armed = null;
+      state.nextPhase = "Initial BUY Complete — Standing by for New Re-Entry Rules";
+      state.nextTrigger = "Standing by for New Re-Entry Rules";
     }
   } else if (stoch100AlignedSell) {
-    const hpHigh = recentHighFractal ? parseFloat(recentHighFractal.high).toFixed(2) : "N/A";
-    const hpLow = recentLowFractal ? parseFloat(recentLowFractal.high).toFixed(2) : "N/A";
+    const lp = recentLowFractal ? parseFloat(recentLowFractal.low).toFixed(2) : "N/A";
     if (state.initialSellArmed && !state.initialSellDone) {
-      state.armed = { dir: "SELL", lbl: `Initial SELL Armed (Break Highest: UP [${hpHigh}] / DOWN [${hpLow}])` };
-      state.nextPhase = `Initial SELL Armed — Awaiting fresh M5 close < highest point of recent UP (${hpHigh}) or DOWN (${hpLow}) fractal candle`;
-      state.nextTrigger = `Awaiting fresh M5 close < highest point of recent UP (${hpHigh}) or DOWN (${hpLow})`;
+      state.armed = { dir: "SELL", lbl: `Initial SELL Armed (Break Low: [${lp}])` };
+      state.nextPhase = `Initial SELL Armed — Awaiting fresh M5 close < Low Fractal (${lp}) within +/- 3 candle window`;
+      state.nextTrigger = `Awaiting fresh M5 close < Low Fractal (${lp})`;
     } else {
-      const inPullback = Boolean(state.stoch8_pulled_back_90);
-      if (inPullback) {
-        state.armed = { dir: "SELL", lbl: `SELL Re-Entry Armed (Stoch 8 >= 90 | Await Break: UP [${hpHigh}] / DOWN [${hpLow}])` };
-        state.nextPhase = `SELL Re-Entry Armed — Stoch 8 >= 90 satisfied. Awaiting fresh M5 close < highest point of UP (${hpHigh}) or DOWN (${hpLow})`;
-        state.nextTrigger = `Awaiting fresh M5 close < highest point of UP (${hpHigh}) or DOWN (${hpLow})`;
-      } else if (!state.stoch8_rebound_completed_SELL) {
-        state.armed = { dir: "SELL", lbl: `SELL Re-Entry (Await Rebound < 85)` };
-        state.nextPhase = `SELL Re-Entry — Waiting for Stoch 8 to rebound < 85 before next >= 90 pullback`;
-        state.nextTrigger = `Waiting for Stoch 8 to rebound < 85 before next >= 90 pullback`;
-      } else {
-        state.armed = null;
-        state.nextPhase = `Awaiting SELL Pullback — Await Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) touch/close >= 90`;
-        state.nextTrigger = `Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) touch/close >= 90`;
-      }
+      state.armed = null;
+      state.nextPhase = "Initial SELL Complete — Standing by for New Re-Entry Rules";
+      state.nextTrigger = "Standing by for New Re-Entry Rules";
     }
   } else {
     state.armed = null;
@@ -4649,11 +4202,10 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     const tpTargetDesc = `Fractal Range TP @ ${tpPrice.toFixed(tpDigits)} (Swing Range: ${fractalDistance.toFixed(tpDigits)} pts / Supertrend trailing protection)`;
     const confluenceLines =
       `• Gate 1 (Macro Trend): *M5 Stoch (100,1,1) %K ${(sK100 !== null ? sK100.toFixed(1) : "N/A")}* (${direction === "BUY" ? ">=47 [BULLISH]" : "<=53 [BEARISH]"})\n` +
-      `• Gate 2 (Momentum): *M5 Stoch (8,1,1) %K ${(sK8 !== null ? sK8.toFixed(1) : "N/A")}* (${isInitialSignal ? "Initial Entry (Stoch 100 Fresh Cross)" : `Re-Entry Pullback ${direction === "BUY" ? "<=10" : ">=90"}`})\n` +
-      `• Gate 3 (Fractal Trigger): *${setupLabel}* (M5 Close ${direction === "BUY" ? "> High Fractal High" : "< Low Fractal Low"})\n` +
-      `• Gate 4 (Profit Management): *${tpTargetDesc}*\n` +
-      `• Gate 5 (Stop Loss): *${sl.toFixed(4)}* (${slRuleDesc} / Software SL on M5 Close)\n` +
-      `• Daily Target Progress: *$${(state.dailyNetPnl || 0).toFixed(2)} / $${DAILY_PROFIT_TARGET_USD.toFixed(2)} (${DAILY_TARGET_LOCK_ENABLED ? "Lock ON" : "Uncapped"})*`;
+      `• Gate 2 (Fractal Trigger): *${setupLabel}* (M5 Close ${direction === "BUY" ? "> High Fractal High" : "< Low Fractal Low"})\n` +
+      `• Gate 3 (Profit Management): *${tpTargetDesc}*\n` +
+      `• Gate 4 (Stop Loss): *${sl.toFixed(4)}* (${slRuleDesc} / Software SL on M5 Close)\n` +
+      `• Daily Target Progress: *${(state.dailyNetPnl || 0).toFixed(2)} / $${DAILY_PROFIT_TARGET_USD.toFixed(2)} (${DAILY_TARGET_LOCK_ENABLED ? "Lock ON" : "Uncapped"})*`;
 
     const message = 
       `🚨 *[ENTRY SIGNAL] ${SYMBOL_NAME.toUpperCase()} — ${REPO_LABEL}* 🚨\n\n` +
@@ -4703,7 +4255,6 @@ async function runSlowPathScan(m5BoundaryEpoch) {
       profitManagementMode: "FRACTAL_RANGE_TP_AND_SUPERTREND_TRAILING",
       supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
       supertrendAtEntry: curSt ? curSt.trend : null,
-      stoch8EarlyExit: false,
       fractalSl: initialM5Fractal,
       fractalEpoch: triggeredFractalForSl ? triggeredFractalForSl.epoch : null,
       fractalTimeframe: "M5",
@@ -4843,37 +4394,33 @@ async function runSlowPathScan(m5BoundaryEpoch) {
     if (stoch100Buy) {
       if (!isReentry) {
         blockerReason = state.initialBuyArmed
-          ? `Initial BUY Armed (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} >= 47 | ${INITIAL_GATE_MODE})`
+          ? `Initial BUY Armed (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} >= 47)`
           : `Macro Trend Bullish (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} >= 47)`;
         if (!nextTrigger) {
           nextTrigger = state.initialBuyArmed
-            ? `Awaiting ${getFractalBreakoutLabel(recentHighFractal, "BUY", INITIAL_BREAKOUT_TYPE, INITIAL_TRIGGER_EXEC)}`
-            : `Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) cross > 50 for Initial BUY`;
+            ? `Awaiting M5 close > High Fractal (${recentHighFractal ? recentHighFractal.high : "N/A"})`
+            : `Initial BUY Complete — Standing by for New Re-Entry Rules`;
         }
       } else {
-        blockerReason = `BUY Re-Entry Mode Active (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} >= 47)`;
+        blockerReason = `Standing by for New Re-Entry Rules (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} >= 47)`;
         if (!nextTrigger) {
-          nextTrigger = state.stoch8_pulled_back_10
-            ? `BUY Re-Entry Armed: Awaiting M5 ${getFractalBreakoutLabel(recentHighFractal, "BUY", ENTRY_BREAKOUT_TYPE, "CLOSE")}`
-            : `Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) pullback <= 10 for BUY Re-Entry`;
+          nextTrigger = "Standing by for New Re-Entry Rules";
         }
       }
     } else if (stoch100Sell) {
       if (!isReentry) {
         blockerReason = state.initialSellArmed
-          ? `Initial SELL Armed (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} <= 53 | ${INITIAL_GATE_MODE})`
+          ? `Initial SELL Armed (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} <= 53)`
           : `Macro Trend Bearish (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} <= 53)`;
         if (!nextTrigger) {
           nextTrigger = state.initialSellArmed
-            ? `Awaiting ${getFractalBreakoutLabel(recentLowFractal, "SELL", INITIAL_BREAKOUT_TYPE, INITIAL_TRIGGER_EXEC)}`
-            : `Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) cross < 50 for Initial SELL`;
+            ? `Awaiting M5 close < Low Fractal (${recentLowFractal ? recentLowFractal.low : "N/A"})`
+            : `Initial SELL Complete — Standing by for New Re-Entry Rules`;
         }
       } else {
-        blockerReason = `SELL Re-Entry Mode Active (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} <= 53)`;
+        blockerReason = `Standing by for New Re-Entry Rules (Stoch 100: ${sK100 ? sK100.toFixed(1) : "N/A"} <= 53)`;
         if (!nextTrigger) {
-          nextTrigger = state.stoch8_pulled_back_90
-            ? `SELL Re-Entry Armed: Awaiting M5 ${getFractalBreakoutLabel(recentLowFractal, "SELL", ENTRY_BREAKOUT_TYPE, "CLOSE")}`
-            : `Awaiting Stoch (8,1,1) %K (${sK8 !== null ? sK8.toFixed(1) : "N/A"}) pullback >= 90 for SELL Re-Entry`;
+          nextTrigger = "Standing by for New Re-Entry Rules";
         }
       }
     } else {
@@ -4963,7 +4510,7 @@ async function checkIntrabarInitialTouchEntry(currentM5Boundary) {
   state.initialBuyArmed = false;
   state.initialSellArmed = false;
   state.initialTradeDoneInWave = true;
-  state.isReentryMode = true;
+  state.isReentryMode = false;
   state.lastTriggeredSetup = entryType;
   state.lastTriggeredEpoch = currentM5Boundary;
 
@@ -5042,7 +4589,6 @@ async function checkIntrabarInitialTouchEntry(currentM5Boundary) {
     slExecutionType: SL_EXECUTION_TYPE,
     profitManagementMode: "FRACTAL_RANGE_TP_AND_SUPERTREND_TRAILING",
     supertrendParams: { periods: 21, multiplier: 1.0, shift: 0 },
-    stoch8EarlyExit: false,
     fractalSl: setup.fractal ? setup.fractal.price : null,
     fractalEpoch: setup.fractal ? setup.fractal.epoch : null,
     fractalTimeframe: "M5",
@@ -5144,25 +4690,9 @@ export async function startContinuousEngine() {
         }
       }
 
-      // ⚡ Immediate Re-Entry Watchdog: When an active trade closes, immediately check for re-entry opportunities
-      if (previousHasOpenTrade && !hasOpenTrade && !state.dailyTargetReached) {
-        let curTrades = loadTrades();
-        const lastTrade = curTrades.length > 0 ? curTrades[curTrades.length - 1] : null;
-        const lastWasLoss = lastTrade && (lastTrade.result === "LOSS" || (typeof lastTrade.serverPnl === "number" && lastTrade.serverPnl < 0));
-        if (lastWasLoss) {
-          console.log(`[${REPO_LABEL}] Previous trade closed in LOSS (${lastTrade.serverPnl || -1}). Clearing activeReentryOpportunity to avoid adverse re-entry.`);
-          state.activeReentryOpportunity = null;
-          saveState();
-        } else if (state.activeReentryOpportunity) {
-          console.log(`[${REPO_LABEL}] ⚡ Trade exited in profit! Firing latched re-entry opportunity immediately...`);
-          try {
-            await checkAndExecuteImmediateReentry(state.currentPrice);
-          } catch (e) {
-            console.error(`[${REPO_LABEL}] Immediate re-entry attempt failed:`, e.message);
-          }
-        } else {
-          console.log(`[${REPO_LABEL}] Trade exited! Standing by for the next confirmed closed M5 candle boundary to scan.`);
-        }
+      // Re-entry watchdog disabled (standing by for new user rules)
+      if (previousHasOpenTrade && !hasOpenTrade) {
+        console.log(`[${REPO_LABEL}] Trade exited! Standing by for new Re-Entry rules.`);
       }
       previousHasOpenTrade = hasOpenTrade;
 
